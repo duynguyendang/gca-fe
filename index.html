@@ -4,29 +4,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gem Code Analysis</title>
+    <title>GCA Explorer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap');
+        
+        :root {
+            --bg-main: #0a1118;
+            --bg-sidebar: #0d171d;
+            --accent: #00f2ff;
+            --border: rgba(255, 255, 255, 0.08);
+        }
+
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #0f172a;
-            color: #f1f5f9;
+            background-color: var(--bg-main);
+            color: #94a3b8;
             margin: 0;
             overflow: hidden;
         }
-        .font-mono {
-            font-family: 'Fira Code', monospace;
+
+        .font-mono { font-family: 'Fira Code', monospace; }
+
+        .dot-grid {
+            background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 0);
+            background-size: 24px 24px;
         }
-        .glass-panel {
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+
+        .glass-sidebar {
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
         }
-        .node:hover {
-            filter: brightness(1.2);
-            cursor: pointer;
+
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0, 242, 255, 0.2); }
+
+        /* Override Prism styles for ultra-compact look */
+        pre[class*="language-"] {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            font-size: 11px !important;
+        }
+        code[class*="language-"] {
+            font-family: 'Fira Code', monospace !important;
+            text-shadow: none !important;
         }
     </style>
 <script type="importmap">

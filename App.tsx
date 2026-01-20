@@ -1,163 +1,660 @@
 
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import TreeVisualizer from './components/TreeVisualizer/index';
 import { ASTNode, FlatGraph } from './types';
 import { getGeminiInsight } from './services/geminiService';
 
-const SAMPLE_DATA: any = {
+// Ensure Prism is available for highlighting
+declare var Prism: any;
+
+const SAMPLE_DATA: FlatGraph = {
   nodes: [
-    { id: "cmd/gca/main.go:main", name: "main", kind: "function", start_line: 1, end_line: 100, code: "func main() {\n\tengine.Run()\n}" },
-    { id: "pkg/analysis/engine.go:Run", name: "Run", kind: "function", start_line: 10, end_line: 250, code: "func (e *Engine) Run() {\n\trender.Draw()\n\trender.Canvas()\n}" },
-    { id: "pkg/analysis/engine.go:Engine", name: "Engine", kind: "struct", start_line: 5, end_line: 45, code: "type Engine struct {\n\tSettings map[string]string\n}" },
-    { id: "pkg/render/d3.go:Draw", name: "Draw", kind: "function", start_line: 20, end_line: 180, code: "func Draw() {\n\t// D3 implementation\n}" },
-    { id: "pkg/render/canvas.go:Render", name: "Render", kind: "function", start_line: 1, end_line: 300, code: "func Render() {\n\t// Canvas implementation\n}" }
+    { id: "src/main.go:main", name: "main", type: "func", kind: "func", start_line: 1, end_line: 5, code: "func main() {\n\tfmt.Println(\"Hello GCA\")\n\t// Analyzer Entry Point\n\tinitialize()\n}" },
   ],
-  links: [
-    { source: "cmd/gca/main.go:main", target: "pkg/analysis/engine.go:Run" },
-    { source: "pkg/analysis/engine.go:Run", target: "pkg/render/d3.go:Draw" },
-    { source: "pkg/analysis/engine.go:Run", target: "pkg/render/canvas.go:Render" }
-  ]
+  links: []
 };
 
-type ViewMode = 'force' | 'radial' | 'circlePacking' | 'sankey';
-type LayoutStyle = 'organic' | 'flow';
-
-const App: React.FC = () => {
-  const [astData, setAstData] = useState<ASTNode | FlatGraph>(SAMPLE_DATA);
-  const [selectedNode, setSelectedNode] = useState<any>(null);
-  const [hoveredNode, setHoveredNode] = useState<any>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>('force');
-  const [layoutStyle, setLayoutStyle] = useState<LayoutStyle>('organic');
-  const [isInsightLoading, setIsInsightLoading] = useState(false);
-  const [nodeInsight, setNodeInsight] = useState<string | null>(null);
+const stratifyPaths = (nodes: any[], filePaths: string[] = []) => {
+  const root: any = { _isFolder: true, children: {} };
   
-  const latestRequestId = useRef<number>(0);
+  if (Array.isArray(filePaths)) {
+    filePaths.forEach(path => {
+      if (typeof path !== 'string') return;
+      const parts = path.split('/');
+      let current = root;
+      parts.forEach((part, i) => {
+        const isLastPart = i === parts.length - 1;
+        if (!current.children[part]) {
+          current.children[part] = { 
+            _isFolder: !isLastPart, 
+            _isFile: isLastPart,
+            children: {},
+            _symbols: []
+          };
+        }
+        current = current.children[part];
+      });
+    });
+  }
 
-  const filteredNodes = useMemo(() => {
-    if (!searchQuery || !('nodes' in astData)) return [];
-    const query = searchQuery.toLowerCase();
-    
-    return astData.nodes
-      .map(node => {
-        let score = 0;
-        const id = node.id.toLowerCase();
-        if (id === query) score = 100;
-        else if (id.startsWith(query)) score = 50;
-        else if (id.includes(query)) score = 10;
-        return { node, score };
-      })
-      .filter(item => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10)
-      .map(item => item.node);
-  }, [astData, searchQuery]);
+  if (Array.isArray(nodes)) {
+    nodes.forEach(node => {
+      if (!node || !node.id) return;
+      const [filePath, symbol] = node.id.split(':');
+      if (!filePath) return;
 
-  const handleNodeSelect = useCallback((node: any) => {
-    setSelectedNode(node);
-    setSearchQuery('');
-    setNodeInsight(null);
-  }, []);
+      const parts = filePath.split('/');
+      let current = root;
+      
+      parts.forEach((part, i) => {
+        const isLastPart = i === parts.length - 1;
+        if (!current.children[part]) {
+          current.children[part] = { 
+            _isFolder: !isLastPart, 
+            _isFile: isLastPart,
+            children: {},
+            _symbols: []
+          };
+        }
+        if (isLastPart && symbol) {
+          if (!current.children[part]._symbols.find((s: any) => s.node.id === node.id)) {
+            current.children[part]._symbols.push({ name: symbol, node });
+          }
+        }
+        current = current.children[part];
+      });
+    });
+  }
+  
+  return root.children;
+};
 
-  const onAnalyze = async (node: any) => {
-    const requestId = ++latestRequestId.current;
-    setIsInsightLoading(true);
-    setNodeInsight(null);
-    
-    try {
-      const insight = await getGeminiInsight(node);
-      if (requestId === latestRequestId.current) {
-        setNodeInsight(insight);
-      }
-    } catch (e) {
-      if (requestId === latestRequestId.current) {
-        setNodeInsight("Analysis failed.");
-      }
-    } finally {
-      if (requestId === latestRequestId.current) {
-        setIsInsightLoading(false);
+const HighlightedCode = ({ code, language, startLine }: { code: string, language: string, startLine: number }) => {
+  const codeRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (codeRef.current && typeof Prism !== 'undefined') {
+      try { Prism.highlightElement(codeRef.current); } catch (e) {}
+    }
+  }, [code, language]);
+  
+  const lines = (code || "").split('\n');
+  return (
+    <div className="flex bg-[#0d171d] min-h-full font-mono text-[11px]">
+      <div className="bg-[#0a1118] text-slate-700 text-right pr-3 pl-2 select-none border-r border-white/5 py-4 min-w-[3.5rem]">
+        {lines.map((_, i) => <div key={i} className="leading-5 h-5">{startLine + i}</div>)}
+      </div>
+      <div className="flex-1 overflow-x-auto py-4 px-4 relative">
+        <pre className="m-0 p-0 bg-transparent">
+          <code ref={codeRef} className={`language-${language} leading-5 block`}>{code}</code>
+        </pre>
+      </div>
+    </div>
+  );
+};
+
+interface FileTreeItemProps {
+  name: string;
+  node: any;
+  depth?: number;
+  fullPath?: string;
+  onNodeSelect: (node: any) => void;
+  astData: any;
+  selectedNode: any;
+}
+
+const FileTreeItem = ({ name, node, depth = 0, fullPath = "", onNodeSelect, astData, selectedNode }: FileTreeItemProps) => {
+  const [isOpen, setIsOpen] = useState(depth < 1);
+  const currentPath = fullPath ? `${fullPath}/${name}` : name;
+
+  const children = Object.entries(node.children || {});
+  const symbols = (node._symbols as any[]) || [];
+  const hasChildren = children.length > 0 || symbols.length > 0;
+  
+  const isSelected = selectedNode?.id === currentPath || selectedNode?.id?.startsWith(currentPath + ':');
+
+  const getFileIcon = (fileName: string) => {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    switch(ext) {
+      case 'go': return 'fa-brands fa-golang text-cyan-500';
+      case 'ts':
+      case 'tsx': return 'fa-brands fa-js text-blue-400';
+      case 'py': return 'fa-brands fa-python text-yellow-500';
+      case 'json': return 'fa-file-lines text-slate-400';
+      default: return 'fa-file-code text-slate-500';
+    }
+  };
+
+  const handleFileClick = () => {
+    setIsOpen(!isOpen);
+    if (node._isFile) {
+      const flatNodes = (astData as FlatGraph)?.nodes || [];
+      const astNode = flatNodes.find(n => n.id === currentPath);
+      if (astNode) {
+        onNodeSelect(astNode);
+      } else {
+        onNodeSelect({ id: currentPath, _isMissingCode: true });
       }
     }
   };
 
   return (
-    <div className="flex h-screen w-screen bg-[#020617] overflow-hidden font-sans text-slate-200">
-      <aside className={`${isSidebarOpen ? 'w-96' : 'w-0'} transition-all duration-300 glass-panel h-full flex flex-col z-20 border-r border-slate-800/50`}>
-        {isSidebarOpen && (
-          <div className="flex flex-col h-full p-6 overflow-y-auto scrollbar-hide">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
-                <i className="fas fa-gem text-lg text-white"></i>
-              </div>
-              <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Gem Code Analysis</h1>
-            </div>
+    <div className="select-none">
+      <div 
+        onClick={handleFileClick}
+        className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer hover:bg-white/5 group transition-colors ${isSelected ? 'bg-[#00f2ff]/10 text-[#00f2ff]' : ''}`}
+        style={{ paddingLeft: `${depth * 12 + 8}px` }}
+      >
+        <i className={`fas ${node._isFile ? getFileIcon(name) : (isOpen ? 'fa-folder-open text-slate-400' : 'fa-folder text-slate-600')} text-[10px]`}></i>
+        <span className={`truncate ${node._isFile ? 'text-[11px] font-medium' : 'text-slate-500 font-bold uppercase text-[8px] tracking-[0.1em]'}`}>
+          {name}
+        </span>
+        {hasChildren && !node._isFile && <i className={`fas fa-chevron-right ml-auto text-[7px] transition-transform ${isOpen ? 'rotate-90' : ''} opacity-20 group-hover:opacity-100`}></i>}
+      </div>
 
-            <div className="relative mb-6">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search symbols..."
-                className="w-full bg-slate-900/50 border border-slate-800 rounded-xl py-2 pl-4 pr-4 text-xs font-mono focus:outline-none focus:border-indigo-500 transition-colors"
-              />
-              {filteredNodes.length > 0 && (
-                <div className="absolute top-full mt-2 w-full bg-slate-900 border border-slate-800 rounded-xl shadow-2xl z-50 overflow-hidden">
-                  {filteredNodes.map(n => (
-                    <button key={n.id} onClick={() => handleNodeSelect(n)} className="w-full px-4 py-2 text-left text-[10px] font-mono hover:bg-indigo-600/20 text-slate-400 hover:text-white border-b border-slate-800 last:border-0">{n.id}</button>
-                  ))}
+      {isOpen && (
+        <div>
+          {children.map(([childName, childNode]) => (
+            <FileTreeItem 
+              key={childName} 
+              name={childName} 
+              node={childNode as any} 
+              depth={depth + 1} 
+              fullPath={currentPath} 
+              onNodeSelect={onNodeSelect}
+              astData={astData}
+              selectedNode={selectedNode}
+            />
+          ))}
+          {symbols.map((symbol: any, idx: number) => {
+            const isActive = selectedNode?.id === symbol.node.id;
+            return (
+              <div 
+                key={`${symbol.name}-${idx}`}
+                onClick={() => onNodeSelect(symbol.node)}
+                className={`flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-[#00f2ff]/10 transition-all group ${isActive ? 'bg-[#00f2ff]/20 text-[#00f2ff] font-bold border-r-2 border-[#00f2ff]' : 'text-slate-600'}`}
+                style={{ paddingLeft: `${(depth + 1) * 12 + 16}px` }}
+              >
+                <i className={`fas ${symbol.node.kind === 'struct' ? 'fa-cube' : 'fa-bolt'} text-[8px] opacity-40`}></i>
+                <span className="truncate text-[10px] font-mono group-hover:text-slate-300">
+                  {symbol.name}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const App: React.FC = () => {
+  const [astData, setAstData] = useState<ASTNode | FlatGraph>(() => {
+    try {
+      const saved = sessionStorage.getItem('gca_ast_data');
+      return saved ? JSON.parse(saved) : SAMPLE_DATA;
+    } catch (e) { return SAMPLE_DATA; }
+  });
+  
+  const [sandboxFiles, setSandboxFiles] = useState<Record<string, any>>(() => {
+    try {
+      const saved = sessionStorage.getItem('gca_sandbox_files');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) { return {}; }
+  });
+
+  const [dataApiBase, setDataApiBase] = useState<string>(() => {
+    return sessionStorage.getItem('gca_data_api_base') || '';
+  });
+
+  const [selectedNode, setSelectedNode] = useState<any>(null);
+  const [isInsightLoading, setIsInsightLoading] = useState(false);
+  const [isDataSyncing, setIsDataSyncing] = useState(false);
+  const [nodeInsight, setNodeInsight] = useState<string | null>(null);
+  const [currentProject, setCurrentProject] = useState<string>("GCA-Sandbox-Default");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  // View Modes: force, dagre, radial, circlePacking
+  const [viewMode, setViewMode] = useState<'force' | 'dagre' | 'radial' | 'circlePacking'>('force');
+
+  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [codePanelWidth, setCodePanelWidth] = useState(500);
+  const isResizingSidebar = useRef(false);
+  const isResizingCode = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    sessionStorage.setItem('gca_ast_data', JSON.stringify(astData));
+  }, [astData]);
+
+  useEffect(() => {
+    sessionStorage.setItem('gca_sandbox_files', JSON.stringify(sandboxFiles));
+  }, [sandboxFiles]);
+
+  useEffect(() => {
+    sessionStorage.setItem('gca_data_api_base', dataApiBase);
+  }, [dataApiBase]);
+
+  useEffect(() => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css';
+    document.head.appendChild(link);
+
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js';
+    script.onload = () => {
+      ['go', 'typescript', 'javascript', 'python', 'json', 'rust', 'cpp', 'css', 'html'].forEach(lang => {
+        const langScript = document.createElement('script');
+        langScript.src = `https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-${lang}.min.js`;
+        document.head.appendChild(langScript);
+      });
+    };
+    document.head.appendChild(script);
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isResizingSidebar.current) setSidebarWidth(Math.max(200, Math.min(600, e.clientX)));
+      if (isResizingCode.current) setCodePanelWidth(Math.max(300, Math.min(window.innerWidth * 0.7, window.innerWidth - e.clientX)));
+    };
+
+    const handleMouseUp = () => {
+      isResizingSidebar.current = false;
+      isResizingCode.current = false;
+      document.body.style.cursor = 'default';
+      document.body.style.userSelect = 'auto';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  const syncDataFromApi = async (baseUrl: string) => {
+    if (!baseUrl) return;
+    setIsDataSyncing(true);
+    const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    
+    try {
+      const projectsRes = await fetch(`${cleanBase}/v1/projects`);
+      if (projectsRes.ok) {
+        const projects = await projectsRes.json() as any[];
+        if (Array.isArray(projects) && projects[0]?.name) {
+          setCurrentProject(projects[0].name);
+        }
+      }
+
+      const filesRes = await fetch(`${cleanBase}/v1/files`);
+      if (filesRes.ok) {
+        const filesList = await filesRes.json();
+        setSandboxFiles(prev => ({ ...prev, 'files.json': filesList }));
+      }
+
+      const queryRes = await fetch(`${cleanBase}/v1/query?hydrate=true`);
+      if (queryRes.ok) {
+        const ast = await queryRes.json();
+        if (ast && ast.nodes) {
+          setAstData(ast);
+        }
+      }
+    } catch (err) {
+      console.error("API Sync Error:", err);
+    } finally {
+      setIsDataSyncing(false);
+    }
+  };
+
+  const handleNodeSelect = useCallback(async (node: any) => {
+    setSelectedNode(node);
+    setNodeInsight(null);
+    
+    if (dataApiBase && !node.code && node.id) {
+        const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+        try {
+            const res = await fetch(`${cleanBase}/v1/source?id=${encodeURIComponent(node.id)}`);
+            if (res.ok) {
+                const sourceData = await res.json() as any;
+                setSelectedNode((prev: any) => ({ ...prev, code: sourceData.content || sourceData.code || "" }));
+            }
+        } catch (e) { console.error("Source fetch error:", e); }
+    }
+  }, [dataApiBase]);
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    const newSandbox = { ...sandboxFiles };
+    const fileList = Array.from(files);
+    
+    for (const file of fileList) {
+      try {
+        const text = await (file as File).text();
+        let content: any = text;
+        const fileName = (file as File).name;
+        if (fileName.endsWith('.json')) {
+            try {
+                content = JSON.parse(text);
+            } catch(e) {
+                console.warn("Invalid JSON upload", fileName);
+                continue;
+            }
+        }
+        const fileNameLower = fileName.toLowerCase();
+        
+        if (fileNameLower.includes('query') || fileNameLower.includes('symbols') || fileNameLower.includes('nodes')) {
+          if (content && typeof content === 'object' && 'nodes' in content) {
+            setAstData(content as FlatGraph);
+          }
+        }
+        
+        if (fileNameLower.includes('project')) {
+          const projectContent = content as any[];
+          if (Array.isArray(projectContent) && projectContent[0] && projectContent[0].name) {
+            setCurrentProject(projectContent[0].name);
+          }
+        }
+
+        newSandbox[fileName] = content;
+      } catch (err) { console.error(`Error processing file`, err); }
+    }
+    setSandboxFiles(newSandbox);
+    event.target.value = '';
+  };
+
+  const sourceTree = useMemo(() => {
+    const nodes = (astData as FlatGraph)?.nodes || [];
+    const filesJson = sandboxFiles['files.json'];
+    const explicitPaths = Array.isArray(filesJson) ? filesJson : [];
+    return stratifyPaths(nodes, explicitPaths);
+  }, [astData, sandboxFiles]);
+
+  const renderCode = () => {
+    if (!selectedNode) return (
+      <div className="h-full flex items-center justify-center flex-col gap-4 grayscale opacity-20">
+        <i className="fas fa-microchip text-5xl"></i>
+        <p className="text-[9px] uppercase font-black tracking-[0.2em]">Select an Asset to Inspect</p>
+      </div>
+    );
+
+    let code = selectedNode.code;
+    if (!code && (selectedNode._isMissingCode || !selectedNode.code)) {
+      return (
+        <div className="h-full flex items-center justify-center flex-col gap-3 opacity-30 italic">
+          <i className="fas fa-file-invoice text-3xl"></i>
+          <p className="text-[10px] uppercase font-bold tracking-widest">Source Buffer Unavailable</p>
+        </div>
+      );
+    }
+    
+    let language = 'go';
+    const id = (selectedNode.id || "").toLowerCase();
+    if (id.endsWith('.ts') || id.endsWith('.tsx')) language = 'typescript';
+    else if (id.endsWith('.js') || id.endsWith('.jsx')) language = 'javascript';
+    else if (id.endsWith('.py')) language = 'python';
+    else if (id.endsWith('.rs')) language = 'rust';
+    else if (id.endsWith('.cpp')) language = 'cpp';
+
+    return <HighlightedCode code={code || "// Code snippet missing."} language={language} startLine={selectedNode.start_line || 1} />;
+  };
+
+  return (
+    <div className="flex h-screen w-screen bg-[#0a1118] text-slate-400 overflow-hidden font-sans">
+      <aside 
+        style={{ width: sidebarWidth }}
+        className="glass-sidebar flex flex-col z-30 shrink-0 shadow-2xl relative"
+      >
+        <div className="p-6 border-b border-white/5 flex items-center gap-3 shrink-0">
+          <div className="w-8 h-8 rounded bg-[#00f2ff] flex items-center justify-center text-[#0a1118] font-black shadow-[0_0_15px_rgba(0,242,255,0.4)]">G</div>
+          <div>
+            <h1 className="text-sm font-bold text-white tracking-tight uppercase italic">GCA EXPLORER</h1>
+            <p className="text-[10px] text-slate-500 font-mono tracking-tighter">PROJECT ANALYZER</p>
+          </div>
+        </div>
+
+        <div className="p-4 space-y-6 flex-1 overflow-y-auto custom-scrollbar">
+          <div>
+            <h2 className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600 mb-3 px-2 flex justify-between">
+              <span>ACTIVE PROJECT</span>
+              {dataApiBase && <i className={`fas fa-plug text-[8px] ${isDataSyncing ? 'text-[#00f2ff] animate-pulse' : 'text-[#10b981]'}`}></i>}
+            </h2>
+            <div className="w-full bg-[#16222a] border border-white/5 rounded px-3 py-2 text-[11px] text-white truncate font-medium flex items-center gap-2">
+              <i className="fas fa-cube text-[#00f2ff] text-[10px]"></i> {currentProject}
+            </div>
+          </div>
+
+          <div>
+            <h2 className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600 mb-3 px-2">SOURCE NAVIGATOR</h2>
+            <div className="space-y-0.5 border-l border-white/5 ml-2">
+              {Object.entries(sourceTree).map(([name, node]) => (
+                <FileTreeItem 
+                  key={name} 
+                  name={name} 
+                  node={node as any} 
+                  depth={0} 
+                  onNodeSelect={handleNodeSelect}
+                  astData={astData}
+                  selectedNode={selectedNode}
+                />
+              ))}
+              {Object.keys(sourceTree).length === 0 && (
+                <div className="px-4 py-8 text-center text-[10px] text-slate-700 italic border border-dashed border-white/5 rounded mx-2">
+                  No files indexed.<br/>Upload AST or configure API.
                 </div>
               )}
             </div>
+          </div>
+        </div>
 
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Layout Projection</h2>
-                <div className="flex bg-slate-900/80 p-0.5 rounded-lg border border-slate-800">
-                  <button onClick={() => setLayoutStyle('organic')} className={`px-2 py-1 rounded-md text-[8px] font-bold uppercase transition-all ${layoutStyle === 'organic' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Organic</button>
-                  <button onClick={() => setLayoutStyle('flow')} className={`px-2 py-1 rounded-md text-[8px] font-bold uppercase transition-all ${layoutStyle === 'flow' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Flow</button>
-                </div>
+        <div className="p-4 border-t border-white/5 shrink-0 bg-[#0d171d] space-y-2">
+          <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileUpload} />
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full py-2 bg-[#00f2ff]/5 hover:bg-[#00f2ff]/10 border border-[#00f2ff]/20 rounded text-[9px] font-black uppercase tracking-[0.3em] text-[#00f2ff] transition-all shadow-inner"
+          >
+            <i className="fas fa-file-import mr-2"></i> Local Import
+          </button>
+          {dataApiBase && (
+            <button 
+                onClick={() => syncDataFromApi(dataApiBase)}
+                className="w-full py-2 bg-[#10b981]/5 hover:bg-[#10b981]/10 border border-[#10b981]/20 rounded text-[9px] font-black uppercase tracking-[0.3em] text-[#10b981] transition-all shadow-inner"
+            >
+                <i className="fas fa-sync-alt mr-2"></i> Sync API
+            </button>
+          )}
+        </div>
+
+        <div 
+          onMouseDown={() => {
+            isResizingSidebar.current = true;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+          }}
+          className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[#00f2ff]/20 active:bg-[#00f2ff]/50 transition-colors z-40"
+        />
+      </aside>
+
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="h-14 border-b border-white/5 flex items-center px-6 gap-6 bg-[#0a1118]/90 backdrop-blur-md z-20 shrink-0">
+          <div className="flex-1 flex items-center bg-[#16222a] border border-white/5 rounded-full px-1 py-1 max-w-xl shadow-inner">
+             <div className="bg-[#0a1118] px-3 py-1 rounded-full text-[9px] font-black text-[#00f2ff] border border-[#00f2ff]/20 mr-2 uppercase">Symbol</div>
+             <input 
+              type="text" 
+              placeholder="Search AST index..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="bg-transparent border-none flex-1 px-4 text-[11px] focus:outline-none text-white font-mono placeholder-slate-700" 
+             />
+             <button className="w-8 h-8 rounded-full bg-[#00f2ff] flex items-center justify-center text-[#0a1118] text-[10px] shadow-lg shadow-[#00f2ff]/20"><i className="fas fa-filter"></i></button>
+          </div>
+          
+          <div className="flex items-center bg-[#16222a] border border-white/5 rounded px-2 gap-1">
+             {(['force', 'dagre', 'radial', 'circlePacking'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  className={`px-3 py-1 text-[8px] font-black uppercase tracking-widest transition-all rounded ${viewMode === mode ? 'bg-[#00f2ff] text-[#0a1118] shadow-[0_0_10px_#00f2ff]' : 'hover:bg-white/5'}`}
+                >
+                  {mode.replace(/([A-Z])/g, ' $1')}
+                </button>
+             ))}
+          </div>
+
+          <div className="ml-auto flex gap-5 items-center">
+             <div className="flex flex-col items-end">
+                <span className="text-[10px] text-white font-bold leading-none">Graph Mode</span>
+                <span className="text-[8px] text-[#10b981] font-black uppercase tracking-widest">{viewMode.toUpperCase()}_v4</span>
+             </div>
+             <div className="h-8 w-px bg-white/5"></div>
+             <i 
+                className="fas fa-cog text-slate-600 hover:text-white cursor-pointer transition-colors text-xs"
+                onClick={() => setIsSettingsOpen(true)}
+             ></i>
+          </div>
+        </header>
+
+        <div className="flex-1 flex min-h-0">
+          <div className="flex-1 relative dot-grid overflow-hidden bg-[#0a1118]">
+            <div className="absolute top-4 left-4 z-10 p-3 bg-[#0d171d]/95 backdrop-blur-xl border border-white/10 rounded shadow-2xl min-w-[160px]">
+              <h3 className="text-[8px] font-black text-white/40 uppercase tracking-[0.2em] mb-3 flex items-center justify-between">
+                <span>MOUNTED ASSETS</span>
+                <span className="text-[#00f2ff]">{Object.keys(sandboxFiles).length}</span>
+              </h3>
+              <div className="space-y-1.5 max-h-[200px] overflow-y-auto custom-scrollbar">
+                 {Object.keys(sandboxFiles).map(f => (
+                   <div key={f} className="text-[9px] font-mono text-[#00f2ff]/70 flex items-center gap-2">
+                      <div className="w-1 h-1 rounded-full bg-[#00f2ff]/40 shadow-[0_0_5px_#00f2ff]"></div> {f}
+                   </div>
+                 ))}
+                 {Object.keys(sandboxFiles).length === 0 && <span className="text-[9px] text-slate-700 italic">Local cache empty</span>}
               </div>
             </div>
+            <TreeVisualizer 
+              data={astData} 
+              onNodeSelect={handleNodeSelect} 
+              onNodeHover={() => {}} 
+              mode={viewMode} 
+              layoutStyle="organic" 
+              selectedId={selectedNode?.id} 
+            />
+          </div>
 
-            {selectedNode && (
-              <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="text-[9px] font-black text-indigo-400 mb-1 uppercase tracking-widest">Symbol Path</div>
-                <div className="text-[11px] font-mono text-white break-all mb-4 leading-relaxed">{selectedNode.id}</div>
+          <aside 
+            style={{ width: codePanelWidth }}
+            className="code-panel flex flex-col shrink-0 border-l border-white/10 shadow-2xl z-10 relative bg-[#0d171d]"
+          >
+            <div 
+              onMouseDown={() => {
+                isResizingCode.current = true;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+              }}
+              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[#00f2ff]/20 active:bg-[#00f2ff]/50 transition-colors z-40"
+            />
+
+            <header className="h-12 px-5 border-b border-white/5 flex items-center justify-between bg-[#0a1118] shrink-0">
+              <div className="flex items-center gap-3 overflow-hidden mr-4">
+                 <i className="fas fa-terminal text-[#00f2ff] text-[12px]"></i>
+                 <span className="text-[10px] font-mono text-slate-300 truncate uppercase tracking-tighter">{selectedNode?.id || "IDLE"}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                 <div className="text-[8px] font-black px-2 py-0.5 rounded bg-[#00f2ff]/5 border border-[#00f2ff]/20 text-[#00f2ff] uppercase tracking-widest">
+                    {selectedNode?.kind || "raw"}
+                 </div>
+              </div>
+            </header>
+            
+            <div className="flex-1 overflow-auto custom-scrollbar">
+               {renderCode()}
+            </div>
+
+            <div className="h-64 border-t border-white/10 p-5 bg-[#0a1118] shadow-2xl flex flex-col shrink-0">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                   <div className="w-2 h-2 rounded-full bg-[#00f2ff] animate-pulse shadow-[0_0_8px_#00f2ff]"></div>
+                   <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/90 italic">GenAI SYNTHESIS</h3>
+                </div>
                 <button 
-                  onClick={() => onAnalyze(selectedNode)}
-                  disabled={isInsightLoading}
-                  className="w-full py-2.5 bg-indigo-600 rounded-lg text-[10px] font-black uppercase tracking-widest text-white hover:bg-indigo-500 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                  onClick={() => {
+                    setIsInsightLoading(true);
+                    getGeminiInsight(selectedNode).then(i => {
+                      setNodeInsight(i);
+                      setIsInsightLoading(false);
+                    }).catch(() => {
+                      setIsInsightLoading(false);
+                      setNodeInsight("Analysis connection failed.");
+                    });
+                  }}
+                  disabled={isInsightLoading || !selectedNode}
+                  className="px-4 py-2 bg-[#00f2ff] text-[#0a1118] rounded-sm text-[9px] font-black uppercase tracking-widest hover:brightness-110 disabled:opacity-20 transition-all shadow-[0_4px_15_rgba(0,242,255,0.2)]"
                 >
-                  {isInsightLoading && <i className="fas fa-circle-notch animate-spin"></i>}
-                  {isInsightLoading ? 'Analyzing...' : 'Analyze Architecture'}
+                  {isInsightLoading ? <i className="fas fa-circle-notch animate-spin"></i> : "Generate Insights"}
                 </button>
-                {nodeInsight && (
-                  <div className="mt-4 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg animate-in fade-in duration-500">
-                    <p className="text-[11px] text-slate-300 italic leading-relaxed">{nodeInsight}</p>
+              </div>
+              <div className="flex-1 bg-[#0d171d] p-4 rounded border border-white/5 text-[11px] text-slate-400 leading-relaxed overflow-y-auto custom-scrollbar font-mono">
+                {nodeInsight ? nodeInsight : (
+                  <div className="flex flex-col items-center justify-center h-full opacity-10 gap-3 grayscale">
+                    <i className="fas fa-brain text-4xl"></i>
+                    <p className="text-[10px] uppercase font-black tracking-[0.4em]">Inference Engine Standby</p>
                   </div>
                 )}
               </div>
-            )}
-          </div>
-        )}
-      </aside>
+            </div>
+          </aside>
+        </div>
 
-      <main className="flex-1 relative bg-[#020617]">
-        <header className="absolute top-6 left-8 z-30 pointer-events-auto">
-          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="w-10 h-10 flex items-center justify-center bg-slate-900/90 backdrop-blur border border-slate-800 rounded-xl text-slate-400 hover:text-white transition-all shadow-xl">
-            <i className={`fas ${isSidebarOpen ? 'fa-indent' : 'fa-outdent'}`}></i>
-          </button>
-        </header>
-
-        <TreeVisualizer data={astData} onNodeSelect={handleNodeSelect} onNodeHover={setHoveredNode} mode={viewMode} layoutStyle={layoutStyle} selectedId={selectedNode?.id} />
-        
-        {hoveredNode && (
-          <div className="absolute bottom-8 right-8 p-4 bg-slate-900/95 backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl z-40 pointer-events-none animate-in fade-in zoom-in-95 duration-200">
-            <div className="text-[11px] font-mono text-white">{hoveredNode.id}</div>
+        <footer className="h-10 border-t border-white/5 flex items-center px-6 gap-8 bg-[#0a1118] text-[9px] shrink-0 font-mono tracking-widest">
+          <div className="text-slate-600">ARTIFACTS: <span className="text-[#00f2ff] font-bold">{(astData as FlatGraph)?.nodes?.length || 0}</span></div>
+          <div className="text-slate-600">RELATIONS: <span className="text-[#00f2ff] font-bold">{(astData as FlatGraph)?.links?.length || 0}</span></div>
+          <div className="text-slate-600">ENDPOINT: <span className="text-[#10b981] font-bold uppercase truncate max-w-[100px]">{dataApiBase ? new URL(dataApiBase).hostname : 'NONE'}</span></div>
+          <div className="ml-auto flex items-center gap-3 text-slate-700">
+             <span className="uppercase tracking-tighter font-black italic">Gem-Code-V2.1</span>
+             <div className="w-1.5 h-1.5 rounded-full bg-slate-800"></div>
           </div>
-        )}
-      </main>
+        </footer>
+      </div>
+
+      {/* Settings Modal */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#000]/80 backdrop-blur-sm p-4">
+          <div className="bg-[#0d171d] border border-white/10 rounded-lg shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="p-6 border-b border-white/5 flex items-center justify-between">
+               <h3 className="text-sm font-black uppercase tracking-widest text-white">System Configuration</h3>
+               <button onClick={() => setIsSettingsOpen(false)} className="text-slate-500 hover:text-white transition-colors"><i className="fas fa-times"></i></button>
+            </div>
+            <div className="p-6 space-y-4">
+               <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Data API Base URL</label>
+                  <input 
+                    type="text" 
+                    value={dataApiBase}
+                    onChange={(e) => setDataApiBase(e.target.value)}
+                    placeholder="http://localhost:8080"
+                    className="w-full bg-[#0a1118] border border-white/10 rounded px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#00f2ff]/50 font-mono"
+                  />
+                  <p className="mt-2 text-[9px] text-slate-600 leading-normal">
+                    This endpoint will be used to fetch /v1/projects, /v1/files, /v1/query, and /v1/source.
+                  </p>
+               </div>
+            </div>
+            <div className="p-6 bg-[#0a1118]/50 flex justify-end gap-3">
+                <button 
+                  onClick={() => syncDataFromApi(dataApiBase)}
+                  className="px-6 py-2 bg-[#10b981] text-[#0a1118] rounded-sm text-[9px] font-black uppercase tracking-widest hover:brightness-110 transition-all"
+                >
+                 Save & Sync
+               </button>
+               <button 
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="px-6 py-2 bg-slate-800 text-white rounded-sm text-[9px] font-black uppercase tracking-widest hover:bg-slate-700 transition-all"
+               >
+                 Close
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import TreeVisualizer from './components/TreeVisualizer';
 import { ASTNode, FlatGraph } from './types';
 import { getGeminiInsight } from './services/geminiService';
@@ -32,28 +32,54 @@ const App: React.FC = () => {
   const [layoutStyle, setLayoutStyle] = useState<LayoutStyle>('organic');
   const [isInsightLoading, setIsInsightLoading] = useState(false);
   const [nodeInsight, setNodeInsight] = useState<string | null>(null);
+  
+  // Track latest request to prevent race conditions
+  const latestRequestId = useRef<number>(0);
 
   const filteredNodes = useMemo(() => {
-    if (!searchQuery) return [];
-    const nodes = 'nodes' in astData ? astData.nodes : [];
-    return nodes.filter(n => n.id.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 8);
+    if (!searchQuery || !('nodes' in astData)) return [];
+    const query = searchQuery.toLowerCase();
+    
+    return astData.nodes
+      .map(node => {
+        let score = 0;
+        const id = node.id.toLowerCase();
+        if (id === query) score = 100;
+        else if (id.startsWith(query)) score = 50;
+        else if (id.includes(query)) score = 10;
+        return { node, score };
+      })
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+      .map(item => item.node);
   }, [astData, searchQuery]);
 
-  const handleNodeSelect = (node: any) => {
+  const handleNodeSelect = useCallback((node: any) => {
     setSelectedNode(node);
     setSearchQuery('');
     setNodeInsight(null);
-  };
+  }, []);
 
   const onAnalyze = async (node: any) => {
+    const requestId = ++latestRequestId.current;
     setIsInsightLoading(true);
+    setNodeInsight(null);
+    
     try {
       const insight = await getGeminiInsight(node);
-      setNodeInsight(insight);
+      // Only update state if this is still the current request
+      if (requestId === latestRequestId.current) {
+        setNodeInsight(insight);
+      }
     } catch (e) {
-      setNodeInsight("Analysis failed.");
+      if (requestId === latestRequestId.current) {
+        setNodeInsight("Analysis failed.");
+      }
     } finally {
-      setIsInsightLoading(false);
+      if (requestId === latestRequestId.current) {
+        setIsInsightLoading(false);
+      }
     }
   };
 
@@ -61,7 +87,7 @@ const App: React.FC = () => {
     <div className="flex h-screen w-screen bg-[#020617] overflow-hidden font-sans text-slate-200">
       <aside className={`${isSidebarOpen ? 'w-96' : 'w-0'} transition-all duration-300 glass-panel h-full flex flex-col z-20 border-r border-slate-800/50`}>
         {isSidebarOpen && (
-          <div className="flex flex-col h-full p-6 overflow-y-auto">
+          <div className="flex flex-col h-full p-6 overflow-y-auto scrollbar-hide">
             <div className="flex items-center gap-3 mb-8">
               <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
                 <i className="fas fa-gem text-lg text-white"></i>
@@ -90,23 +116,29 @@ const App: React.FC = () => {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Layout Projection</h2>
                 <div className="flex bg-slate-900/80 p-0.5 rounded-lg border border-slate-800">
-                  <button onClick={() => setLayoutStyle('organic')} className={`px-2 py-1 rounded-md text-[8px] font-bold uppercase ${layoutStyle === 'organic' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Organic</button>
-                  <button onClick={() => setLayoutStyle('flow')} className={`px-2 py-1 rounded-md text-[8px] font-bold uppercase ${layoutStyle === 'flow' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Flow</button>
+                  <button onClick={() => setLayoutStyle('organic')} className={`px-2 py-1 rounded-md text-[8px] font-bold uppercase transition-all ${layoutStyle === 'organic' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Organic</button>
+                  <button onClick={() => setLayoutStyle('flow')} className={`px-2 py-1 rounded-md text-[8px] font-bold uppercase transition-all ${layoutStyle === 'flow' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Flow</button>
                 </div>
               </div>
             </div>
 
             {selectedNode && (
-              <div className="p-4 bg-slate-900 rounded-xl border border-slate-800">
-                <div className="text-[11px] font-mono text-white break-all mb-4">{selectedNode.id}</div>
+              <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="text-[9px] font-black text-indigo-400 mb-1 uppercase tracking-widest">Symbol Path</div>
+                <div className="text-[11px] font-mono text-white break-all mb-4 leading-relaxed">{selectedNode.id}</div>
                 <button 
                   onClick={() => onAnalyze(selectedNode)}
                   disabled={isInsightLoading}
-                  className="w-full py-2 bg-indigo-600 rounded-lg text-[10px] font-black uppercase text-white hover:bg-indigo-500 transition-all"
+                  className="w-full py-2.5 bg-indigo-600 rounded-lg text-[10px] font-black uppercase tracking-widest text-white hover:bg-indigo-500 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                 >
+                  {isInsightLoading && <i className="fas fa-circle-notch animate-spin"></i>}
                   {isInsightLoading ? 'Analyzing...' : 'Analyze Architecture'}
                 </button>
-                {nodeInsight && <p className="mt-4 text-[11px] text-slate-400 italic">{nodeInsight}</p>}
+                {nodeInsight && (
+                  <div className="mt-4 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg animate-in fade-in duration-500">
+                    <p className="text-[11px] text-slate-300 italic leading-relaxed">{nodeInsight}</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -114,8 +146,8 @@ const App: React.FC = () => {
       </aside>
 
       <main className="flex-1 relative bg-[#020617]">
-        <header className="absolute top-6 left-8 z-30 pointer-events-none">
-          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="w-10 h-10 flex items-center justify-center bg-slate-900/90 border border-slate-800 rounded-xl text-slate-400 pointer-events-auto hover:text-white transition-all shadow-xl">
+        <header className="absolute top-6 left-8 z-30 pointer-events-auto">
+          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="w-10 h-10 flex items-center justify-center bg-slate-900/90 backdrop-blur border border-slate-800 rounded-xl text-slate-400 hover:text-white transition-all shadow-xl">
             <i className={`fas ${isSidebarOpen ? 'fa-indent' : 'fa-outdent'}`}></i>
           </button>
         </header>
@@ -123,8 +155,8 @@ const App: React.FC = () => {
         <TreeVisualizer data={astData} onNodeSelect={handleNodeSelect} onNodeHover={setHoveredNode} mode={viewMode} layoutStyle={layoutStyle} selectedId={selectedNode?.id} />
         
         {hoveredNode && (
-          <div className="absolute bottom-8 right-8 p-4 bg-slate-900/95 backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl z-40 pointer-events-none min-w-[200px]">
-            <div className="text-[11px] font-mono text-white mb-2">{hoveredNode.id}</div>
+          <div className="absolute bottom-8 right-8 p-4 bg-slate-900/95 backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl z-40 pointer-events-none animate-in fade-in zoom-in-95 duration-200">
+            <div className="text-[11px] font-mono text-white">{hoveredNode.id}</div>
           </div>
         )}
       </main>

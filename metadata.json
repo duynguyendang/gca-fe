@@ -1,0 +1,5 @@
+{
+  "name": "Gem Code Analysis",
+  "description": "A high-performance visualizer for code Abstract Syntax Trees (AST). Upload JSON exports of your code structure and explore them using interactive D3.js force-directed graphs and hierarchical layouts.",
+  "requestFramePermissions": []
+}

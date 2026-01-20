@@ -24,10 +24,8 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
   useEffect(() => {
     if (!processedData || !containerRef.current) return;
     
-    // Set rendering state to true before heavy computation
     setIsRendering(true);
 
-    // 1. Cleanup previous resources
     if (simulationRef.current) {
       simulationRef.current.stop();
       simulationRef.current.nodes([]);
@@ -37,13 +35,11 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
     const height = containerRef.current.clientHeight;
     const svg = d3.select(svgRef.current);
     
-    // Explicitly clear listeners and content
     svg.on(".zoom", null);
     svg.selectAll("*").remove();
     
     const g = svg.append("g");
 
-    // 2. Setup static elements
     svg.append("defs").selectAll("marker").data(["end"]).join("marker")
       .attr("id", "arrow").attr("viewBox", "0 -5 10 10").attr("refX", 25).attr("refY", 0)
       .attr("markerWidth", 5).attr("markerHeight", 5).attr("orient", "auto")
@@ -53,7 +49,6 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
       .on("zoom", (e) => g.attr("transform", e.transform));
     svg.call(zoom);
 
-    // 3. Mode-specific rendering
     let simulation: d3.Simulation<any, any> | undefined;
     if (mode === 'force') {
       const result = renderNetwork(g, width, height, zoom);
@@ -61,11 +56,8 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
       simulationRef.current = simulation;
     }
 
-    // Set rendering false after initial sync render is done
-    // D3 transitions/simulations happen asynchronously but the setup is sync
     const timer = setTimeout(() => setIsRendering(false), 300);
 
-    // Cleanup function for unmount or re-render
     return () => {
       clearTimeout(timer);
       if (simulationRef.current) {
@@ -83,18 +75,29 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
       nodes.forEach((n: any) => { n.fx = null; n.fy = null; });
     } else {
       const ranks = new Map<string, number>();
-      const calculateRank = (id: string, visited = new Set<string>()): number => {
+      
+      const calculateRank = (id: string, visited = new Set<string>(), depth = 0): number => {
         if (ranks.has(id)) return ranks.get(id)!;
-        if (visited.has(id)) return 0;
+        if (visited.has(id)) return depth; 
+        if (depth > 50) return depth; // Safety cap for deep structures or complex cycles
+
         visited.add(id);
         const callers = links.filter(l => (l.target as any).id === id);
-        const r = callers.length === 0 ? 0 : Math.max(...callers.map(l => calculateRank((l.source as any).id, visited))) + 1;
+        
+        if (callers.length === 0) {
+          ranks.set(id, 0);
+          return 0;
+        }
+
+        const r = Math.max(...callers.map(l => calculateRank((l.source as any).id, new Set(visited), depth + 1))) + 1;
         ranks.set(id, r);
         return r;
       };
+
       nodes.forEach((n: any) => calculateRank(n.id));
       const maxRank = Math.max(...Array.from(ranks.values()), 1);
       const rankGroups = d3.group(nodes, (n: any) => ranks.get(n.id) || 0);
+      
       rankGroups.forEach((group, rank) => {
         const xStep = width / (group.length + 1);
         group.forEach((n: any, i) => {

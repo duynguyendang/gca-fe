@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useCallback, useRef } from 'react';
-import TreeVisualizer from './components/TreeVisualizer';
+import TreeVisualizer from './components/TreeVisualizer/index';
 import { ASTNode, FlatGraph } from './types';
 import { getGeminiInsight } from './services/geminiService';
 
@@ -33,7 +33,6 @@ const App: React.FC = () => {
   const [isInsightLoading, setIsInsightLoading] = useState(false);
   const [nodeInsight, setNodeInsight] = useState<string | null>(null);
   
-  // Track latest request to prevent race conditions
   const latestRequestId = useRef<number>(0);
 
   const filteredNodes = useMemo(() => {
@@ -68,7 +67,6 @@ const App: React.FC = () => {
     
     try {
       const insight = await getGeminiInsight(node);
-      // Only update state if this is still the current request
       if (requestId === latestRequestId.current) {
         setNodeInsight(insight);
       }

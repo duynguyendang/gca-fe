@@ -6,8 +6,9 @@ export const useGraphData = (data: ASTNode | FlatGraph) => {
   return useMemo(() => {
     if (!data || !('nodes' in data)) return null;
     
-    // Create a Map for O(1) lookup
-    const nodeMap = new Map(data.nodes.map(n => [n.id, { ...n }]));
+    // IMPORTANT: Do NOT clone nodes with { ...n }. D3 mutates objects with x, y, vx, vy.
+    // Preserving the original reference allows D3 to maintain state across re-renders.
+    const nodeMap = new Map(data.nodes.map(n => [n.id, n]));
     const nodes = Array.from(nodeMap.values());
 
     const links = data.links.map(d => {

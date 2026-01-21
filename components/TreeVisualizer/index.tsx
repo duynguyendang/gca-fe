@@ -14,17 +14,36 @@ interface TreeVisualizerProps {
 }
 
 const buildHierarchy = (nodes: any[]) => {
-  const root: any = { name: "root", children: {} };
+  const root: any = { name: "root", children: {}, _isFolder: true };
   nodes.forEach(node => {
-    const parts = node.id.split('/');
+    if (!node || !node.id) return;
+    const idPath = node.id.split(':')[0];
+    const parts = idPath.split('/').filter(Boolean);
+    if (parts.length === 0) return;
     let current = root;
     parts.forEach((part: string, i: number) => {
       const isFile = i === parts.length - 1;
+      if (!current.children) current.children = {};
       if (!current.children[part]) {
-        current.children[part] = { name: part, children: {} };
+        current.children[part] = { 
+          name: part, 
+          children: {}, 
+          _isFolder: !isFile,
+          _isFile: isFile,
+          _path: parts.slice(0, i + 1).join('/')
+        };
       }
       if (isFile) {
-        current.children[part] = { ...node, name: part, value: (node.end_line - node.start_line) || 1 };
+        const existing = current.children[part];
+        current.children[part] = { 
+          ...existing,
+          ...node, 
+          name: part, 
+          value: (node.end_line - node.start_line) || (node.value || existing.value) || 1,
+          _isFolder: false,
+          _isFile: true,
+          _path: parts.join('/')
+        };
       }
       current = current.children[part];
     });
@@ -32,12 +51,17 @@ const buildHierarchy = (nodes: any[]) => {
 
   const convert = (node: any): any => {
     const childrenArr = Object.values(node.children || {}).map(convert);
-    return childrenArr.length > 0 
-      ? { name: node.name, children: childrenArr } 
-      : { ...node };
+    const hasChildren = childrenArr.length > 0;
+    return {
+      name: node.name,
+      _isFolder: node._isFolder,
+      _isFile: node._isFile,
+      _path: node._path,
+      ...(hasChildren ? { children: childrenArr } : { value: node.value || 1 })
+    };
   };
 
-  return { name: "root", children: Object.values(root.children).map(convert) };
+  return { name: "root", _isFolder: true, children: Object.values(root.children).map(convert) };
 };
 
 const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onNodeHover, mode, selectedId }) => {
@@ -176,29 +200,59 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
     }
 
     else if (mode === 'circlePacking') {
+      console.log('circlePacking mode', nodes.length);
       const hierarchy = d3.hierarchy(buildHierarchy(nodes))
         .sum(d => d.value || 1)
         .sort((a, b) => (b.value || 0) - (a.value || 0));
+      console.log('hierarchy', hierarchy);
 
       d3.pack().size([width - 40, height - 40]).padding(10)(hierarchy);
 
-      const leaf = g.selectAll("g").data(hierarchy.descendants()).join("g")
-        .attr("transform", d => `translate(${d.x + 20},${d.y + 20})`);
+      const node = g.selectAll("g").data(hierarchy.descendants()).join("g")
+        .attr("transform", d => `translate(${d.x + 20},${d.y + 20})`)
+        .attr("cursor", "pointer")
+        .on("click", (e, d) => {
+          const nodeData = d.data;
+          if (nodeData._path || nodeData.id) {
+            onNodeSelect({ 
+              id: nodeData._path || nodeData.id, 
+              name: nodeData.name,
+              kind: nodeData.kind || (d.children ? 'package' : 'file'),
+              _isFolder: !!d.children,
+              _isFile: nodeData._isFile
+            });
+          }
+        });
 
-      leaf.append("circle")
+      node.append("circle")
         .attr("r", d => d.r)
         .attr("fill", d => d.children ? "rgba(255,255,255,0.02)" : "#0d171d")
-        .attr("stroke", d => d.children ? "rgba(255,255,255,0.05)" : getAccent((d.data as any).kind))
-        .attr("stroke-width", 1)
-        .on("click", (e, d) => !d.children && onNodeSelect(d.data));
+        .attr("stroke", d => d.children ? "rgba(255,255,255,0.08)" : getAccent((d.data as any).kind))
+        .attr("stroke-width", 1);
 
-      leaf.filter(d => !d.children && d.r > 15).append("text")
-        .attr("text-anchor", "middle").attr("dy", "0.3em").attr("font-size", d => Math.min(d.r / 3, 10))
-        .attr("fill", "white").text(d => (d.data as any).name);
+      const label = node.filter(d => d.r > 20).append("text")
+        .attr("text-anchor", "middle")
+        .attr("dy", "0.35em")
+        .attr("fill", "white")
+        .style("pointer-events", "none")
+        .style("text-shadow", "0 1px 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5)")
+        .attr("opacity", d => d.r > 20 ? 1 : 0);
+
+      label.filter(d => d.children)
+        .attr("font-size", d => Math.min(d.r / 4, 14))
+        .attr("font-weight", "700")
+        .text(d => d.data.name);
+
+      label.filter(d => !d.children)
+        .attr("font-size", d => Math.min(d.r / 3, 11))
+        .attr("font-weight", "400")
+        .text(d => (d.data as any).name);
     }
     
     else if (mode === 'radial') {
+      console.log('radial mode', nodes.length);
       const hierarchy = d3.hierarchy(buildHierarchy(nodes));
+      console.log('hierarchy', hierarchy);
       const tree = d3.tree().size([2 * Math.PI, Math.min(width, height) / 2 - 100]);
       tree(hierarchy);
 
@@ -213,11 +267,24 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
         .on("click", (e, d) => onNodeSelect(d.data));
 
       nodeGroup.append("circle").attr("r", 4).attr("fill", (d: any) => d.children ? "white" : getAccent((d.data as any).kind));
-      nodeGroup.filter(d => !!(d.data as any).name).append("text")
-        .attr("dy", "0.31em").attr("x", (d: any) => d.x < Math.PI ? 6 : -6)
+
+      const label = nodeGroup.filter(d => (d.data as any).name).append("text")
+        .attr("dy", "0.31em")
+        .attr("x", (d: any) => d.x < Math.PI ? 6 : -6)
         .attr("text-anchor", (d: any) => d.x < Math.PI ? "start" : "end")
         .attr("transform", (d: any) => d.x >= Math.PI ? "rotate(180)" : null)
-        .attr("font-size", "8px").attr("fill", "rgba(255,255,255,0.5)").text((d: any) => (d.data as any).name);
+        .attr("fill", "rgba(255,255,255,0.7)")
+        .style("text-shadow", "0 1px 4px rgba(0,0,0,0.8)");
+
+      label.filter(d => d.children)
+        .attr("font-size", "10px")
+        .attr("font-weight", "700")
+        .text(d => (d.data as any).name);
+
+      label.filter(d => !d.children)
+        .attr("font-size", "8px")
+        .attr("font-weight", "400")
+        .text(d => (d.data as any).name);
     }
 
   }, [processedData, mode, selectedId, onNodeSelect, onNodeHover]);

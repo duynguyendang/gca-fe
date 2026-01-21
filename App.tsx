@@ -1,6 +1,7 @@
 
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import TreeVisualizer from './components/TreeVisualizer/index';
+import ClassDiagramCanvas from './components/ClassDiagramCanvas';
 import { ASTNode, FlatGraph } from './types';
 import { getGeminiInsight } from './services/geminiService';
 
@@ -69,19 +70,31 @@ const stratifyPaths = (nodes: any[], filePaths: string[] = []) => {
   return root.children;
 };
 
-const HighlightedCode = ({ code, language, startLine }: { code: string, language: string, startLine: number }) => {
+const HighlightedCode = React.forwardRef<HTMLDivElement, { code: string, language: string, startLine: number, scrollToLine?: number }>(({ code, language, startLine, scrollToLine }, ref) => {
   const codeRef = useRef<HTMLElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  
   useEffect(() => {
     if (codeRef.current && typeof Prism !== 'undefined') {
       try { Prism.highlightElement(codeRef.current); } catch (e) {}
     }
   }, [code, language]);
   
+  useEffect(() => {
+    if (scrollToLine && containerRef.current) {
+      const lineElements = containerRef.current.querySelectorAll('.code-line');
+      const targetLine = lineElements[scrollToLine - startLine];
+      if (targetLine) {
+        targetLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [scrollToLine, startLine]);
+  
   const lines = (code || "").split('\n');
   return (
-    <div className="flex bg-[#0d171d] min-h-full font-mono text-[11px]">
+    <div ref={containerRef} className="flex bg-[#0d171d] min-h-full font-mono text-[11px]">
       <div className="bg-[#0a1118] text-slate-700 text-right pr-3 pl-2 select-none border-r border-white/5 py-4 min-w-[3.5rem]">
-        {lines.map((_, i) => <div key={i} className="leading-5 h-5">{startLine + i}</div>)}
+        {lines.map((_, i) => <div key={i} className="leading-5 h-5 code-line">{startLine + i}</div>)}
       </div>
       <div className="flex-1 overflow-x-auto py-4 px-4 relative">
         <pre className="m-0 p-0 bg-transparent">
@@ -90,7 +103,7 @@ const HighlightedCode = ({ code, language, startLine }: { code: string, language
       </div>
     </div>
   );
-};
+});
 
 interface FileTreeItemProps {
   name: string;
@@ -215,11 +228,15 @@ const App: React.FC = () => {
   const [availableProjects, setAvailableProjects] = useState<Array<{id: string; name: string; description?: string}>>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchMode, setSearchMode] = useState<'symbol' | 'query'>('symbol');
-  const [symbolSearchResults, setSymbolSearchResults] = useState<string[]>([]);
   const [queryResults, setQueryResults] = useState<any>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  // Class Diagram state
+  const [fileScopedNodes, setFileScopedNodes] = useState<any[]>([]);
+  const [fileScopedLinks, setFileScopedLinks] = useState<any[]>([]);
+  const [showArchitecturePanel, setShowArchitecturePanel] = useState(false);
+  const codeScrollRef = useRef<HTMLDivElement>(null);
   
   // View Modes: force, dagre, radial, circlePacking
   const [viewMode, setViewMode] = useState<'force' | 'dagre' | 'radial' | 'circlePacking'>('force');
@@ -231,15 +248,27 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    sessionStorage.setItem('gca_ast_data', JSON.stringify(astData));
+    try {
+      sessionStorage.setItem('gca_ast_data', JSON.stringify(astData));
+    } catch (e) {
+      console.warn('Failed to save AST data to session storage:', e);
+    }
   }, [astData]);
 
   useEffect(() => {
-    sessionStorage.setItem('gca_sandbox_files', JSON.stringify(sandboxFiles));
+    try {
+      sessionStorage.setItem('gca_sandbox_files', JSON.stringify(sandboxFiles));
+    } catch (e) {
+      console.warn('Failed to save sandbox files to session storage:', e);
+    }
   }, [sandboxFiles]);
 
   useEffect(() => {
-    sessionStorage.setItem('gca_data_api_base', dataApiBase);
+    try {
+      sessionStorage.setItem('gca_data_api_base', dataApiBase);
+    } catch (e) {
+      console.warn('Failed to save API base to session storage:', e);
+    }
   }, [dataApiBase]);
 
   useEffect(() => {
@@ -279,7 +308,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const syncDataFromApi = async (baseUrl: string, projectId?: string) => {
+  const syncDataFromApi = async (baseUrl: string, projectId?: string, onComplete?: () => void) => {
     if (!baseUrl) return;
     setIsDataSyncing(true);
     setSyncError(null);
@@ -290,6 +319,7 @@ const App: React.FC = () => {
       const projectsRes = await fetch(`${cleanBase}/v1/projects`);
       if (!projectsRes.ok) {
         setSyncError('Failed to fetch projects');
+        setIsDataSyncing(false);
         return;
       }
       
@@ -305,6 +335,7 @@ const App: React.FC = () => {
       
       if (!projectId) {
         setSyncError('No projects available');
+        setIsDataSyncing(false);
         return;
       }
       
@@ -315,6 +346,7 @@ const App: React.FC = () => {
       const filesRes = await fetch(filesUrl);
       if (!filesRes.ok) {
         setSyncError(`Failed to fetch files: ${filesRes.statusText}`);
+        setIsDataSyncing(false);
         return;
       }
       
@@ -372,6 +404,10 @@ const App: React.FC = () => {
       } catch (queryErr) {
         console.log('Query endpoint not available, using file-based AST');
       }
+
+      // Success - close modal and call onComplete
+      setIsSettingsOpen(false);
+      if (onComplete) onComplete();
     } catch (err: any) {
       console.error("API Sync Error:", err);
       setSyncError(err.message || 'Unknown error during sync');
@@ -383,7 +419,6 @@ const App: React.FC = () => {
   // Search symbols or run Datalog query via API
   const searchSymbols = useCallback(async (query: string) => {
     if (!dataApiBase || !selectedProjectId || !query || query.length < 1) {
-      setSymbolSearchResults([]);
       setQueryResults(null);
       return;
     }
@@ -393,60 +428,139 @@ const App: React.FC = () => {
     const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
     
     try {
-      if (searchMode === 'query') {
-        // POST to /v1/query for Datalog queries
-        const res = await fetch(`${cleanBase}/v1/query?project=${encodeURIComponent(selectedProjectId)}&hydrate=true`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setQueryResults(data);
-          if (data.nodes && data.nodes.length > 0) {
-            // Update AST with query results
-            setAstData(prev => ({
-              nodes: data.nodes.map((n: any) => ({ ...n, _project: selectedProjectId })),
-              links: data.links || []
-            }));
-          }
-        }
-      } else {
-        // GET to /v1/symbols for fuzzy search
-        const res = await fetch(`${cleanBase}/v1/symbols?project=${encodeURIComponent(selectedProjectId)}&q=${encodeURIComponent(query)}`);
-        if (res.ok) {
-          const data = await res.json();
-          setSymbolSearchResults(data.symbols || []);
+      const res = await fetch(`${cleanBase}/v1/query?project=${encodeURIComponent(selectedProjectId)}&hydrate=true`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setQueryResults(data);
+        if (data.nodes && data.nodes.length > 0) {
+          setAstData(prev => ({
+            nodes: data.nodes.map((n: any) => ({ ...n, _project: selectedProjectId })),
+            links: data.links || []
+          }));
         }
       }
     } catch (e) {
       console.error("Search error:", e);
-      setSymbolSearchResults([]);
       setQueryResults(null);
     } finally {
       setIsSearching(false);
     }
-  }, [dataApiBase, selectedProjectId, searchMode]);
+  }, [dataApiBase, selectedProjectId]);
 
   const handleNodeSelect = useCallback(async (node: any) => {
     setSelectedNode(node);
     setNodeInsight(null);
     
     const projectId = node._project || selectedProjectId;
+    const filePath = node._isFile ? node.id : (node.id ? node.id.split(':')[0] : null);
     
-    if (dataApiBase && projectId && !node.code && node.id) {
+    if (dataApiBase && projectId && filePath) {
       const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-      try {
-        const res = await fetch(`${cleanBase}/v1/source?project=${encodeURIComponent(projectId)}&id=${encodeURIComponent(node.id)}`);
-        if (res.ok) {
-          const sourceCode = await res.text();
+      
+      Promise.all([
+        !node.code ? fetch(`${cleanBase}/v1/source?project=${encodeURIComponent(projectId)}&id=${encodeURIComponent(filePath)}`)
+          .then(r => r.ok ? r.text() : null) : Promise.resolve(node.code),
+        fetch(`${cleanBase}/v1/query?project=${encodeURIComponent(projectId)}&hydrate=true`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: `and(triple(?s, "defines", ?o), regex(?s, "${filePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}", "contains"))` })
+        }).then(r => r.ok ? r.json() : null)
+      ]).then(([sourceCode, data]) => {
+        if (sourceCode) {
           setSelectedNode((prev: any) => ({ ...prev, code: sourceCode, _project: projectId }));
         }
-      } catch (e) { 
-        console.error("Source fetch error:", e); 
+        
+        if (data && data.nodes && data.nodes.length > 0) {
+          const filteredNodes = data.nodes.filter((n: any) => {
+            const nodeFile = n.metadata?.file || n._filePath || n.filePath;
+            return !nodeFile || nodeFile === filePath || nodeFile.startsWith(filePath);
+          });
+          
+          if (filteredNodes.length > 0) {
+            const nodesWithInDegree = filteredNodes.map((n: any, i: number) => {
+              const inDegree = data.links?.filter((l: any) => {
+                const target = typeof l.target === 'object' ? l.target.id : l.target;
+                return target === (n.id || `${filePath}:${n.name}:${i}`);
+              }).length || 0;
+              return {
+                id: n.id || `${filePath}:${n.name}:${i}`,
+                name: n.name,
+                kind: n.kind || n.type || 'func',
+                filePath: filePath,
+                start_line: n.start_line || n.metadata?.start_line,
+                end_line: n.end_line || n.metadata?.end_line,
+                parent: n.metadata?.parent || n.parent,
+                inDegree
+              };
+            });
+            
+            const diagramLinks = (data.links || [])
+              .filter((l: any) => {
+                const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+                const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+                return nodesWithInDegree.some((n: any) => n.id === sourceId || n.id === targetId);
+              })
+              .map((l: any) => ({
+                source: typeof l.source === 'object' ? l.source.id : l.source,
+                target: typeof l.target === 'object' ? l.target.id : l.target,
+                relation: l.relation || 'contains'
+              }));
+            
+            setFileScopedNodes(nodesWithInDegree);
+            setFileScopedLinks(diagramLinks);
+            setShowArchitecturePanel(true);
+          } else {
+            setFileScopedNodes([]);
+            setFileScopedLinks([]);
+          }
+        }
+      }).catch(e => {
+        console.error("Error fetching file data:", e);
+      });
+    } else if (filePath && node._isFile) {
+      const flatNodes = (astData as any)?.nodes || [];
+      const fileNodes = flatNodes.filter((n: any) => n.id && n.id.startsWith(filePath + ':'));
+      
+      if (fileNodes.length > 0) {
+        const nodesWithInDegree = fileNodes.map((n: any, i: number) => {
+          const inDegree = (astData as any).links?.filter((l: any) => {
+            const target = typeof l.target === 'object' ? l.target.id : l.target;
+            return target === n.id;
+          }).length || 0;
+          return {
+            id: n.id,
+            name: n.name,
+            kind: n.kind || n.type || 'func',
+            filePath: filePath,
+            start_line: n.start_line,
+            end_line: n.end_line,
+            parent: n.parent,
+            inDegree
+          };
+        });
+        
+        const diagramLinks = (astData as any).links
+          ?.filter((l: any) => {
+            const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+            const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+            return nodesWithInDegree.some((n: any) => n.id === sourceId || n.id === targetId);
+          })
+          .map((l: any) => ({
+            source: typeof l.source === 'object' ? l.source.id : l.source,
+            target: typeof l.target === 'object' ? l.target.id : l.target,
+            relation: l.relation || 'contains'
+          })) || [];
+        
+        setFileScopedNodes(nodesWithInDegree);
+        setFileScopedLinks(diagramLinks);
+        setShowArchitecturePanel(true);
       }
     }
-  }, [dataApiBase, selectedProjectId]);
+  }, [dataApiBase, selectedProjectId, astData]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -525,6 +639,12 @@ const App: React.FC = () => {
     return <HighlightedCode code={code || "// Code snippet missing."} language={language} startLine={selectedNode.start_line || 1} />;
   };
 
+  const handleClassDiagramNodeClick = (node: any) => {
+    if (node.start_line) {
+      setSelectedNode((prev: any) => ({ ...prev, start_line: node.start_line }));
+    }
+  };
+
   return (
     <div className="flex h-screen w-screen bg-[#0a1118] text-slate-400 overflow-hidden font-sans">
       <aside 
@@ -601,80 +721,51 @@ const App: React.FC = () => {
         />
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-14 border-b border-white/5 flex items-center px-6 gap-6 bg-[#0a1118]/90 backdrop-blur-md z-20 shrink-0">
-           <div className="flex-1 flex items-center bg-[#16222a] border border-white/5 rounded-full px-1 py-1 max-w-xl shadow-inner relative">
-              <button
-                onClick={() => setSearchMode(searchMode === 'symbol' ? 'query' : 'symbol')}
-                className={`px-3 py-1 rounded-full text-[9px] font-black border transition-all mr-2 uppercase ${
-                  searchMode === 'query' 
-                    ? 'bg-[#f59e0b] text-[#0a1118] border-[#f59e0b]' 
-                    : 'bg-[#0a1118] text-[#00f2ff] border-[#00f2ff]/20'
-                }`}
-              >
-                {searchMode === 'query' ? 'Query' : 'Symbol'}
-              </button>
-              <input 
-               type="text" 
-               placeholder={searchMode === 'query' ? 'Datalog query (e.g., triples(?s, \"calls\", ?o))...' : 'Search symbols...'} 
-               value={searchTerm}
-               onChange={(e) => {
-                 setSearchTerm(e.target.value);
-                 // Debounce search
-                 clearTimeout((e.target as any)._searchTimeout);
-                 (e.target as any)._searchTimeout = setTimeout(() => {
-                   searchSymbols(e.target.value);
-                 }, searchMode === 'query' ? 500 : 300);
-               }}
-               onKeyDown={(e) => {
-                 if (e.key === 'Enter' && searchMode === 'query' && searchTerm) {
-                   searchSymbols(searchTerm);
-                 }
-               }}
-               className="bg-transparent border-none flex-1 px-4 text-[11px] focus:outline-none text-white font-mono placeholder-slate-700" 
-              />
-              {isSearching && <i className="fas fa-circle-notch fa-spin text-[#00f2ff] text-[10px] absolute right-12"></i>}
-              
-              {/* Symbol search results dropdown */}
-              {searchMode === 'symbol' && symbolSearchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-[#0d171d] border border-white/10 rounded-lg shadow-2xl z-50 max-h-64 overflow-y-auto">
-                  {symbolSearchResults.map((symbol, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        const node = (astData as FlatGraph)?.nodes?.find((n: any) => n.id === symbol);
-                        if (node) handleNodeSelect(node);
-                        setSymbolSearchResults([]);
-                        setSearchTerm('');
-                      }}
-                      className="w-full px-4 py-2 text-left text-[10px] font-mono text-slate-300 hover:bg-[#00f2ff]/10 hover:text-[#00f2ff] border-b border-white/5 last:border-0"
-                    >
-                      {symbol}
-                    </button>
-                  ))}
-                </div>
-              )}
-              
-              {/* Query results summary */}
-              {searchMode === 'query' && queryResults && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-[#0d171d] border border-[#f59e0b]/30 rounded-lg shadow-2xl z-50 p-3">
-                  <div className="text-[10px] text-[#f59e0b] font-black uppercase tracking-widest mb-2">
-                    Query Results: {queryResults.nodes?.length || 0} nodes, {queryResults.links?.length || 0} links
-                  </div>
-                  <button
-                    onClick={() => {
-                      setSearchTerm('');
-                      setQueryResults(null);
-                    }}
-                    className="text-[9px] text-slate-500 hover:text-white"
-                  >
-                    Clear results
-                  </button>
-                </div>
-              )}
-              
-              {/* Run query button */}
-              {searchMode === 'query' && (
+       <div className="flex-1 flex flex-col min-w-0">
+         <header className="h-14 border-b border-white/5 flex items-center px-6 gap-6 bg-[#0a1118]/90 backdrop-blur-md z-20 shrink-0">
+            <div className="flex-1 flex items-center bg-[#16222a] border border-white/5 rounded-full px-1 py-1 max-w-xl shadow-inner relative">
+               <div className="px-3 py-1 rounded-full text-[9px] font-black bg-[#f59e0b] text-[#0a1118] border border-[#f59e0b] mr-2 uppercase">
+                 Query
+               </div>
+               <input 
+                type="text" 
+                placeholder='Datalog query (e.g., triples(?s, "calls", ?o))...' 
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  clearTimeout((e.target as any)._searchTimeout);
+                  (e.target as any)._searchTimeout = setTimeout(() => {
+                    searchSymbols(e.target.value);
+                  }, 500);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchTerm) {
+                    searchSymbols(searchTerm);
+                  }
+                }}
+                className="bg-transparent border-none flex-1 px-4 text-[11px] focus:outline-none text-white font-mono placeholder-slate-700" 
+               />
+               {isSearching && <i className="fas fa-circle-notch fa-spin text-[#00f2ff] text-[10px] absolute right-12"></i>}
+               
+               {/* Query results summary */}
+               {queryResults && (
+                 <div className="absolute top-full left-0 right-0 mt-2 bg-[#0d171d] border border-[#f59e0b]/30 rounded-lg shadow-2xl z-50 p-3">
+                   <div className="text-[10px] text-[#f59e0b] font-black uppercase tracking-widest mb-2">
+                     Query Results: {queryResults.nodes?.length || 0} nodes, {queryResults.links?.length || 0} links
+                   </div>
+                   <button
+                     onClick={() => {
+                       setSearchTerm('');
+                       setQueryResults(null);
+                     }}
+                     className="text-[9px] text-slate-500 hover:text-white"
+                   >
+                     Clear results
+                   </button>
+                 </div>
+               )}
+               
+                {/* Run query button */}
                 <button
                   onClick={() => searchTerm && searchSymbols(searchTerm)}
                   disabled={!searchTerm || isSearching}
@@ -682,21 +773,27 @@ const App: React.FC = () => {
                 >
                   <i className="fas fa-play"></i>
                 </button>
-              )}
-              {searchMode === 'symbol' && <button className="w-8 h-8 rounded-full bg-[#00f2ff] flex items-center justify-center text-[#0a1118] text-[10px] shadow-lg shadow-[#00f2ff]/20"><i className="fas fa-filter"></i></button>}
+             </div>
+           
+            <div className="flex items-center bg-[#16222a] border border-white/5 rounded px-2 gap-1">
+              {(['force', 'dagre', 'radial', 'circlePacking'] as const).map((mode) => (
+                 <button
+                   key={mode}
+                   onClick={() => setViewMode(mode)}
+                   className={`px-3 py-1 text-[8px] font-black uppercase tracking-widest transition-all rounded ${viewMode === mode ? 'bg-[#00f2ff] text-[#0a1118] shadow-[0_0_10px_#00f2ff]' : 'hover:bg-white/5'}`}
+                 >
+                   {mode.replace(/([A-Z])/g, ' $1')}
+                 </button>
+              ))}
+              <div className="w-px h-4 bg-white/10 mx-1"></div>
+              <button
+                onClick={() => setShowArchitecturePanel(!showArchitecturePanel)}
+                className={`px-3 py-1 text-[8px] font-black uppercase tracking-widest transition-all rounded flex items-center gap-1 ${showArchitecturePanel ? 'bg-[#10b981] text-[#0a1118]' : 'hover:bg-white/5 text-[#10b981]'}`}
+              >
+                <i className="fas fa-sitemap text-[8px]"></i>
+                Arch
+              </button>
            </div>
-          
-          <div className="flex items-center bg-[#16222a] border border-white/5 rounded px-2 gap-1">
-             {(['force', 'dagre', 'radial', 'circlePacking'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setViewMode(mode)}
-                  className={`px-3 py-1 text-[8px] font-black uppercase tracking-widest transition-all rounded ${viewMode === mode ? 'bg-[#00f2ff] text-[#0a1118] shadow-[0_0_10px_#00f2ff]' : 'hover:bg-white/5'}`}
-                >
-                  {mode.replace(/([A-Z])/g, ' $1')}
-                </button>
-             ))}
-          </div>
 
           <div className="ml-auto flex gap-5 items-center">
              <div className="flex flex-col items-end">
@@ -797,11 +894,44 @@ const App: React.FC = () => {
                   </div>
                 )}
               </div>
-            </div>
-          </aside>
-        </div>
+             </div>
+           </aside>
+         </div>
 
-        <footer className="h-10 border-t border-white/5 flex items-center px-6 gap-8 bg-[#0a1118] text-[9px] shrink-0 font-mono tracking-widest">
+         {showArchitecturePanel && (
+           <div className="absolute bottom-24 right-4 w-80 h-64 bg-[#0d171d]/95 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-20 flex flex-col overflow-hidden">
+             <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 bg-[#0a1118]/50">
+               <div className="flex items-center gap-2">
+                 <i className="fas fa-sitemap text-[#10b981] text-[10px]"></i>
+                 <span className="text-[9px] font-black uppercase tracking-wider text-white/80">Architecture</span>
+               </div>
+               <div className="flex items-center gap-2">
+                 <button 
+                   onClick={() => setShowArchitecturePanel(false)}
+                   className="text-slate-500 hover:text-white transition-colors"
+                 >
+                   <i className="fas fa-times text-[10px]"></i>
+                 </button>
+               </div>
+             </div>
+             <div className="flex-1">
+               <ClassDiagramCanvas 
+                 nodes={fileScopedNodes}
+                 links={fileScopedLinks}
+                 onNodeClick={handleClassDiagramNodeClick}
+                 width={320}
+                 height={220}
+               />
+             </div>
+             <div className="px-3 py-1.5 border-t border-white/5 bg-[#0a1118]/30 flex items-center justify-between">
+               <span className="text-[8px] text-slate-600 font-mono">
+                 {fileScopedNodes.length} symbols
+               </span>
+             </div>
+           </div>
+         )}
+
+         <footer className="h-10 border-t border-white/5 flex items-center px-6 gap-8 bg-[#0a1118] text-[9px] shrink-0 font-mono tracking-widest">
           <div className="text-slate-600">ARTIFACTS: <span className="text-[#00f2ff] font-bold">{(astData as FlatGraph)?.nodes?.length || 0}</span></div>
           <div className="text-slate-600">RELATIONS: <span className="text-[#00f2ff] font-bold">{(astData as FlatGraph)?.links?.length || 0}</span></div>
           <div className="text-slate-600">ENDPOINT: <span className="text-[#10b981] font-bold uppercase truncate max-w-[100px]">{dataApiBase ? new URL(dataApiBase).hostname : 'NONE'}</span></div>
@@ -877,15 +1007,15 @@ const App: React.FC = () => {
                   </div>
                 )}
              </div>
-             <div className="p-6 bg-[#0a1118]/50 flex justify-end gap-3">
-                 <button 
-                   onClick={() => syncDataFromApi(dataApiBase, selectedProjectId || undefined)}
-                   className="px-6 py-2 bg-[#10b981] text-[#0a1118] rounded-sm text-[9px] font-black uppercase tracking-widest hover:brightness-110 transition-all"
-                 >
-                  Save & Sync
-                </button>
-               <button 
-                  onClick={() => setIsSettingsOpen(false)}
+              <div className="p-6 bg-[#0a1118]/50 flex justify-end gap-3">
+                  <button 
+                    onClick={() => syncDataFromApi(dataApiBase, selectedProjectId || undefined, () => setIsSettingsOpen(false))}
+                    className="px-6 py-2 bg-[#10b981] text-[#0a1118] rounded-sm text-[9px] font-black uppercase tracking-widest hover:brightness-110 transition-all"
+                  >
+                   Save & Sync
+                  </button>
+                <button 
+                   onClick={() => setIsSettingsOpen(false)}
                   className="px-6 py-2 bg-slate-800 text-white rounded-sm text-[9px] font-black uppercase tracking-widest hover:bg-slate-700 transition-all"
                >
                  Close

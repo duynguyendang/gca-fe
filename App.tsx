@@ -209,9 +209,16 @@ const App: React.FC = () => {
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
   const [isDataSyncing, setIsDataSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [nodeInsight, setNodeInsight] = useState<string | null>(null);
   const [currentProject, setCurrentProject] = useState<string>("GCA-Sandbox-Default");
+  const [availableProjects, setAvailableProjects] = useState<Array<{id: string; name: string; description?: string}>>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchMode, setSearchMode] = useState<'symbol' | 'query'>('symbol');
+  const [symbolSearchResults, setSymbolSearchResults] = useState<string[]>([]);
+  const [queryResults, setQueryResults] = useState<any>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   // View Modes: force, dagre, radial, circlePacking
@@ -272,55 +279,174 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const syncDataFromApi = async (baseUrl: string) => {
+  const syncDataFromApi = async (baseUrl: string, projectId?: string) => {
     if (!baseUrl) return;
     setIsDataSyncing(true);
+    setSyncError(null);
     const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
     
     try {
+      // Fetch all projects
       const projectsRes = await fetch(`${cleanBase}/v1/projects`);
-      if (projectsRes.ok) {
-        const projects = await projectsRes.json() as any[];
-        if (Array.isArray(projects) && projects[0]?.name) {
-          setCurrentProject(projects[0].name);
-        }
+      if (!projectsRes.ok) {
+        setSyncError('Failed to fetch projects');
+        return;
+      }
+      
+      const projects = await projectsRes.json() as Array<{id: string; name: string; description?: string}>;
+      setAvailableProjects(projects);
+      
+      // Require project selection
+      if (!projectId && projects.length > 0) {
+        // Auto-select first project if none selected
+        projectId = projects[0].id;
+        setSelectedProjectId(projectId);
+      }
+      
+      if (!projectId) {
+        setSyncError('No projects available');
+        return;
+      }
+      
+      setCurrentProject(projects.find(p => p.id === projectId)?.name || projectId);
+
+      // Fetch files for the project
+      const filesUrl = `${cleanBase}/v1/files?project=${encodeURIComponent(projectId)}`;
+      const filesRes = await fetch(filesUrl);
+      if (!filesRes.ok) {
+        setSyncError(`Failed to fetch files: ${filesRes.statusText}`);
+        return;
+      }
+      
+      const filesData = await filesRes.json();
+      const filesList = Array.isArray(filesData) ? filesData : (filesData.files || []);
+      setSandboxFiles(prev => ({ ...prev, 'files.json': filesList }));
+      
+      // Build AST from files list
+      if (filesList.length > 0) {
+        const astNodes: any[] = [];
+        const astLinks: any[] = [];
+        
+        filesList.forEach((filePath: string) => {
+          const fileName = filePath.split('/').pop() || filePath;
+          const ext = fileName.split('.').pop()?.toLowerCase();
+          const kind = ['py', 'ts', 'js', 'go', 'rs'].includes(ext || '') ? 'function' : 'file';
+          
+          astNodes.push({
+            id: filePath,
+            name: fileName,
+            type: kind,
+            kind: kind,
+            start_line: 1,
+            end_line: 100,
+            code: '',
+            _filePath: filePath,
+            _project: projectId
+          });
+        });
+        
+        setAstData({ nodes: astNodes, links: astLinks });
       }
 
-      const filesRes = await fetch(`${cleanBase}/v1/files`);
-      if (filesRes.ok) {
-        const filesList = await filesRes.json();
-        setSandboxFiles(prev => ({ ...prev, 'files.json': filesList }));
-      }
-
-      const queryRes = await fetch(`${cleanBase}/v1/query?hydrate=true`);
-      if (queryRes.ok) {
-        const ast = await queryRes.json();
-        if (ast && ast.nodes) {
-          setAstData(ast);
+      // Fetch enriched AST from query endpoint (POST with body)
+      try {
+        const queryRes = await fetch(`${cleanBase}/v1/query?project=${encodeURIComponent(projectId)}&hydrate=true`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: 'triples(?s, "defines", ?o)' })
+        });
+        
+        if (queryRes.ok) {
+          const ast = await queryRes.json();
+          if (ast && ast.nodes && ast.nodes.length > 0) {
+            // Enrich existing nodes with code from query response
+            setAstData(prev => {
+              const enrichedNodes = prev.nodes.map(node => {
+                const enrichedNode = ast.nodes.find((n: any) => n.id === node.id || n.id === node._filePath);
+                return enrichedNode ? { ...node, ...enrichedNode, _project: projectId } : { ...node, _project: projectId };
+              });
+              return { nodes: enrichedNodes, links: ast.links || prev.links };
+            });
+          }
         }
+      } catch (queryErr) {
+        console.log('Query endpoint not available, using file-based AST');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("API Sync Error:", err);
+      setSyncError(err.message || 'Unknown error during sync');
     } finally {
       setIsDataSyncing(false);
     }
   };
 
+  // Search symbols or run Datalog query via API
+  const searchSymbols = useCallback(async (query: string) => {
+    if (!dataApiBase || !selectedProjectId || !query || query.length < 1) {
+      setSymbolSearchResults([]);
+      setQueryResults(null);
+      return;
+    }
+    
+    setIsSearching(true);
+    setQueryResults(null);
+    const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+    
+    try {
+      if (searchMode === 'query') {
+        // POST to /v1/query for Datalog queries
+        const res = await fetch(`${cleanBase}/v1/query?project=${encodeURIComponent(selectedProjectId)}&hydrate=true`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setQueryResults(data);
+          if (data.nodes && data.nodes.length > 0) {
+            // Update AST with query results
+            setAstData(prev => ({
+              nodes: data.nodes.map((n: any) => ({ ...n, _project: selectedProjectId })),
+              links: data.links || []
+            }));
+          }
+        }
+      } else {
+        // GET to /v1/symbols for fuzzy search
+        const res = await fetch(`${cleanBase}/v1/symbols?project=${encodeURIComponent(selectedProjectId)}&q=${encodeURIComponent(query)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setSymbolSearchResults(data.symbols || []);
+        }
+      }
+    } catch (e) {
+      console.error("Search error:", e);
+      setSymbolSearchResults([]);
+      setQueryResults(null);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [dataApiBase, selectedProjectId, searchMode]);
+
   const handleNodeSelect = useCallback(async (node: any) => {
     setSelectedNode(node);
     setNodeInsight(null);
     
-    if (dataApiBase && !node.code && node.id) {
-        const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-        try {
-            const res = await fetch(`${cleanBase}/v1/source?id=${encodeURIComponent(node.id)}`);
-            if (res.ok) {
-                const sourceData = await res.json() as any;
-                setSelectedNode((prev: any) => ({ ...prev, code: sourceData.content || sourceData.code || "" }));
-            }
-        } catch (e) { console.error("Source fetch error:", e); }
+    const projectId = node._project || selectedProjectId;
+    
+    if (dataApiBase && projectId && !node.code && node.id) {
+      const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+      try {
+        const res = await fetch(`${cleanBase}/v1/source?project=${encodeURIComponent(projectId)}&id=${encodeURIComponent(node.id)}`);
+        if (res.ok) {
+          const sourceCode = await res.text();
+          setSelectedNode((prev: any) => ({ ...prev, code: sourceCode, _project: projectId }));
+        }
+      } catch (e) { 
+        console.error("Source fetch error:", e); 
+      }
     }
-  }, [dataApiBase]);
+  }, [dataApiBase, selectedProjectId]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -477,17 +603,88 @@ const App: React.FC = () => {
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-14 border-b border-white/5 flex items-center px-6 gap-6 bg-[#0a1118]/90 backdrop-blur-md z-20 shrink-0">
-          <div className="flex-1 flex items-center bg-[#16222a] border border-white/5 rounded-full px-1 py-1 max-w-xl shadow-inner">
-             <div className="bg-[#0a1118] px-3 py-1 rounded-full text-[9px] font-black text-[#00f2ff] border border-[#00f2ff]/20 mr-2 uppercase">Symbol</div>
-             <input 
-              type="text" 
-              placeholder="Search AST index..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-transparent border-none flex-1 px-4 text-[11px] focus:outline-none text-white font-mono placeholder-slate-700" 
-             />
-             <button className="w-8 h-8 rounded-full bg-[#00f2ff] flex items-center justify-center text-[#0a1118] text-[10px] shadow-lg shadow-[#00f2ff]/20"><i className="fas fa-filter"></i></button>
-          </div>
+           <div className="flex-1 flex items-center bg-[#16222a] border border-white/5 rounded-full px-1 py-1 max-w-xl shadow-inner relative">
+              <button
+                onClick={() => setSearchMode(searchMode === 'symbol' ? 'query' : 'symbol')}
+                className={`px-3 py-1 rounded-full text-[9px] font-black border transition-all mr-2 uppercase ${
+                  searchMode === 'query' 
+                    ? 'bg-[#f59e0b] text-[#0a1118] border-[#f59e0b]' 
+                    : 'bg-[#0a1118] text-[#00f2ff] border-[#00f2ff]/20'
+                }`}
+              >
+                {searchMode === 'query' ? 'Query' : 'Symbol'}
+              </button>
+              <input 
+               type="text" 
+               placeholder={searchMode === 'query' ? 'Datalog query (e.g., triples(?s, \"calls\", ?o))...' : 'Search symbols...'} 
+               value={searchTerm}
+               onChange={(e) => {
+                 setSearchTerm(e.target.value);
+                 // Debounce search
+                 clearTimeout((e.target as any)._searchTimeout);
+                 (e.target as any)._searchTimeout = setTimeout(() => {
+                   searchSymbols(e.target.value);
+                 }, searchMode === 'query' ? 500 : 300);
+               }}
+               onKeyDown={(e) => {
+                 if (e.key === 'Enter' && searchMode === 'query' && searchTerm) {
+                   searchSymbols(searchTerm);
+                 }
+               }}
+               className="bg-transparent border-none flex-1 px-4 text-[11px] focus:outline-none text-white font-mono placeholder-slate-700" 
+              />
+              {isSearching && <i className="fas fa-circle-notch fa-spin text-[#00f2ff] text-[10px] absolute right-12"></i>}
+              
+              {/* Symbol search results dropdown */}
+              {searchMode === 'symbol' && symbolSearchResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-[#0d171d] border border-white/10 rounded-lg shadow-2xl z-50 max-h-64 overflow-y-auto">
+                  {symbolSearchResults.map((symbol, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        const node = (astData as FlatGraph)?.nodes?.find((n: any) => n.id === symbol);
+                        if (node) handleNodeSelect(node);
+                        setSymbolSearchResults([]);
+                        setSearchTerm('');
+                      }}
+                      className="w-full px-4 py-2 text-left text-[10px] font-mono text-slate-300 hover:bg-[#00f2ff]/10 hover:text-[#00f2ff] border-b border-white/5 last:border-0"
+                    >
+                      {symbol}
+                    </button>
+                  ))}
+                </div>
+              )}
+              
+              {/* Query results summary */}
+              {searchMode === 'query' && queryResults && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-[#0d171d] border border-[#f59e0b]/30 rounded-lg shadow-2xl z-50 p-3">
+                  <div className="text-[10px] text-[#f59e0b] font-black uppercase tracking-widest mb-2">
+                    Query Results: {queryResults.nodes?.length || 0} nodes, {queryResults.links?.length || 0} links
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSearchTerm('');
+                      setQueryResults(null);
+                    }}
+                    className="text-[9px] text-slate-500 hover:text-white"
+                  >
+                    Clear results
+                  </button>
+                </div>
+              )}
+              
+              {/* Run query button */}
+              {searchMode === 'query' && (
+                <button
+                  onClick={() => searchTerm && searchSymbols(searchTerm)}
+                  disabled={!searchTerm || isSearching}
+                  className="w-8 h-8 rounded-full bg-[#f59e0b] flex items-center justify-center text-[#0a1118] text-[10px] disabled:opacity-50"
+                >
+                  <i className="fas fa-play"></i>
+                </button>
+              )}
+              {searchMode === 'symbol' && <button className="w-8 h-8 rounded-full bg-[#00f2ff] flex items-center justify-center text-[#0a1118] text-[10px] shadow-lg shadow-[#00f2ff]/20"><i className="fas fa-filter"></i></button>}
+           </div>
           
           <div className="flex items-center bg-[#16222a] border border-white/5 rounded px-2 gap-1">
              {(['force', 'dagre', 'radial', 'circlePacking'] as const).map((mode) => (
@@ -624,27 +821,69 @@ const App: React.FC = () => {
                <button onClick={() => setIsSettingsOpen(false)} className="text-slate-500 hover:text-white transition-colors"><i className="fas fa-times"></i></button>
             </div>
             <div className="p-6 space-y-4">
-               <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Data API Base URL</label>
-                  <input 
-                    type="text" 
-                    value={dataApiBase}
-                    onChange={(e) => setDataApiBase(e.target.value)}
-                    placeholder="http://localhost:8080"
-                    className="w-full bg-[#0a1118] border border-white/10 rounded px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#00f2ff]/50 font-mono"
-                  />
-                  <p className="mt-2 text-[9px] text-slate-600 leading-normal">
-                    This endpoint will be used to fetch /v1/projects, /v1/files, /v1/query, and /v1/source.
-                  </p>
-               </div>
-            </div>
-            <div className="p-6 bg-[#0a1118]/50 flex justify-end gap-3">
-                <button 
-                  onClick={() => syncDataFromApi(dataApiBase)}
-                  className="px-6 py-2 bg-[#10b981] text-[#0a1118] rounded-sm text-[9px] font-black uppercase tracking-widest hover:brightness-110 transition-all"
-                >
-                 Save & Sync
-               </button>
+                <div>
+                   <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Data API Base URL</label>
+                   <input 
+                     type="text" 
+                     value={dataApiBase}
+                     onChange={(e) => {
+                       setDataApiBase(e.target.value);
+                       setAvailableProjects([]);
+                       setSelectedProjectId('');
+                     }}
+                     placeholder="http://localhost:8080"
+                     className="w-full bg-[#0a1118] border border-white/10 rounded px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#00f2ff]/50 font-mono"
+                   />
+                    <p className="mt-2 text-[9px] text-slate-600 leading-normal">
+                      This endpoint will be used to fetch /v1/projects, /v1/files, and optionally /v1/query.
+                    </p>
+                 </div>
+                 
+                 {availableProjects.length > 0 && (
+                   <div>
+                     <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Select Project</label>
+                     <select 
+                       value={selectedProjectId}
+                       onChange={(e) => {
+                         setSelectedProjectId(e.target.value);
+                         setCurrentProject(availableProjects.find(p => p.id === e.target.value)?.name || e.target.value);
+                       }}
+                       className="w-full bg-[#0a1118] border border-white/10 rounded px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#00f2ff]/50"
+                     >
+                       <option value="">-- Select a project --</option>
+                       {availableProjects.map((project) => (
+                         <option key={project.id} value={project.id}>
+                           {project.name} {project.description ? `- ${project.description}` : ''}
+                         </option>
+                       ))}
+                     </select>
+                     <p className="mt-2 text-[9px] text-slate-600 leading-normal">
+                       Choose which project to load from the API.
+                     </p>
+                   </div>
+                 )}
+                
+                {syncError && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 rounded text-[10px] text-red-400">
+                    <i className="fas fa-exclamation-circle mr-2"></i>
+                    {syncError}
+                  </div>
+                )}
+                
+                {isDataSyncing && (
+                  <div className="p-3 bg-[#00f2ff]/10 border border-[#00f2ff]/30 rounded flex items-center gap-2 text-[10px] text-[#00f2ff]">
+                    <i className="fas fa-sync fa-spin"></i>
+                    Syncing with API...
+                  </div>
+                )}
+             </div>
+             <div className="p-6 bg-[#0a1118]/50 flex justify-end gap-3">
+                 <button 
+                   onClick={() => syncDataFromApi(dataApiBase, selectedProjectId || undefined)}
+                   className="px-6 py-2 bg-[#10b981] text-[#0a1118] rounded-sm text-[9px] font-black uppercase tracking-widest hover:brightness-110 transition-all"
+                 >
+                  Save & Sync
+                </button>
                <button 
                   onClick={() => setIsSettingsOpen(false)}
                   className="px-6 py-2 bg-slate-800 text-white rounded-sm text-[9px] font-black uppercase tracking-widest hover:bg-slate-700 transition-all"

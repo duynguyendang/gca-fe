@@ -4,11 +4,19 @@ import { ASTNode, FlatGraph } from '../types';
 
 export const useGraphData = (data: ASTNode | FlatGraph) => {
   return useMemo(() => {
-    if (!data || !('nodes' in data)) return null;
+    if (!data || !('nodes' in data)) {
+      console.log('useGraphData: no valid data');
+      return null;
+    }
     
     // Safety check for empty or invalid node arrays
-    if (!Array.isArray(data.nodes)) return null;
+    if (!Array.isArray(data.nodes)) {
+      console.log('useGraphData: nodes is not an array');
+      return null;
+    }
 
+    console.log('useGraphData: data.nodes:', data.nodes.length, 'data.links:', data.links?.length);
+    
     const nodeMap = new Map();
     data.nodes.forEach(n => {
       if (n && n.id) nodeMap.set(n.id, n);
@@ -24,8 +32,18 @@ export const useGraphData = (data: ASTNode | FlatGraph) => {
       const source = nodeMap.get(sourceId);
       const target = nodeMap.get(targetId);
       
+      if (!source || !target) {
+        console.log('useGraphData: link dropped - source:', sourceId, 'target:', targetId);
+        return null;
+      }
+      
       return source && target ? { source, target } : null;
     }).filter((l): l is { source: any, target: any } => l !== null) : [];
+    
+    console.log('useGraphData: processed links:', links.length);
+    if (links.length === 0 && data.links?.length > 0) {
+      console.log('useGraphData: WARNING - links were dropped!');
+    }
 
     const degrees = new Map<string, number>();
     links.forEach(l => {

@@ -39,6 +39,7 @@ const buildHierarchy = (nodes: any[], useFilePath = true) => {
     parts.forEach((part: string, i: number) => {
       const isFile = i === parts.length - 1;
       if (!current.children) current.children = {};
+      if (!current.children) current.children = {};
       if (!current.children[part]) {
         current.children[part] = {
           name: part,

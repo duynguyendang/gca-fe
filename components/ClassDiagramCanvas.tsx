@@ -55,7 +55,7 @@ export const ClassDiagramCanvas: React.FC<ClassDiagramCanvasProps> = ({
     svg.call(zoom);
 
     const nodeMap = new Map(nodes.map(n => [n.id, n]));
-    
+
     const getNodeColor = (kind: string) => {
       switch (kind) {
         case 'struct': return '#10b981';
@@ -70,7 +70,7 @@ export const ClassDiagramCanvas: React.FC<ClassDiagramCanvasProps> = ({
     const gGraph = new dagre.graphlib.Graph();
     gGraph.setGraph({ rankdir: 'LR', ranksep: 60, nodesep: 30 });
     gGraph.setDefaultEdgeLabel(() => ({ relation: '' }));
-    
+
     nodes.forEach(node => {
       gGraph.setNode(node.id, {
         label: node.name,
@@ -79,7 +79,7 @@ export const ClassDiagramCanvas: React.FC<ClassDiagramCanvasProps> = ({
         kind: node.kind
       });
     });
-    
+
     // Store link metadata for styling
     const linkMetadata = new Map<string, { source_type?: 'ast' | 'virtual'; weight?: number; relation: string }>();
     links.forEach(link => {
@@ -109,12 +109,12 @@ export const ClassDiagramCanvas: React.FC<ClassDiagramCanvasProps> = ({
         const originalNode = nodeMap.get(d);
         if (originalNode) onNodeClick(originalNode);
       })
-      .each(function(this: SVGGElement, d: any) {
+      .each(function (this: SVGGElement, d: any) {
         const nodeData = gGraph.node(d);
         const el = d3.select(this);
         const color = getNodeColor(nodeData.kind || 'func');
         const isStructOrFile = nodeData.kind === 'struct' || nodeData.kind === 'file' || nodeData.kind === 'interface';
-        
+
         el.append('rect')
           .attr('width', nodeData.width)
           .attr('height', nodeData.height)

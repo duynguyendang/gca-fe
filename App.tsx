@@ -78,54 +78,7 @@ const stratifyPaths = (nodes: any[], filePaths: string[] = []) => {
 
 // FileTreeItem moved to components/FileTreeItem.tsx
 
-const traceBackboneConnections = (graph: BackboneGraph, fileId: string): Set<string> => {
-  const activeIds = new Set<string>();
-  const fileNodes = graph.nodes.filter(n => n.file_path === fileId);
-  if (fileNodes.length === 0) return activeIds;
 
-  // Add all nodes from selected file
-  fileNodes.forEach(n => activeIds.add(n.id));
-  activeIds.add(fileId); // Add the file itself
-
-  // Find connected links and nodes (simple BFS for now, or just immediate 1-hop? Let's do recursive)
-  // Actually, full path trace might be too noisy. Let's do "Connected Component" via cross-file links.
-
-  const queue = [...fileNodes.map(n => n.id)];
-  const visited = new Set<string>(queue);
-
-  while (queue.length > 0) {
-    const currId = queue.shift()!;
-    activeIds.add(currId);
-
-    // Find links connected to currId
-    graph.links.forEach(link => {
-      const isConnected = link.source === currId || link.target === currId;
-      if (!isConnected) return;
-
-      // We only traverse CROSS-FILE links to find other files
-      // BUT within a file, we should arguably show everything? 
-      // Let's stick to: traverse cross-file links, and if we enter a node, we add its file too.
-
-      const otherId = link.source === currId ? link.target : link.source;
-      if (!visited.has(otherId)) {
-        // Check if this link is cross-file or if we want to follow it
-        // For backbone, usually we care about how data flows across files.
-        // Let's follow ALL links in the backbone graph since it's already a summary.
-        visited.add(otherId);
-        queue.push(otherId);
-
-        // Also add the file of the other node
-        const otherNode = graph.nodes.find(n => n.id === otherId);
-        if (otherNode && otherNode.file_path) {
-          activeIds.add(otherNode.file_path);
-        }
-      }
-      // Add the link itself to "active"? We might handle link highlighting separately based on node presence.
-    });
-  }
-
-  return activeIds;
-};
 
 const App: React.FC = () => {
   const [astData, setAstData] = useState<ASTNode | FlatGraph>(() => {
@@ -168,7 +121,8 @@ const App: React.FC = () => {
   const [skipFlowZoom, setSkipFlowZoom] = useState(false);
 
   // View Modes: flow (Architecture), map (Circle), discovery (Force), backbone (Cross-file architecture)
-  const [viewMode, setViewMode] = useState<'flow' | 'map' | 'discovery' | 'backbone'>('discovery');
+  const [viewMode, setViewMode] = useState<'flow' | 'map' | 'discovery'>('discovery');
+  const [isFlowLoading, setIsFlowLoading] = useState(false);
 
   // Trace Path state
   const [tracePathMode, setTracePathMode] = useState(false);
@@ -187,15 +141,15 @@ const App: React.FC = () => {
   const [expandingFileId, setExpandingFileId] = useState<string | null>(null);
 
   // Backbone mode state
-  const [backboneData, setBackboneData] = useState<BackboneGraph | null>(null);
-  const [isBackboneLoading, setIsBackboneLoading] = useState(false);
-  const [selectedFileInBackbone, setSelectedFileInBackbone] = useState<string | null>(null);
-  const [highlightedPath, setHighlightedPath] = useState<string[] | null>(null);
+
   const [showArchitecturePanel, setShowArchitecturePanel] = useState(false);
 
   // Debug wrapper for setViewMode
   const debugSetViewMode = useCallback((newMode: typeof viewMode) => {
     console.log('setViewMode called:', { from: viewMode, to: newMode });
+    if (newMode === 'discovery' && viewMode === 'flow') {
+      console.trace('Trace for switching to DISCOVERY from FLOW');
+    }
     setViewMode(newMode);
   }, [viewMode]);
 
@@ -208,24 +162,7 @@ const App: React.FC = () => {
   const setMapMode = useCallback(() => debugSetViewMode('map'), [debugSetViewMode]);
   const setDiscoveryMode = useCallback(() => debugSetViewMode('discovery'), [debugSetViewMode]);
 
-  // Fetch backbone data when switching to backbone mode
-  const setBackboneMode = useCallback(async () => {
-    debugSetViewMode('backbone');
-    if (!dataApiBase || !selectedProjectId || backboneData) {
-      return; // Already loaded or no API configured
-    }
 
-    setIsBackboneLoading(true);
-    try {
-      const data = await fetchBackbone(dataApiBase, selectedProjectId);
-      setBackboneData(data);
-      console.log('[Backbone] Loaded backbone graph:', data.nodes.length, 'gateway nodes,', data.links.length, 'cross-file links');
-    } catch (error) {
-      console.error('[Backbone] Failed to load backbone:', error);
-    } finally {
-      setIsBackboneLoading(false);
-    }
-  }, [dataApiBase, selectedProjectId, backboneData, debugSetViewMode]);
 
 
 
@@ -291,9 +228,11 @@ const App: React.FC = () => {
       ['go', 'typescript', 'javascript', 'python', 'json', 'rust', 'cpp', 'css', 'html'].forEach(lang => {
         const langScript = document.createElement('script');
         langScript.src = `https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-${lang}.min.js`;
+        langScript.onerror = (e) => console.warn(`Failed to load Prism language: ${lang}`, e);
         document.head.appendChild(langScript);
       });
     };
+    script.onerror = (e) => console.warn('Failed to load Prism core', e);
     document.head.appendChild(script);
 
     const handleMouseMove = (e: MouseEvent) => {
@@ -909,6 +848,7 @@ const App: React.FC = () => {
         setFileScopedNodes(nodesWithInDegree);
         setFileScopedLinks(diagramLinks);
         currentFlowFileRef.current = filePath; // Update current file ref
+        console.log('[DEBUG] Setting viewMode to FLOW');
         debugSetViewMode('flow');
       } catch (e) {
         console.error('Error processing AST data:', e);
@@ -920,6 +860,7 @@ const App: React.FC = () => {
     if (dataApiBase && projectId && filePath) {
       const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
 
+      setIsFlowLoading(true);
       fetch(`${cleanBase}/v1/graph?project=${encodeURIComponent(projectId)}&file=${encodeURIComponent(filePath)}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
@@ -983,17 +924,21 @@ const App: React.FC = () => {
               setFileScopedNodes(nodesWithInDegree);
               setFileScopedLinks(diagramLinks);
               currentFlowFileRef.current = filePath; // Update current file ref
+              console.log('[DEBUG] Setting viewMode to FLOW (API Fallback)');
               debugSetViewMode('flow');
             } catch (e) {
               console.error('Error processing API data:', e);
             }
           } else {
+            console.log('Graph API returned no nodes');
             setFileScopedNodes([]);
             setFileScopedLinks([]);
           }
+          setIsFlowLoading(false);
         })
         .catch(e => {
           console.error("Error fetching file graph:", e);
+          setIsFlowLoading(false);
         });
     }
   }, [dataApiBase, selectedProjectId, astData, viewMode, fileScopedNodes, debugSetViewMode]);
@@ -1075,16 +1020,23 @@ const App: React.FC = () => {
   }, [expandedGraphData, showVirtualLinks]);
 
   // Filter fileScopedData based on showVirtualLinks state
-  const filteredFileScopedData = useMemo(() => ({
-    nodes: fileScopedData.nodes,
-    links: showVirtualLinks
-      ? fileScopedData.links
-      : fileScopedData.links.filter((link: any) => {
-        const isVirtual = link.source_type === 'virtual' ||
-          (link.relation && link.relation.startsWith('v:'));
-        return !isVirtual;
-      })
-  }), [fileScopedData, showVirtualLinks]);
+  const filteredFileScopedData = useMemo(() => {
+    console.log('[DEBUG] filteredFileScopedData RECALC', {
+      nodes: fileScopedData.nodes?.length,
+      links: fileScopedData.links?.length,
+      showVirtualLinks
+    });
+    return {
+      nodes: fileScopedData.nodes,
+      links: showVirtualLinks
+        ? fileScopedData.links
+        : fileScopedData.links.filter((link: any) => {
+          const isVirtual = link.source_type === 'virtual' ||
+            (link.relation && link.relation.startsWith('v:'));
+          return !isVirtual;
+        })
+    };
+  }, [fileScopedData, showVirtualLinks]);
 
   const renderCode = () => {
     if (!selectedNode) return (
@@ -1217,17 +1169,17 @@ const App: React.FC = () => {
           <div>
             <h2 className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600 mb-3 px-2">SOURCE NAVIGATOR</h2>
             <div className="space-y-0.5 border-l border-white/5 ml-2">
-              {/* Object.entries(sourceTree).map(([name, node]) => (
-                  <FileTreeItem
-                    key={name}
-                    name={name}
-                    node={node as any}
-                    depth={0}
-                    onNodeSelect={handleNodeSelect}
-                    astData={astData}
-                    selectedNode={selectedNode}
-                  />
-                )) */}
+              {Object.entries(sourceTree).map(([name, node]) => (
+                <FileTreeItem
+                  key={name}
+                  name={name}
+                  node={node as any}
+                  depth={0}
+                  onNodeSelect={handleNodeSelect}
+                  astData={astData}
+                  selectedNode={selectedNode}
+                />
+              ))}
               {Object.keys(sourceTree).length === 0 && (
                 <div className="px-4 py-8 text-center text-[10px] text-slate-700 italic border border-dashed border-white/5 rounded mx-2">
                   No files indexed.<br />Upload AST or configure API.
@@ -1238,13 +1190,7 @@ const App: React.FC = () => {
         </div>
 
         <div className="p-4 border-t border-white/5 shrink-0 bg-[#0d171d] space-y-2">
-          <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileUpload} />
-          <button
-            onClick={triggerFileInput}
-            className="w-full py-2 bg-[#00f2ff]/5 hover:bg-[#00f2ff]/10 border border-[#00f2ff]/20 rounded text-[9px] font-black uppercase tracking-[0.3em] text-[#00f2ff] transition-all shadow-inner"
-          >
-            <i className="fas fa-file-import mr-2"></i> Local Import
-          </button>
+
           {dataApiBase && (
             <button
               onClick={syncApi}
@@ -1332,45 +1278,37 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 bg-[#16222a] border border-white/5 rounded px-1">
-              <span className="px-2 py-1 text-[7px] font-black text-[#10b981] uppercase tracking-wider">Flow</span>
-              <button
-                onClick={setFlowMode}
-                className={`px-3 py-1 text-[8px] font-black uppercase tracking-widest transition-all rounded ${viewMode === 'flow' ? 'bg-[#10b981] text-[#0a1118]' : 'hover:bg-white/5 text-slate-400'}`}
-              >
-                View
-              </button>
-            </div>
+            <button
+              onClick={setFlowMode}
+              className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'flow'
+                ? 'bg-[#10b981] border-[#10b981] text-[#0a1118]'
+                : 'bg-[#16222a] border-white/5 text-[#10b981] hover:bg-white/5'
+                }`}
+            >
+              Flow
+            </button>
 
-            <div className="flex items-center gap-1 bg-[#16222a] border border-white/5 rounded px-1">
-              <span className="px-2 py-1 text-[7px] font-black text-[#f59e0b] uppercase tracking-wider">Map</span>
-              <button
-                onClick={setMapMode}
-                className={`px-3 py-1 text-[8px] font-black uppercase tracking-widest transition-all rounded ${viewMode === 'map' ? 'bg-[#f59e0b] text-[#0a1118]' : 'hover:bg-white/5 text-slate-400'}`}
-              >
-                View
-              </button>
-            </div>
+            <button
+              onClick={setMapMode}
+              className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'map'
+                ? 'bg-[#f59e0b] border-[#f59e0b] text-[#0a1118]'
+                : 'bg-[#16222a] border-white/5 text-[#f59e0b] hover:bg-white/5'
+                }`}
+            >
+              Map
+            </button>
 
-            <div className="flex items-center gap-1 bg-[#16222a] border border-white/5 rounded px-1">
-              <span className="px-2 py-1 text-[7px] font-black text-[#00f2ff] uppercase tracking-wider">Discovery</span>
-              <button
-                onClick={setDiscoveryMode}
-                className={`px-3 py-1 text-[8px] font-black uppercase tracking-widest transition-all rounded ${viewMode === 'discovery' ? 'bg-[#00f2ff] text-[#0a1118]' : 'hover:bg-white/5 text-slate-400'}`}
-              >
-                View
-              </button>
-            </div>
+            <button
+              onClick={setDiscoveryMode}
+              className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'discovery'
+                ? 'bg-[#00f2ff] border-[#00f2ff] text-[#0a1118]'
+                : 'bg-[#16222a] border-white/5 text-[#00f2ff] hover:bg-white/5'
+                }`}
+            >
+              Discovery
+            </button>
 
-            <div className="flex items-center gap-1 bg-[#16222a] border border-white/5 rounded px-1">
-              <span className="px-2 py-1 text-[7px] font-black text-[#a855f7] uppercase tracking-wider">Backbone</span>
-              <button
-                onClick={setBackboneMode}
-                className={`px-3 py-1 text-[8px] font-black uppercase tracking-widest transition-all rounded ${viewMode === 'backbone' ? 'bg-[#a855f7] text-[#0a1118]' : 'hover:bg-white/5 text-slate-400'}`}
-              >
-                {isBackboneLoading ? <i className="fas fa-circle-notch fa-spin"></i> : 'View'}
-              </button>
-            </div>
+
 
             {/* Trace Path Mode Button */}
             <button
@@ -1424,6 +1362,14 @@ const App: React.FC = () => {
               const nodeCount = (astData as FlatGraph)?.nodes?.length || 0;
               const linkCount = (astData as FlatGraph)?.links?.length || 0;
               const tooManyNodes = nodeCount > 1000;
+
+              console.log('[DEBUG] AppIIFE Render:', {
+                viewMode,
+                nodeCount,
+                tooManyNodes,
+                hasData: !!astData,
+                fileScopedDataHeight: fileScopedData?.nodes?.length
+              });
 
               if (tooManyNodes) {
                 return (
@@ -1519,20 +1465,7 @@ const App: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="absolute top-4 left-4 z-10 p-3 bg-[#0d171d]/95 backdrop-blur-xl border border-white/10 rounded shadow-2xl min-w-[160px]">
-                    <h3 className="text-[8px] font-black text-white/40 uppercase tracking-[0.2em] mb-3 flex items-center justify-between">
-                      <span>MOUNTED ASSETS</span>
-                      <span className="text-[#00f2ff]">{Object.keys(sandboxFiles).length}</span>
-                    </h3>
-                    <div className="space-y-1.5 max-h-[200px] overflow-y-auto custom-scrollbar">
-                      {Object.keys(sandboxFiles).map(f => (
-                        <div key={f} className="text-[9px] font-mono text-[#00f2ff]/70 flex items-center gap-2">
-                          <div className="w-1 h-1 rounded-full bg-[#00f2ff]/40 shadow-[0_0_5px_#00f2ff]"></div> {f}
-                        </div>
-                      ))}
-                      {Object.keys(sandboxFiles).length === 0 && <span className="text-[9px] text-slate-700 italic">Local cache empty</span>}
-                    </div>
-                  </div>
+
                   <TreeVisualizer
                     data={filteredAstData}
                     onNodeSelect={handleNodeSelect}
@@ -1545,24 +1478,7 @@ const App: React.FC = () => {
                     expandedFileIds={expandedFileIds}
                     onToggleFileExpansion={toggleFileExpansion}
                     expandingFileId={expandingFileId}
-                    backboneData={backboneData}
-                    selectedFileInBackbone={selectedFileInBackbone}
-                    highlightedPath={highlightedPath}
-                    isBackboneLoading={isBackboneLoading}
-                    onFileSelectInBackbone={(file) => {
-                      console.log('Selected file in backbone:', file);
-                      if (selectedFileInBackbone === file) {
-                        // Deselect
-                        setSelectedFileInBackbone(null);
-                        setHighlightedPath(null);
-                      } else {
-                        setSelectedFileInBackbone(file);
-                        if (backboneData) {
-                          const activeSet = traceBackboneConnections(backboneData, file);
-                          setHighlightedPath(Array.from(activeSet));
-                        }
-                      }
-                    }}
+
                   />
                 </>
               ) : (
@@ -1638,6 +1554,7 @@ const App: React.FC = () => {
                     mode={viewMode}
                     selectedId={selectedNode?.id}
                     fileScopedData={filteredFileScopedData}
+                    isLoading={isFlowLoading}
                     skipFlowZoom={skipFlowZoom}
                     tracePathResult={tracePathResult}
                     expandedFileIds={expandedFileIds}

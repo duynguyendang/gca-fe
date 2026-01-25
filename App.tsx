@@ -111,6 +111,34 @@ const App: React.FC = () => {
   const [queryResults, setQueryResults] = useState<any>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Load history on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('queryHistory');
+      if (saved) {
+        setSearchHistory(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error('Failed to parse history', e);
+    }
+  }, []);
+
+  const addToHistory = useCallback((query: string) => {
+    if (!query || !query.trim()) return;
+    setSearchHistory(prev => {
+      const newHistory = [query, ...prev.filter(q => q !== query)].slice(0, 10);
+      localStorage.setItem('queryHistory', JSON.stringify(newHistory));
+      return newHistory;
+    });
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    setSearchHistory([]);
+    localStorage.removeItem('queryHistory');
+  }, []);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Class Diagram state
@@ -1231,11 +1259,38 @@ const App: React.FC = () => {
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && searchTerm) {
+                  addToHistory(searchTerm);
+                  setShowHistory(false);
                   searchSymbols(searchTerm);
                 }
               }}
               className="bg-transparent border-none flex-1 px-4 text-[11px] focus:outline-none text-white font-mono placeholder-slate-700"
+              onFocus={() => setShowHistory(true)}
+              onBlur={() => setTimeout(() => setShowHistory(false), 200)}
             />
+            {showHistory && searchHistory.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-[#0d171d] border border-white/10 rounded-lg shadow-xl overflow-hidden z-[60] animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-white/5 border-b border-white/5">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Recent Queries</span>
+                  <button onClick={clearHistory} className="text-[9px] text-slate-500 hover:text-white transition-colors">Clear</button>
+                </div>
+                <div className="max-h-[200px] overflow-y-auto">
+                  {searchHistory.map((q, i) => (
+                    <div
+                      key={i}
+                      className="px-3 py-2 text-[10px] font-mono text-slate-300 hover:bg-[#00f2ff]/10 hover:text-[#00f2ff] cursor-pointer transition-colors border-b border-white/5 last:border-0"
+                      onClick={() => {
+                        setSearchTerm(q);
+                        searchSymbols(q);
+                        setShowHistory(false);
+                      }}
+                    >
+                      {q}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {isSearching && <i className="fas fa-circle-notch fa-spin text-[#00f2ff] text-[10px] absolute right-12"></i>}
 
             {/* Query results summary */}

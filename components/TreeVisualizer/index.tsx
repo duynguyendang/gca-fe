@@ -23,6 +23,8 @@ interface TreeVisualizerProps {
   onToggleFileExpansion?: (fileId: string) => void;
   expandingFileId?: string | null;
   isLoading?: boolean;
+  focusModeEnabled?: boolean;
+  criticalPathNodeIds?: Set<string>;
 }
 
 const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
@@ -38,6 +40,8 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
   onToggleFileExpansion,
   expandingFileId = null,
   isLoading = false,
+  focusModeEnabled = false,
+  criticalPathNodeIds = new Set()
 }) => {
   console.log('=== TreeVisualizer Render (Start) ===', {
     mode,
@@ -157,6 +161,8 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
                 expandingFileId={expandingFileId}
                 svgRef={svgRef}
                 zoomObj={zoomObj}
+                focusModeEnabled={focusModeEnabled}
+                criticalPathNodeIds={criticalPathNodeIds}
               />
             )}
           {mode === 'discovery' && (

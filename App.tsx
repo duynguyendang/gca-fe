@@ -5,7 +5,7 @@ import ClassDiagramCanvas from './components/ClassDiagramCanvas';
 import HighlightedCode from './components/HighlightedCode';
 import FileTreeItem from './components/FileTreeItem';
 import { ASTNode, FlatGraph, BackboneGraph, BackboneNode, BackboneLink } from './types';
-import { getGeminiInsight } from './services/geminiService';
+import { getGeminiInsight, pruneNodesWithAI, getArchitectureSummary, getCriticalPathNodes } from './services/geminiService';
 import { findShortestPath, PathResult } from './utils/pathfinding';
 import {
   fetchGraphMap,
@@ -184,6 +184,10 @@ const App: React.FC = () => {
   // Backbone mode state
 
   const [showArchitecturePanel, setShowArchitecturePanel] = useState(false);
+
+  // Focus Mode State
+  const [focusModeEnabled, setFocusModeEnabled] = useState(false);
+  const [criticalPathNodeIds, setCriticalPathNodeIds] = useState<Set<string>>(new Set());
 
   // Debug wrapper for setViewMode
   const debugSetViewMode = useCallback((newMode: typeof viewMode) => {
@@ -653,6 +657,13 @@ const App: React.FC = () => {
       const details = await fetchFileDetails(dataApiBase, fileId, selectedProjectId);
       console.log('[Expand] Successfully fetched file details:', details);
 
+      // Get Architecture Summary from AI (non-blocking, show all nodes immediately)
+      getArchitectureSummary(fileId, details.nodes).then(summary => {
+        setNodeInsight(summary);
+      }).catch(err => {
+        console.warn('[Expand] Architecture Summary failed:', err);
+      });
+
       // Cache the result
       setFileDetailsCache(prev => new Map(prev).set(fileId, details));
 
@@ -664,18 +675,21 @@ const App: React.FC = () => {
         const newNodes = [...fileScopedNodes];
         const newLinks = [...fileScopedLinks];
 
-        // Add missing nodes
+        // Add ALL nodes (no pruning by default)
         details.nodes.forEach((n: any) => {
           if (!newNodes.find(en => en.id === n.id)) {
             newNodes.push({ ...n, _parentFile: fileId, _isExpandedChild: true });
           }
         });
 
-        // Add internal links
+        // Add ALL internal links
         details.links.forEach((l: any) => {
+          const s = typeof l.source === 'object' ? l.source.id : l.source;
+          const t = typeof l.target === 'object' ? l.target.id : l.target;
+
           const exists = newLinks.find(el =>
-            (typeof el.source === 'object' ? el.source.id : el.source) === (typeof l.source === 'object' ? l.source.id : l.source) &&
-            (typeof el.target === 'object' ? el.target.id : el.target) === (typeof l.target === 'object' ? l.target.id : l.target)
+            (typeof el.source === 'object' ? el.source.id : el.source) === s &&
+            (typeof el.target === 'object' ? el.target.id : el.target) === t
           );
           if (!exists) {
             newLinks.push({ ...l, _parentFile: fileId });
@@ -736,6 +750,36 @@ const App: React.FC = () => {
       }));
     }
   }, [fileScopedNodes, viewMode]);
+
+  // Toggle Focus Mode
+  const toggleFocusMode = useCallback(async () => {
+    if (focusModeEnabled) {
+      setFocusModeEnabled(false);
+      setCriticalPathNodeIds(new Set());
+      setNodeInsight(null);
+    } else {
+      setFocusModeEnabled(true);
+      // Calculate critical path from *currently visible* nodes
+      // This is tricky because visible nodes depends on viewMode.
+      // For 'flow' mode, it's fileScopedNodes.
+      if (viewMode === 'flow' && fileScopedNodes.length > 0) {
+        setNodeInsight("Analyzing critical path...");
+        try {
+          const result = await getCriticalPathNodes(fileScopedNodes, fileScopedLinks);
+          setCriticalPathNodeIds(new Set(result.nodeIds));
+          setNodeInsight(result.explanation || "Critical path highlighted.");
+        } catch (err) {
+          console.error("Focus mode error:", err);
+          setNodeInsight("Failed to identify critical path.");
+          setFocusModeEnabled(false);
+        }
+      } else {
+        // For other modes, implement later
+        setNodeInsight("Focus mode only available in Flow view for now.");
+        setTimeout(() => setFocusModeEnabled(false), 2000);
+      }
+    }
+  }, [focusModeEnabled, viewMode, fileScopedNodes, fileScopedLinks]);
 
   // Toggle file expansion state
   const toggleFileExpansion = useCallback((fileId: string) => {
@@ -1673,6 +1717,9 @@ const App: React.FC = () => {
                     expandedFileIds={expandedFileIds}
                     onToggleFileExpansion={toggleFileExpansion}
                     expandingFileId={expandingFileId}
+                    // Focus Mode
+                    focusModeEnabled={focusModeEnabled}
+                    criticalPathNodeIds={criticalPathNodeIds}
                   />
                 </>
               );
@@ -1861,6 +1908,21 @@ const App: React.FC = () => {
               >
                 Connect & Fetch Projects
               </button>
+              {/* Focus Mode Toggle */}
+              {viewMode === 'flow' && (
+                <button
+                  onClick={toggleFocusMode}
+                  className={`ml-2 px-3 py-1.5 rounded flex items-center gap-2 border transition-all ${focusModeEnabled
+                      ? 'bg-[#00f2ff]/20 border-[#00f2ff] text-[#00f2ff] shadow-[0_0_15px_-3px_#00f2ff]'
+                      : 'bg-[#0d171d]/50 border-white/10 text-slate-400 hover:text-white hover:border-white/30'
+                    }`}
+                  title="Focus on Critical Path (AI)"
+                >
+                  <i className={`fas fa-crosshairs ${focusModeEnabled ? 'animate-pulse' : ''}`}></i>
+                  <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">Focus</span>
+                </button>
+              )}
+
               <button
                 onClick={closeSettings}
                 className="px-6 py-2 bg-slate-800 text-white rounded-sm text-[9px] font-black uppercase tracking-widest hover:bg-slate-700 transition-all"

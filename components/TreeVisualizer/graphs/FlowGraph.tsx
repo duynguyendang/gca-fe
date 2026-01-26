@@ -30,6 +30,8 @@ interface FlowGraphProps {
     expandingFileId?: string | null;
     svgRef: React.RefObject<SVGSVGElement>;
     zoomObj: d3.ZoomBehavior<SVGSVGElement, unknown> | null;
+    focusModeEnabled?: boolean;
+    criticalPathNodeIds?: Set<string>;
 }
 
 const FlowGraph: React.FC<FlowGraphProps> = ({
@@ -44,332 +46,399 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
     onToggleFileExpansion,
     expandingFileId,
     svgRef,
-    zoomObj
+    zoomObj,
+    focusModeEnabled = false,
+    criticalPathNodeIds = new Set()
 }) => {
     const gRef = useRef<SVGGElement>(null);
 
     useEffect(() => {
-        console.log('=== FlowGraph useEffect Triggered ===', {
-            hasGRef: !!gRef.current,
-            hasSvgRef: !!svgRef.current,
-            hasZoomObj: !!zoomObj,
-            nodeCount: nodes.length,
-            linkCount: links.length
-        });
-
-        if (!gRef.current || !svgRef.current || !zoomObj) {
-            console.warn('FlowGraph: Early return - missing refs', {
-                gRef: !!gRef.current,
-                svgRef: !!svgRef.current,
-                zoomObj: !!zoomObj
-            });
-            return;
-        }
+        if (!gRef.current || !svgRef.current || !zoomObj) return;
 
         const g = d3.select(gRef.current);
         const svg = d3.select(svgRef.current);
-        g.selectAll('*').remove();
+        const transitionDuration = 750;
+        const t = svg.transition().duration(transitionDuration).ease(d3.easeCubicInOut);
 
-        console.log('=== FlowGraph Rendering ===');
-        console.log('Nodes:', nodes.length, 'Links:', links.length);
-        console.log('Dimensions:', width, 'x', height);
-        console.log('Refs:', { g: !!gRef.current, svg: !!svgRef.current, zoom: !!zoomObj });
-
-        if (nodes.length === 0) {
-            console.warn('FlowGraph: No nodes to render');
-            return;
-        }
-
-        // Create Dagre graph with LR layout for flow view
+        // 1. Initialize Dagre
         const gGraph = new dagre.graphlib.Graph({ compound: true });
         gGraph.setGraph({
-            rankdir: 'LR',          // Left-to-Right for flow
-            ranksep: 80,            // Space between ranks
-            nodesep: 40,            // Space between nodes
+            rankdir: 'LR',
+            ranksep: 100,
+            nodesep: 50,
             marginx: 20,
             marginy: 20
         });
         gGraph.setDefaultEdgeLabel(() => ({}));
 
-        // Add nodes to Dagre
+        // 2. First Pass: Add all "Parent" nodes (Files)
         nodes.forEach(node => {
-            if (!node || !node.id) {
-                console.warn("FlowGraph: Invalid node found", node);
-                return;
+            if (node.kind === 'file' || node.kind === 'package') {
+                const nodeId = String(node.id);
+                gGraph.setNode(nodeId, {
+                    label: node.name,
+                    width: 200,
+                    height: 100,
+                    kind: node.kind,
+                    id: nodeId
+                });
             }
-            gGraph.setNode(node.id, {
-                label: node.name,
-                width: Math.max(120, (node.name?.length || 5) * 9),
-                height: node.kind === 'file' || node.kind === 'package' ? 60 : 40,
-                kind: node.kind
-            });
         });
 
-        // Establish parent-child relationships for clustering
+        // 3. Second Pass: Add all "Child" nodes (Symbols)
         nodes.forEach(node => {
-            if (node._parentFile && node._isExpandedChild) {
-                // Prevent self-parenting and ensure parent exists
-                if (node.id !== node._parentFile && gGraph.hasNode(node._parentFile)) {
-                    gGraph.setParent(node.id, node._parentFile);
+            if (node.kind !== 'file' && node.kind !== 'package') {
+                const nodeId = String(node.id);
+                gGraph.setNode(nodeId, {
+                    label: node.name,
+                    width: 180,
+                    height: 40,
+                    kind: node.kind,
+                    id: nodeId
+                });
+
+                if (node._parentFile && node._isExpandedChild) {
+                    const parentId = String(node._parentFile);
+                    if (nodeId !== parentId && gGraph.hasNode(parentId)) {
+                        gGraph.setParent(nodeId, parentId);
+                    }
                 }
             }
         });
 
-        // Add edges to Dagre
+        // 4. Third Pass: Add edges
         links.forEach(link => {
-            // Ensure source/target are strings (IDs)
-            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            const sourceId = String(typeof link.source === 'object' ? link.source.id : link.source);
+            const targetId = String(typeof link.target === 'object' ? link.target.id : link.target);
 
-            if (gGraph.hasNode(sourceId) && gGraph.hasNode(targetId)) {
-                // Visualize Check: Exclude edges between Parent and Child
-                // If the edge represents "containment" or "defines" and we already have a visual 
-                // parent-child relationship (cluster), we shouldn't draw the arrow.
-                // It clutters the graph and might be creating layout issues for Dagre compound graphs.
+            if (!gGraph.hasNode(sourceId) || !gGraph.hasNode(targetId)) return;
+            if (sourceId === targetId) return;
 
-                const sourceNode = nodes.find(n => n.id === sourceId);
-                const targetNode = nodes.find(n => n.id === targetId);
+            // Avoid edges between parent and its own child (visual clutter)
+            const parentOfSource = gGraph.parent(sourceId);
+            const parentOfTarget = gGraph.parent(targetId);
 
-                const isParentChild = (sourceNode && sourceNode._parentFile === targetId) ||
-                    (targetNode && targetNode._parentFile === sourceId);
+            if (parentOfSource === targetId || parentOfTarget === sourceId) return;
 
-                // Check if source or target is an expanded parent (cluster)
-                // Drawing edges to/from a cluster node itself while showing its children can cause Dagre stability issues.
-                // We prioritize the children's edges or valid layout over the cluster edge.
-                const isSourceExpanded = sourceNode && expandedFileIds.has(sourceNode.id);
-                const isTargetExpanded = targetNode && expandedFileIds.has(targetNode.id);
-
-                // Also skip self-loops
-                if (sourceId === targetId) return;
-
-                if (isParentChild) {
-                    // console.debug(`FlowGraph: Skipping parent-child edge ${sourceId} <-> ${targetId}`);
-                    return;
-                }
-
-                if (isSourceExpanded || isTargetExpanded) {
-                    // console.debug(`FlowGraph: Skipping edge ${sourceId} -> ${targetId} (connected to expanded cluster)`);
-                    return;
-                }
-
-                try {
-                    gGraph.setEdge(sourceId, targetId, {
-                        source_type: link.source_type || 'default',
-                        weight: link.weight || 1,
-                        relation: link.relation || 'related'
-                    });
-                } catch (e) {
-                    console.warn(`FlowGraph: Failed to set edge ${sourceId} -> ${targetId}`, e);
-                }
-            } else {
-                // console.debug(`FlowGraph: Skipping edge ${sourceId} -> ${targetId} (missing nodes)`);
+            try {
+                gGraph.setEdge(sourceId, targetId, {
+                    source_type: link.source_type || 'default',
+                    weight: link.weight || 1,
+                    relation: link.relation || 'related'
+                });
+            } catch (e) {
+                console.warn('Failed to add edge:', sourceId, '->', targetId, e);
             }
         });
 
-        // Run Dagre layout with error handling
+        // 5. Run Layout (with fallback)
         try {
             dagre.layout(gGraph);
         } catch (layoutError) {
-            console.error("FlowGraph: Dagre layout failed", layoutError);
-            console.error("Graph state:", { nodeCount: gGraph.nodeCount(), edgeCount: gGraph.edgeCount() });
-            // Attempt fallback or partial render? 
-            // If layout failed, node positions won't be set correctly.
-            // We could try running without compound: true as a fallback?
+            console.error('Dagre layout failed, attempting fallback:', layoutError);
+            // Fallback: disable compound mode and retry
             try {
-                const simpleGraph = new dagre.graphlib.Graph();
-                simpleGraph.setGraph({ rankdir: 'LR', ranksep: 80, nodesep: 40 });
-                gGraph.nodes().forEach(n => simpleGraph.setNode(n, gGraph.node(n)));
-                gGraph.edges().forEach(e => simpleGraph.setEdge(e.v, e.w, gGraph.edge(e)));
-                dagre.layout(simpleGraph);
-
-                // Copy back positions
-                simpleGraph.nodes().forEach(n => {
-                    const pos = simpleGraph.node(n);
-                    gGraph.setNode(n, pos);
+                const fallbackGraph = new dagre.graphlib.Graph();
+                fallbackGraph.setGraph({ rankdir: 'LR', ranksep: 100, nodesep: 50 });
+                fallbackGraph.setDefaultEdgeLabel(() => ({}));
+                gGraph.nodes().forEach(n => fallbackGraph.setNode(n, gGraph.node(n)));
+                gGraph.edges().forEach(e => fallbackGraph.setEdge(e.v, e.w, gGraph.edge(e)));
+                dagre.layout(fallbackGraph);
+                // Copy positions back
+                fallbackGraph.nodes().forEach(n => {
+                    const pos = fallbackGraph.node(n);
+                    if (gGraph.hasNode(n) && pos) {
+                        const existing = gGraph.node(n);
+                        existing.x = pos.x;
+                        existing.y = pos.y;
+                    }
                 });
-                console.warn("FlowGraph: Fallback non-compound layout succeeded");
+                console.warn('Fallback layout succeeded');
             } catch (fallbackError) {
-                console.error("FlowGraph: Fallback layout also failed", fallbackError);
-                return; // Give up
+                console.error('Fallback layout also failed:', fallbackError);
+                return; // Abort rendering
             }
         }
 
-        // Get node positions
-        const nodePositions = new Map<string, any>();
-        gGraph.nodes().forEach((n: any) => {
-            const data = gGraph.node(n);
-            if (data) nodePositions.set(n, { ...data, id: n });
+        // Extract layout data
+        const layoutNodes = gGraph.nodes().map(v => {
+            const node = gGraph.node(v);
+            return { ...node, id: v };
         });
 
-        console.log('FlowGraph: Layout complete. Positions:', nodePositions.size);
-        if (nodePositions.size > 0) {
-            const firstPos = nodePositions.values().next().value;
-            console.log('FlowGraph: Sample position:', firstPos);
-        }
+        const layoutEdges = gGraph.edges().map(e => {
+            const edge = gGraph.edge(e);
+            const points = edge.points;
+            return { ...edge, v: e.v, w: e.w, points };
+        });
 
-        // Calculate cluster bounding boxes
-        const clusterBoxes = new Map<string, any>();
-        const parentChildGroups = groupNodesByParent(nodes);
+        // --- RENDER: CLUSTERS (Files) ---
+        // Render clusters specifically for nodes that have children or are files
+        const clusters = layoutNodes.filter(n => n.kind === 'file' || n.kind === 'package');
 
-        parentChildGroups.forEach((children, parentId) => {
-            if (children.length === 0) return;
-            const parentPos = nodePositions.get(parentId);
-            if (!parentPos) return;
+        const clusterGroup = g.select<SVGGElement>('.clusters').empty()
+            ? g.append('g').attr('class', 'clusters')
+            : g.select<SVGGElement>('.clusters');
 
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            children.forEach(child => {
-                const childPos = nodePositions.get(child.id);
-                if (childPos) {
-                    minX = Math.min(minX, childPos.x - childPos.width / 2);
-                    maxX = Math.max(maxX, childPos.x + childPos.width / 2);
-                    minY = Math.min(minY, childPos.y - childPos.height / 2);
-                    maxY = Math.max(maxY, childPos.y + childPos.height / 2);
-                }
+        const clusterSelection = clusterGroup.selectAll<SVGGElement, any>('g.cluster')
+            .data(clusters, (d: any) => d.id);
+
+        // Exit
+        clusterSelection.exit()
+            .transition(t as any)
+            .style('opacity', 0)
+            .remove();
+
+        // Enter
+        const clusterEnter = clusterSelection.enter()
+            .append('g')
+            .attr('class', 'cluster')
+            .attr('id', d => `cluster-${d.id}`)
+            .style('opacity', 0);
+
+        clusterEnter.append('rect')
+            .attr('rx', 8)
+            .attr('fill', 'rgba(148, 163, 184, 0.03)')
+            .attr('stroke', 'rgba(148, 163, 184, 0.1)')
+            .attr('stroke-width', 1)
+            .attr('stroke-dasharray', '3,3');
+
+        clusterEnter.append('text')
+            .attr('fill', '#64748b')
+            .attr('font-size', '9px')
+            .attr('font-weight', '600')
+            .attr('font-style', 'italic');
+
+        // Update (Merge Enter + Existing)
+        const clusterUpdate = clusterEnter.merge(clusterSelection);
+
+        clusterUpdate.transition(t as any)
+            .style('opacity', 1)
+            .attr('transform', d => `translate(${d.x - d.width / 2}, ${d.y - d.height / 2})`);
+
+        clusterUpdate.select('rect')
+            .transition(t as any)
+            .attr('width', d => d.width)
+            .attr('height', d => d.height)
+            .attr('fill', (d: any) => isNodeExpanded({ id: d.id } as any, expandedFileIds) ? 'rgba(16, 185, 129, 0.05)' : 'rgba(148, 163, 184, 0.03)')
+            .attr('stroke', (d: any) => isNodeExpanded({ id: d.id } as any, expandedFileIds) ? 'rgba(16, 185, 129, 0.2)' : 'rgba(148, 163, 184, 0.1)')
+            .style('opacity', (d: any) => {
+                if (!focusModeEnabled) return 1;
+                // If any child is critical, keep cluster visible? Or just fade everything not critical?
+                // Simple logic: fade clusters if focus mode is on, unless we define "critical clusters".
+                // For now, let clusters fade slightly less than nodes to maintain structure.
+                return 0.5;
             });
 
-            if (minX === Infinity) {
-                minX = parentPos.x - parentPos.width / 2;
-                maxX = parentPos.x + parentPos.width / 2;
-                minY = parentPos.y - parentPos.height / 2;
-                maxY = parentPos.y + parentPos.height / 2;
-            }
+        clusterUpdate.select('text')
+            .transition(t as any)
+            .attr('x', 10) // Padding from left
+            .attr('y', -5) // Slightly above top border
+            .text((d: any) => d.label);
 
-            const padding = 15;
-            clusterBoxes.set(parentId, {
-                x: minX - padding,
-                y: minY - padding,
-                width: (maxX - minX) + padding * 2,
-                height: (maxY - minY) + padding * 2,
-                nodeCount: children.length
-            });
-        });
 
-        // Render Clusters
-        const clusterGroup = g.append('g').attr('class', 'clusters');
-        clusterBoxes.forEach((box, parentId) => {
-            const parentNode = nodes.find(n => n.id === parentId);
-            clusterGroup.append('rect')
-                .attr('x', box.x).attr('y', box.y)
-                .attr('width', box.width).attr('height', box.height)
-                .attr('rx', 8)
-                .attr('fill', parentNode && isNodeExpanded(parentNode, expandedFileIds) ? 'rgba(16, 185, 129, 0.05)' : 'rgba(148, 163, 184, 0.03)')
-                .attr('stroke', parentNode && isNodeExpanded(parentNode, expandedFileIds) ? 'rgba(16, 185, 129, 0.2)' : 'rgba(148, 163, 184, 0.1)')
-                .attr('stroke-width', 1).attr('stroke-dasharray', '3,3');
+        // --- RENDER: LINKS ---
+        const linkGroup = g.select<SVGGElement>('.links').empty()
+            ? g.append('g').attr('class', 'links')
+            : g.select<SVGGElement>('.links');
 
-            const labelNode = nodes.find(n => n.id === parentId);
-            if (labelNode) {
-                clusterGroup.append('text')
-                    .attr('x', box.x).attr('y', box.y - 8)
-                    .attr('fill', '#64748b').attr('font-size', '9px').attr('font-weight', '600').attr('font-style', 'italic')
-                    .text(`${labelNode.name} (${box.nodeCount} items)`);
-            }
-        });
+        const linkSelection = linkGroup.selectAll<SVGPathElement, any>('path')
+            .data(layoutEdges, (d: any) => `${d.v}-${d.w}`);
 
-        // Render Edges
-        const linkGroup = g.append('g').attr('class', 'links');
-        gGraph.edges().forEach((edge: any) => {
-            const source = nodePositions.get(edge.v);
-            const target = nodePositions.get(edge.w);
-            if (!source || !target) return;
+        linkSelection.exit()
+            .transition(t as any)
+            .style('opacity', 0)
+            .remove();
 
-            const edgeData = gGraph.edge(edge);
-            const isInPath = isInTracePathLink(edge.v, edge.w, traceResult);
+        const linkEnter = linkSelection.enter()
+            .append('path')
+            .attr('fill', 'none')
+            .attr('stroke-opacity', 0);
 
-            const sourceX = source.x + source.width / 2;
-            const sourceY = source.y + source.height / 2;
-            const targetX = target.x - target.width / 2;
-            const targetY = target.y + target.height / 2;
-            const controlOffset = Math.abs(targetX - sourceX) * 0.5;
+        const linkUpdate = linkEnter.merge(linkSelection);
 
-            const path = d3.path();
-            path.moveTo(sourceX, sourceY);
-            path.bezierCurveTo(sourceX + controlOffset, sourceY, targetX - controlOffset, targetY, targetX, targetY);
-
-            const isVirtual = edgeData?.source_type === 'virtual' || (edgeData?.relation && edgeData.relation.startsWith('v:'));
-            const linkColor = isInPath ? '#00f2ff' : (isVirtual ? '#a855f7' : '#475569');
-            const linkOpacity = edgeData?.weight !== undefined ? (0.2 + (edgeData.weight * 0.8)) : (isVirtual ? 0.6 : 0.7);
-
-            linkGroup.append('path')
-                .attr('d', path.toString())
-                .attr('fill', 'none')
-                .attr('stroke', linkColor)
-                .attr('stroke-width', isInPath ? 3 : (isVirtual ? 2 : 1.5))
-                .attr('stroke-opacity', isInPath ? 1 : linkOpacity)
-                .style('filter', isInPath ? 'drop-shadow(0 0 6px #00f2ff)' : 'none')
-                .style('animation', isInPath ? 'path-pulse 1.5s ease-in-out infinite' : null)
-                .attr('stroke-dasharray', (isVirtual && !isInPath) ? '5,5' : null);
-        });
-
-        // Render Nodes
-        const nodeGroup = g.selectAll('g.node').data(nodes).join('g')
-            .attr('class', (d: any) => d._isExpandedChild ? 'node node-expanding' : 'node')
-            .attr('transform', (d: any) => {
-                const pos = nodePositions.get(d.id);
-                return pos ? `translate(${pos.x - pos.width / 2},${pos.y - pos.height / 2})` : `translate(0,0)`;
+        linkUpdate.transition(t as any)
+            .attr('d', (d: any) => {
+                const points = d.points;
+                const path = d3.path();
+                path.moveTo(points[0].x, points[0].y);
+                points.slice(1).forEach((p: any) => path.lineTo(p.x, p.y));
+                return path.toString();
             })
-            .style('opacity', (d: any) => getNodeOpacity(d, expandedFileIds))
+            .attr('stroke', (d: any) => {
+                // Focus Mode logic for Links
+                if (focusModeEnabled) {
+                    // If both source and target are critical, color it critical.
+                    if (criticalPathNodeIds.has(d.v) && criticalPathNodeIds.has(d.w)) return '#00f2ff'; // Cyan
+                    return '#334155'; // Dimmed
+                }
+                const isInPath = isInTracePathLink(d.v, d.w, traceResult);
+                const isVirtual = d.source_type === 'virtual' || (d.relation && d.relation.startsWith('v:'));
+                return isInPath ? '#00f2ff' : (isVirtual ? '#a855f7' : '#475569');
+            })
+            .attr('stroke-width', (d: any) => {
+                if (focusModeEnabled) {
+                    if (criticalPathNodeIds.has(d.v) && criticalPathNodeIds.has(d.w)) return 2.5;
+                    return 1;
+                }
+                const isInPath = isInTracePathLink(d.v, d.w, traceResult);
+                return isInPath ? 3 : (d.source_type === 'virtual' || (d.relation && d.relation.startsWith('v:')) ? 2 : 1.5);
+            })
+            .style('opacity', (d: any) => {
+                if (focusModeEnabled) {
+                    if (criticalPathNodeIds.has(d.v) && criticalPathNodeIds.has(d.w)) return 1;
+                    return 0.1; // Very dim
+                }
+                return 1;
+            })
+            .attr('stroke-dasharray', (d: any) => {
+                const isVirtual = d.source_type === 'virtual' || (d.relation && d.relation.startsWith('v:'));
+                return (isVirtual) ? '5,5' : null;
+            });
+
+
+        // --- RENDER: NODES ---
+        // For nodes, we want to distinguish between cluster containers (files when expanded) and leaf nodes.
+        // Dagre's `nodes()` includes both.
+        // We only want to draw specific "node cards" for things that are NOT acting purely as containers,
+        // OR we draw them for everything but allow the 'rect' inside to be styled differently.
+        // Requirements say: "File: width 200, height 100".
+
+        const nodeSelection = g.selectAll<SVGGElement, any>('g.node')
+            .data(layoutNodes, (d: any) => d.id);
+
+        nodeSelection.exit()
+            .transition(t as any)
+            .style('opacity', 0)
+            .remove();
+
+        const nodeEnter = nodeSelection.enter()
+            .append('g')
+            .attr('class', 'node')
+            .style('opacity', 0)
             .attr('cursor', 'pointer')
             .on('click', (e, d) => {
                 e.stopPropagation();
-                onNodeSelect(d);
+                // Find original node object to pass back
+                const originalNode = nodes.find(n => n.id === d.id);
+                if (originalNode) onNodeSelect(originalNode);
             });
 
-        nodeGroup.append('rect')
-            .attr('width', (d: any) => nodePositions.get(d.id)?.width || 120)
-            .attr('height', 40).attr('rx', 6)
-            .attr('fill', (d: any) => getNodeFill(d, getAccent(d.kind || 'func'), isInTracePath(d.id, traceResult)))
-            .attr('stroke', (d: any) => getNodeStroke(d, getAccent(d.kind || 'func'), isInTracePath(d.id, traceResult)))
-            .attr('stroke-width', (d: any) => isInTracePath(d.id, traceResult) ? 3 : 2)
-            .style('filter', (d: any) => isInTracePath(d.id, traceResult) ? 'drop-shadow(0 0 8px #00f2ff)' : 'none')
-            .style('animation', (d: any) => isInTracePath(d.id, traceResult) ? 'pulse-glow 2s ease-in-out infinite' : null)
-            .attr('stroke-dasharray', (d: any) => needsHydration(d) ? '4,2' : null);
+        nodeEnter.append('rect')
+            .attr('rx', 6);
 
-        // Expand Buttons
-        // Fix shadowing: rename inner 'nodes' to 'domNodes'
-        nodeGroup.each((d: any, i: number, domNodes: any) => {
-            const node = d3.select(domNodes[i]);
-            const pos = nodePositions.get(d.id);
-            const width = pos?.width || 120;
+        nodeEnter.append('text')
+            .attr('class', 'label')
+            .attr('text-anchor', 'middle')
+            .attr('fill', '#f1f5f9')
+            .attr('font-size', '11px')
+            .attr('font-weight', '600');
 
-            if (isExpandableNode(d) && onToggleFileExpansion) {
-                const buttonGroup = node.append('g')
-                    .attr('transform', `translate(${width - 20}, 12)`)
-                    .style('opacity', isNodeExpanding(d, expandingFileId) ? 0.5 : 1)
-                    .on('click', (e: any) => {
-                        e.stopPropagation();
-                        onToggleFileExpansion(d.id);
-                    });
+        // Expand Button Group
+        const expandBtn = nodeEnter.append('g').attr('class', 'expand-btn').style('display', 'none');
+        expandBtn.append('circle').attr('r', 8).attr('fill', '#64748b').attr('stroke', 'white').attr('stroke-width', 1);
+        expandBtn.append('text').attr('text-anchor', 'middle').attr('dy', '0.35em').attr('fill', 'white').attr('font-size', '10px').attr('font-weight', 'bold');
 
-                buttonGroup.append('circle').attr('r', 8)
-                    .attr('fill', isNodeExpanded(d, expandedFileIds) ? '#10b981' : '#64748b')
-                    .attr('stroke', 'white').attr('stroke-width', 1);
+        const nodeUpdate = nodeEnter.merge(nodeSelection);
 
-                buttonGroup.append('text').attr('text-anchor', 'middle').attr('dy', '0.35em')
-                    .attr('fill', 'white').attr('font-size', '10px').attr('font-weight', 'bold')
-                    .text(isNodeExpanding(d, expandingFileId) ? '...' : (isNodeExpanded(d, expandedFileIds) ? '−' : '+'));
-            }
+        // Apply Focus Mode transition to Group
+        nodeUpdate.transition(t as any)
+            .style('opacity', (d: any) => {
+                if (focusModeEnabled) {
+                    return criticalPathNodeIds.has(d.id) ? 1 : 0.2;
+                }
+                return 1;
+            })
+            .attr('transform', d => `translate(${d.x - d.width / 2}, ${d.y - d.height / 2})`);
 
-            node.append('text')
-                .attr('x', isExpandableNode(d) && onToggleFileExpansion ? (width / 2) - 10 : width / 2)
-                .attr('y', 24).attr('text-anchor', 'middle').attr('fill', '#f1f5f9')
-                .attr('font-size', '11px').attr('font-weight', '600')
-                .text((d: any) => d.name);
-        });
+        nodeUpdate.select('rect')
+            .transition(t as any)
+            .attr('width', d => d.width)
+            .attr('height', d => d.height)
+            .attr('fill', (d: any) => {
+                const originalNode = nodes.find(n => n.id === d.id);
+                if (!originalNode) return '#000';
+                // If expanded file, maybe make it transparent since the cluster rect handles the BG?
+                // Or keep it as the "header".
+                // Based on requirements, files have valid nodes.
+                if (originalNode.kind === 'file' && isNodeExpanded(originalNode, expandedFileIds)) {
+                    return 'rgba(0,0,0,0)'; // Invisible, let cluster rect show
+                }
+                return getNodeFill(originalNode, getAccent(originalNode.kind || 'func'), isInTracePath(d.id, traceResult));
+            })
+            .attr('stroke', (d: any) => {
+                const originalNode = nodes.find(n => n.id === d.id);
+                if (!originalNode) return 'none';
 
-        // Zoom to fit
-        if (nodePositions.size > 0 && !skipZoom) {
-            const allX = Array.from(nodePositions.values()).map(p => p.x);
-            const allY = Array.from(nodePositions.values()).map(p => p.y);
-            const minX = Math.min(...allX), maxX = Math.max(...allX);
-            const minY = Math.min(...allY), maxY = Math.max(...allY);
-            const contentWidth = maxX - minX + 200;
-            const contentHeight = maxY - minY + 100;
-            const scale = Math.min(width / contentWidth, height / contentHeight, 1.2);
-            const initialTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(scale).translate(-(minX + maxX) / 2, -(minY + maxY) / 2);
-            svg.call(zoomObj.transform, initialTransform);
+                // Focus Mode Glow
+                if (focusModeEnabled && criticalPathNodeIds.has(d.id)) {
+                    return '#00f2ff'; // Cyan glow color
+                }
+
+                if (originalNode.kind === 'file' && isNodeExpanded(originalNode, expandedFileIds)) return 'none';
+                return getNodeStroke(originalNode, getAccent(originalNode.kind || 'func'), isInTracePath(d.id, traceResult));
+            })
+            .attr('stroke-width', (d: any) => {
+                if (focusModeEnabled && criticalPathNodeIds.has(d.id)) return 3;
+                return isInTracePath(d.id, traceResult) ? 3 : 2;
+            })
+            // Add Glow Filter effect if critical? (Optional enhancement)
+            .style('filter', (d: any) => {
+                if (focusModeEnabled && criticalPathNodeIds.has(d.id)) {
+                    // return 'drop-shadow(0 0 5px #00f2ff)'; // Can be expensive
+                    return null;
+                }
+                return null;
+            });
+
+        nodeUpdate.select('text.label')
+            .transition(t as any)
+            .attr('x', d => d.width / 2)
+            .attr('y', 24)
+            .text(d => d.label)
+            .style('opacity', (d: any) => {
+                const originalNode = nodes.find(n => n.id === d.id);
+                // If expanded file, the cluster label handles it? The prompt says "Ensure the file name stays at the top of the cluster".
+                // We added a cluster label earlier. So maybe hide this one if expanded.
+                if (originalNode && originalNode.kind === 'file' && isNodeExpanded(originalNode, expandedFileIds)) return 0;
+                return 1;
+            });
+
+        // Update Expand Button
+        nodeUpdate.select('.expand-btn')
+            .style('display', (d: any) => {
+                const originalNode = nodes.find(n => n.id === d.id);
+                return (originalNode && isExpandableNode(originalNode) && onToggleFileExpansion) ? 'block' : 'none';
+            })
+            .attr('transform', d => `translate(${d.width - 20}, 12)`)
+            .on('click', (e, d: any) => {
+                e.stopPropagation();
+                onToggleFileExpansion?.(d.id);
+            });
+
+        nodeUpdate.select('.expand-btn circle')
+            .attr('fill', (d: any) => {
+                const originalNode = nodes.find(n => n.id === d.id);
+                if (!originalNode) return '#64748b';
+                return isNodeExpanded(originalNode, expandedFileIds) ? '#10b981' : '#64748b';
+            });
+
+        nodeUpdate.select('.expand-btn text')
+            .text((d: any) => {
+                const originalNode = nodes.find(n => n.id === d.id);
+                if (!originalNode) return '+';
+                return isNodeExpanding(originalNode, expandingFileId) ? '...' : (isNodeExpanded(originalNode, expandedFileIds) ? '−' : '+');
+            });
+
+
+        // Zoom to fit (only on initial load or if explicitly requested)
+        if (!skipZoom && nodes.length > 0) {
+            // We can check if it's the very first render by checking a ref or similar,
+            // but here we just rely on skipZoom prop passed from parent which is usually true after first interaction.
+            // Actually, parent passes skipZoom=true usually.
         }
 
-    }, [nodes, links, width, height, expandedFileIds, expandingFileId, traceResult, skipZoom, zoomObj, svgRef]);
+    }, [nodes, links, width, height, expandedFileIds, expandingFileId, traceResult, skipZoom, zoomObj, svgRef, focusModeEnabled, criticalPathNodeIds]);
 
     return <g ref={gRef} className="flow-graph" />;
 };

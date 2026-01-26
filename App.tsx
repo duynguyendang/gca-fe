@@ -7,7 +7,20 @@ import FileTreeItem from './components/FileTreeItem';
 import { ASTNode, FlatGraph, BackboneGraph, BackboneNode, BackboneLink } from './types';
 import { getGeminiInsight } from './services/geminiService';
 import { findShortestPath, PathResult } from './utils/pathfinding';
-import { fetchGraphMap, fetchFileDetails, fetchBackbone, GraphMapResponse, FileDetailsResponse } from './services/graphService';
+import {
+  fetchGraphMap,
+  fetchFileDetails,
+  fetchBackbone,
+  fetchProjects,
+  fetchFiles,
+  fetchHydrate,
+  executeQuery,
+  fetchFileGraph,
+  fetchFileImports, // Added fetchFileImports
+  fetchSource,
+  GraphMapResponse,
+  FileDetailsResponse
+} from './services/graphService';
 
 // Ensure Prism is available for highlighting
 declare var Prism: any;
@@ -645,12 +658,40 @@ const App: React.FC = () => {
 
       // Add to expanded set
       setExpandedFileIds(prev => new Set(prev).add(fileId));
+
+      // If we are currently viewing this file in Flow mode, update the view to include internals
+      if (currentFlowFileRef.current === fileId && viewMode === 'flow') {
+        const newNodes = [...fileScopedNodes];
+        const newLinks = [...fileScopedLinks];
+
+        // Add missing nodes
+        details.nodes.forEach((n: any) => {
+          if (!newNodes.find(en => en.id === n.id)) {
+            newNodes.push({ ...n, _parentFile: fileId, _isExpandedChild: true });
+          }
+        });
+
+        // Add internal links
+        details.links.forEach((l: any) => {
+          const exists = newLinks.find(el =>
+            (typeof el.source === 'object' ? el.source.id : el.source) === (typeof l.source === 'object' ? l.source.id : l.source) &&
+            (typeof el.target === 'object' ? el.target.id : el.target) === (typeof l.target === 'object' ? l.target.id : l.target)
+          );
+          if (!exists) {
+            newLinks.push({ ...l, _parentFile: fileId });
+          }
+        });
+
+        setFileScopedNodes(newNodes);
+        setFileScopedLinks(newLinks);
+      }
+
     } catch (error) {
       console.error('[Expand] Error fetching file details:', error);
     } finally {
       setExpandingFileId(null);
     }
-  }, [dataApiBase, selectedProjectId, expandedFileIds, fileDetailsCache]);
+  }, [dataApiBase, selectedProjectId, expandedFileIds, fileDetailsCache, fileScopedNodes, fileScopedLinks, viewMode]);
 
   // Collapse a file to hide its internal symbols
   const collapseFile = useCallback((fileId: string) => {
@@ -660,7 +701,41 @@ const App: React.FC = () => {
       newSet.delete(fileId);
       return newSet;
     });
-  }, []);
+
+    // If viewing this file, remove internals from view
+    if (currentFlowFileRef.current === fileId && viewMode === 'flow') {
+      // Filter out nodes/links that belong to this file's expansion (internal symbols)
+      // Keep the File Node itself and External Imports
+      // Internal symbols usually have `kind` != 'file' AND `filePath` == fileId OR `_parentFile` == fileId
+      // But the File Node itself has `id` == fileId.
+
+      setFileScopedNodes(prev => prev.filter(n => {
+        // Keep the file node itself
+        if (n.id === fileId) return true;
+        // Keep nodes that are NOT internal children of this file
+        // "Internal child" logic: 
+        // 1. _parentFile === fileId
+        // 2. OR id starts with fileId + ":" (simplistic)
+        // But we must keep IMPORT TARGETS. Import targets usually have different filePath.
+
+        if (n._parentFile === fileId) return false;
+
+        // If it's an internal symbol (same file path) but not the file node, remove it
+        const nodeFilePath = n.filePath || (n.id.includes(':') ? n.id.split(':')[0] : n.id);
+        if (nodeFilePath === fileId && n.id !== fileId) return false;
+
+        return true;
+      }));
+
+      setFileScopedLinks(prev => prev.filter(l => {
+        // Remove links where source OR target is removed?
+        // Actually just remove internal links (_parentFile === fileId)
+        // or links between internal nodes.
+        if (l._parentFile === fileId) return false;
+        return true;
+      }));
+    }
+  }, [fileScopedNodes, viewMode]);
 
   // Toggle file expansion state
   const toggleFileExpansion = useCallback((fileId: string) => {
@@ -889,87 +964,70 @@ const App: React.FC = () => {
       const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
 
       setIsFlowLoading(true);
-      fetch(`${cleanBase}/v1/graph?project=${encodeURIComponent(projectId)}&file=${encodeURIComponent(filePath)}`)
-        .then(r => r.ok ? r.json() : null)
+
+      // REFACTOR: Use fetchFileImports to get "Import-Only" view
+      console.log('Fetching imports only for:', filePath);
+
+      fetchFileImports(cleanBase, projectId, filePath)
         .then(data => {
-          if (data && data.nodes && data.nodes.length > 0) {
-            console.log('Graph API response:', data.nodes.length, 'nodes,', data.links?.length, 'links');
+          console.log('[Flow] File imports loaded:', data);
 
-            const fileNode = data.nodes.find((n: any) => n.kind === 'file' || n.id === filePath);
-            if (fileNode && fileNode.code) {
-              setSelectedNode((prev: any) => ({ ...prev, ...fileNode, _project: projectId }));
-            }
-
-            try {
-              const nodesWithInDegree = data.nodes.map((n: any, i: number) => {
-                const nodeId = n.id;
-                const inDegree = data.links?.filter((l: any) => {
-                  const target = typeof l.target === 'object' ? l.target.id : l.target;
-                  return target === nodeId;
-                }).length || 0;
-
-                return {
-                  id: nodeId,
-                  name: n.name,
-                  kind: n.kind || n.type || 'func',
-                  filePath: filePath,
-                  start_line: n.start_line || n.metadata?.start_line,
-                  end_line: n.end_line || n.metadata?.end_line,
-                  parent: n.metadata?.parent || n.parent,
-                  inDegree,
-                  code: n.code,
-                  _filePath: n._filePath || filePath,
-                  _project: n._project || projectId
-                };
-              });
-
-              console.log('Nodes with IDs:', nodesWithInDegree.map(n => n.id).slice(0, 5));
-
-              const nodeIds = new Set(nodesWithInDegree.map(n => n.id));
-              const nodeNames = new Set(nodesWithInDegree.map(n => n.name));
-
-              const diagramLinks = (data.links || [])
-                .filter((l: any) => {
-                  if (!l) return false;
-                  const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
-                  const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-                  const sourceName = typeof l.source === 'object' ? l.source.name : l.source.split(':').pop();
-                  const targetName = typeof l.target === 'object' ? l.target.name : l.target.split(':').pop();
-
-                  const hasSource = nodeIds.has(sourceId) || nodeNames.has(sourceName);
-                  const hasTarget = nodeIds.has(targetId) || nodeNames.has(targetName);
-                  return hasSource || hasTarget;
-                })
-                .map((l: any) => ({
-                  source: typeof l.source === 'object' ? l.source.id : l.source,
-                  target: typeof l.target === 'object' ? l.target.id : l.target,
-                  relation: l.relation || 'defines'
-                }));
-
-              console.log('Filtered links:', diagramLinks.slice(0, 5));
-
-              setSkipFlowZoom(false);
-              setFileScopedNodes(nodesWithInDegree);
-              setFileScopedLinks(diagramLinks);
-              currentFlowFileRef.current = filePath; // Update current file ref
-              console.log('[DEBUG] Setting viewMode to FLOW (API Fallback)');
-              debugSetViewMode('flow');
-            } catch (e) {
-              console.error('Error processing API data:', e);
-            }
-          } else {
-            console.log('Graph API returned no nodes');
-            setFileScopedNodes([]);
+          if (!data || !data.nodes || data.nodes.length === 0) {
+            console.warn("No imports found or empty graph");
+            // Fallback to ensuring at least the file node exists
+            setFileScopedNodes([{
+              id: filePath,
+              name: filePath.split('/').pop(),
+              kind: 'file',
+              type: 'file',
+              filePath: filePath
+            }]);
             setFileScopedLinks([]);
+          } else {
+            // Convert to D3 format
+            const nodes = data.nodes.map((n: any) => ({
+              ...n,
+              type: n.kind === 'func' ? 'function' : (n.kind || 'default'),
+              sourcePosition: 'right',
+              targetPosition: 'left',
+              data: { label: n.name, ...n },
+              // Mark imports as such if needed, or TreeVisualizer handles it
+            }));
+
+            const links = data.links.map((l: any, i: number) => ({
+              id: `e${i}`,
+              source: typeof l.source === 'object' ? l.source.id : l.source,
+              target: typeof l.target === 'object' ? l.target.id : l.target,
+              animated: true,
+              label: l.relation || 'imports'
+            }));
+
+            setFileScopedNodes(nodes);
+            setFileScopedLinks(links);
           }
+
+          currentFlowFileRef.current = filePath;
           setIsFlowLoading(false);
+          debugSetViewMode('flow'); // Switch to flow view
+
+          // Check if file was previously expanded, if so, re-trigger expansion to show internals?
+          // For now, satisfy "hiding all internal symbols by default".
+          // If the user wants to see them, they click [+].
+          if (expandedFileIds.has(filePath)) {
+            // If it WAS expanded, we might want to keep it expanded?
+            // The user said "hiding... by default". 
+            // Maybe collapse it on click? 
+            // Let's Collapse it to ensure "Import Only" view is fresh.
+            collapseFile(filePath);
+          }
+
         })
-        .catch(e => {
-          console.error("Error fetching file graph:", e);
+        .catch(err => {
+          console.error('[Flow] Error loading file imports:', err);
           setIsFlowLoading(false);
         });
     }
-  }, [dataApiBase, selectedProjectId, astData, viewMode, fileScopedNodes, debugSetViewMode]);
+  }, [dataApiBase, selectedProjectId, astData, viewMode, fileScopedNodes, debugSetViewMode, expandedFileIds, expandFile, collapseFile]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -1131,16 +1189,16 @@ const App: React.FC = () => {
       setSelectedNode((prev: any) => ({ ...prev, ...node }));
     }
 
+    // Fetch source code if missing
     if (!node.code && node.filePath && dataApiBase && selectedProjectId) {
       const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-      fetch(`${cleanBase}/v1/source?project=${encodeURIComponent(selectedProjectId)}&id=${encodeURIComponent(node.filePath)}`)
-        .then(r => r.ok ? r.text() : null)
+      fetchSource(cleanBase, selectedProjectId, node.filePath)
         .then(code => {
-          if (code) {
-            setSelectedNode((prev: any) => ({ ...prev, code, _scrollToLine: node.start_line }));
-          }
+          setSelectedNode((prev: any) => ({ ...prev, code }));
+          // Update cache
+          setSymbolCache(prev => new Map(prev).set(node.filePath, { ...node, code }));
         })
-        .catch(e => console.error('Error fetching code:', e));
+        .catch(err => console.error('[Source] Failed to fetch source:', err));
     }
   };
 

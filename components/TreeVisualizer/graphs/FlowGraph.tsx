@@ -93,6 +93,10 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
 
         // Add nodes to Dagre
         nodes.forEach(node => {
+            if (!node || !node.id) {
+                console.warn("FlowGraph: Invalid node found", node);
+                return;
+            }
             gGraph.setNode(node.id, {
                 label: node.name,
                 width: Math.max(120, (node.name?.length || 5) * 9),
@@ -104,7 +108,8 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
         // Establish parent-child relationships for clustering
         nodes.forEach(node => {
             if (node._parentFile && node._isExpandedChild) {
-                if (gGraph.hasNode(node._parentFile)) {
+                // Prevent self-parenting and ensure parent exists
+                if (node.id !== node._parentFile && gGraph.hasNode(node._parentFile)) {
                     gGraph.setParent(node.id, node._parentFile);
                 }
             }
@@ -112,17 +117,82 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
 
         // Add edges to Dagre
         links.forEach(link => {
-            if (nodes.find(n => n.id === link.source) && nodes.find(n => n.id === link.target)) {
-                gGraph.setEdge(link.source, link.target, {
-                    source_type: link.source_type,
-                    weight: link.weight,
-                    relation: link.relation
-                });
+            // Ensure source/target are strings (IDs)
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+
+            if (gGraph.hasNode(sourceId) && gGraph.hasNode(targetId)) {
+                // Visualize Check: Exclude edges between Parent and Child
+                // If the edge represents "containment" or "defines" and we already have a visual 
+                // parent-child relationship (cluster), we shouldn't draw the arrow.
+                // It clutters the graph and might be creating layout issues for Dagre compound graphs.
+
+                const sourceNode = nodes.find(n => n.id === sourceId);
+                const targetNode = nodes.find(n => n.id === targetId);
+
+                const isParentChild = (sourceNode && sourceNode._parentFile === targetId) ||
+                    (targetNode && targetNode._parentFile === sourceId);
+
+                // Check if source or target is an expanded parent (cluster)
+                // Drawing edges to/from a cluster node itself while showing its children can cause Dagre stability issues.
+                // We prioritize the children's edges or valid layout over the cluster edge.
+                const isSourceExpanded = sourceNode && expandedFileIds.has(sourceNode.id);
+                const isTargetExpanded = targetNode && expandedFileIds.has(targetNode.id);
+
+                // Also skip self-loops
+                if (sourceId === targetId) return;
+
+                if (isParentChild) {
+                    // console.debug(`FlowGraph: Skipping parent-child edge ${sourceId} <-> ${targetId}`);
+                    return;
+                }
+
+                if (isSourceExpanded || isTargetExpanded) {
+                    // console.debug(`FlowGraph: Skipping edge ${sourceId} -> ${targetId} (connected to expanded cluster)`);
+                    return;
+                }
+
+                try {
+                    gGraph.setEdge(sourceId, targetId, {
+                        source_type: link.source_type || 'default',
+                        weight: link.weight || 1,
+                        relation: link.relation || 'related'
+                    });
+                } catch (e) {
+                    console.warn(`FlowGraph: Failed to set edge ${sourceId} -> ${targetId}`, e);
+                }
+            } else {
+                // console.debug(`FlowGraph: Skipping edge ${sourceId} -> ${targetId} (missing nodes)`);
             }
         });
 
-        // Run Dagre layout
-        dagre.layout(gGraph);
+        // Run Dagre layout with error handling
+        try {
+            dagre.layout(gGraph);
+        } catch (layoutError) {
+            console.error("FlowGraph: Dagre layout failed", layoutError);
+            console.error("Graph state:", { nodeCount: gGraph.nodeCount(), edgeCount: gGraph.edgeCount() });
+            // Attempt fallback or partial render? 
+            // If layout failed, node positions won't be set correctly.
+            // We could try running without compound: true as a fallback?
+            try {
+                const simpleGraph = new dagre.graphlib.Graph();
+                simpleGraph.setGraph({ rankdir: 'LR', ranksep: 80, nodesep: 40 });
+                gGraph.nodes().forEach(n => simpleGraph.setNode(n, gGraph.node(n)));
+                gGraph.edges().forEach(e => simpleGraph.setEdge(e.v, e.w, gGraph.edge(e)));
+                dagre.layout(simpleGraph);
+
+                // Copy back positions
+                simpleGraph.nodes().forEach(n => {
+                    const pos = simpleGraph.node(n);
+                    gGraph.setNode(n, pos);
+                });
+                console.warn("FlowGraph: Fallback non-compound layout succeeded");
+            } catch (fallbackError) {
+                console.error("FlowGraph: Fallback layout also failed", fallbackError);
+                return; // Give up
+            }
+        }
 
         // Get node positions
         const nodePositions = new Map<string, any>();
@@ -255,8 +325,9 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
             .attr('stroke-dasharray', (d: any) => needsHydration(d) ? '4,2' : null);
 
         // Expand Buttons
-        nodeGroup.each((d: any, i: number, nodes: any) => {
-            const node = d3.select(nodes[i]);
+        // Fix shadowing: rename inner 'nodes' to 'domNodes'
+        nodeGroup.each((d: any, i: number, domNodes: any) => {
+            const node = d3.select(domNodes[i]);
             const pos = nodePositions.get(d.id);
             const width = pos?.width || 120;
 

@@ -8,7 +8,7 @@ export const useGraphData = (data: ASTNode | FlatGraph) => {
       console.log('useGraphData: no valid data');
       return null;
     }
-    
+
     // Safety check for empty or invalid node arrays
     if (!Array.isArray(data.nodes)) {
       console.log('useGraphData: nodes is not an array');
@@ -16,33 +16,39 @@ export const useGraphData = (data: ASTNode | FlatGraph) => {
     }
 
     console.log('useGraphData: data.nodes:', data.nodes.length, 'data.links:', data.links?.length);
-    
+
     const nodeMap = new Map();
     data.nodes.forEach(n => {
       if (n && n.id) nodeMap.set(n.id, n);
     });
-    
+
     const nodes = Array.from(nodeMap.values());
 
     const links = Array.isArray(data.links) ? data.links.map(d => {
       if (!d) return null;
       const sourceId = typeof d.source === 'object' ? (d.source as any).id : d.source;
       const targetId = typeof d.target === 'object' ? (d.target as any).id : d.target;
-      
+
       const source = nodeMap.get(sourceId);
       const target = nodeMap.get(targetId);
-      
+
       if (!source || !target) {
-        console.log('useGraphData: link dropped - source:', sourceId, 'target:', targetId);
+        console.warn('useGraphData: link dropped', {
+          sourceId,
+          targetId,
+          sourceFound: !!source,
+          targetFound: !!target,
+          availableNodesSample: nodes.slice(0, 5).map(n => n.id) // Show first 5 IDs for context
+        });
         return null;
       }
-      
+
       return source && target ? { source, target } : null;
     }).filter((l): l is { source: any, target: any } => l !== null) : [];
-    
+
     console.log('useGraphData: processed links:', links.length);
     if (links.length === 0 && data.links?.length > 0) {
-      console.log('useGraphData: WARNING - links were dropped!');
+      console.warn('useGraphData: WARNING - ALL links were dropped! Original count:', data.links.length);
     }
 
     const degrees = new Map<string, number>();

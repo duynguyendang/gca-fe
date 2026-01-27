@@ -13,7 +13,7 @@ interface TreeVisualizerProps {
   data: ASTNode | FlatGraph;
   onNodeSelect: (node: any) => void;
   onNodeHover: (node: any | null) => void;
-  mode: 'flow' | 'map' | 'discovery';
+  mode: 'flow' | 'map' | 'discovery' | 'architecture';
   layoutStyle?: 'organic' | 'flow';
   selectedId?: string;
   fileScopedData?: { nodes: any[]; links: any[] };
@@ -138,7 +138,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
       <svg ref={svgRef} className="w-full h-full absolute inset-0" style={{ background: '#0f172a' }}>
         <g className="zoom-layer">
           {(() => {
-            const shouldRenderFlow = mode === 'flow' && fileScopedData;
+            const shouldRenderFlow = (mode === 'flow' || mode === 'architecture') && fileScopedData;
             console.log('FlowGraph Render Check:', {
               mode,
               modeIsFlow: mode === 'flow',

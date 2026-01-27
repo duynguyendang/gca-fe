@@ -163,19 +163,38 @@ export const ClassDiagramCanvas: React.FC<ClassDiagramCanvasProps> = ({
       if (!sourceData || !targetData) return;
 
       const edgeKey = `${edge.v}->${edge.w}`;
-      const metadata = linkMetadata.get(edgeKey) || {};
+      const metadata = linkMetadata.get(edgeKey) || { source_type: undefined, weight: undefined, relation: '' };
       const isVirtual = metadata.source_type === 'virtual' || metadata.relation?.startsWith('v:');
       const color = isVirtual ? '#a855f7' : linkColor;
       const opacity = metadata.weight !== undefined ? (0.2 + (metadata.weight * 0.8)) : 0.6;
 
-      const sourceY = sourceData.y + (sourceData.height || 30) / 2;
-      const targetY = targetData.y - (targetData.height || 30) / 2;
+      // DAGRE layout: 'x' and 'y' are center coordinates
+      // Source anchor: Right edge (x + width/2)
+      // Target anchor: Left edge (x - width/2)
+      const sourceX = sourceData.x + (sourceData.width / 2);
+      const sourceY = sourceData.y;
+      const targetX = targetData.x - (targetData.width / 2);
+      const targetY = targetData.y;
 
-      const midY = (sourceY + targetY) / 2;
+      // Adjust target for arrowhead padding (so it doesn't touch the node border)
+      // We want the arrow tip to be at targetX - padding.
+      // Actually, marker-end attaches to the end of the path.
+      // If we stop the path short, the arrow will be drawn there.
+      // Let's stop 8px before the target node to give space for the arrow.
+      const arrowPadding = 8;
+      const adjustedTargetX = targetX - arrowPadding;
 
       const path = d3.path();
-      path.moveTo(sourceData.x, sourceY);
-      path.bezierCurveTo(sourceData.x, midY, targetData.x, midY, targetData.x, targetY);
+
+      // Bump Curve Logic (Horizontal)
+      // Equivalent to d3.curveBumpX logic
+      const curvature = 0.5;
+      const xi = d3.interpolateNumber(sourceX, adjustedTargetX);
+      const x0 = xi(curvature);
+      const x1 = xi(1 - curvature);
+
+      path.moveTo(sourceX, sourceY);
+      path.bezierCurveTo(x0, sourceY, x1, targetY, adjustedTargetX, targetY);
 
       const pathElement = linkGroup.append('path')
         .attr('d', path.toString())

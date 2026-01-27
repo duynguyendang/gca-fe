@@ -61,7 +61,7 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
         const t = svg.transition().duration(transitionDuration).ease(d3.easeCubicInOut);
 
         // 1. Initialize Dagre
-        const gGraph = new dagre.graphlib.Graph({ compound: true });
+        const gGraph = new dagre.graphlib.Graph({ compound: true, multigraph: true });
         gGraph.setGraph({
             rankdir: 'LR',
             ranksep: 100,
@@ -111,14 +111,28 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
             const sourceId = String(typeof link.source === 'object' ? link.source.id : link.source);
             const targetId = String(typeof link.target === 'object' ? link.target.id : link.target);
 
-            if (!gGraph.hasNode(sourceId) || !gGraph.hasNode(targetId)) return;
+            if (!gGraph.hasNode(sourceId) || !gGraph.hasNode(targetId)) {
+                console.warn('FlowGraph: Link dropped due to missing node:', {
+                    source: sourceId,
+                    target: targetId,
+                    hasSource: gGraph.hasNode(sourceId),
+                    hasTarget: gGraph.hasNode(targetId)
+                });
+                return;
+            }
             if (sourceId === targetId) return;
 
-            // Avoid edges between parent and its own child (visual clutter)
+            // Avoid edges between parent and its own child (visual clutter) for structural relations
             const parentOfSource = gGraph.parent(sourceId);
             const parentOfTarget = gGraph.parent(targetId);
 
-            if (parentOfSource === targetId || parentOfTarget === sourceId) return;
+            if ((parentOfSource === targetId || parentOfTarget === sourceId)) {
+                // Only skip if relationship is structural, otherwise show the edge (e.g. imports, calls)
+                const rel = link.relation || 'related';
+                if (rel === 'defines' || rel === 'contains' || rel === 'member') {
+                    return;
+                }
+            }
 
             try {
                 gGraph.setEdge(sourceId, targetId, {

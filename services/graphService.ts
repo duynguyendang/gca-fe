@@ -364,3 +364,77 @@ export async function fetchBackbone(
     files: files
   };
 }
+
+/**
+ * Fetch recursive file call graph
+ * GET /v1/graph/file-calls?id={fileId}&project={projectId}&depth={depth}
+ */
+export async function fetchFileCalls(
+  dataApiBase: string,
+  projectId: string,
+  fileId: string,
+  depth: number = 3
+): Promise<GraphMapResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/v1/graph/file-calls?id=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}&depth=${depth}`;
+
+  console.log('[GraphService] Fetching file calls:', url);
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch file calls: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] File calls response:', data);
+  return data;
+}
+
+/**
+ * Fetch flow path between two symbols
+ * GET /v1/search/flow?from={from}&to={to}&project={projectId}
+ */
+export async function fetchFlowPath(
+  dataApiBase: string,
+  projectId: string,
+  from: string,
+  to: string
+): Promise<GraphMapResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/v1/search/flow?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&project=${encodeURIComponent(projectId)}`;
+
+  console.log('[GraphService] Fetching flow path:', url);
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch flow path: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] Flow path response:', data);
+  return data;
+}
+
+/**
+ * Fetch file backbone (bidirectional depth-1)
+ * GET /v1/graph/file-backbone?id={fileId}&project={projectId}
+ */
+export async function fetchFileBackbone(
+  dataApiBase: string,
+  projectId: string,
+  fileId: string
+): Promise<GraphMapResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/v1/graph/file-backbone?id=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}`;
+
+  console.log('[GraphService] Fetching file backbone:', url);
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch file backbone: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] File backbone response:', data);
+  return data;
+}

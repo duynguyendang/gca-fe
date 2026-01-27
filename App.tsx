@@ -5,7 +5,7 @@ import ClassDiagramCanvas from './components/ClassDiagramCanvas';
 import HighlightedCode from './components/HighlightedCode';
 import FileTreeItem from './components/FileTreeItem';
 import { ASTNode, FlatGraph, BackboneGraph, BackboneNode, BackboneLink } from './types';
-import { getGeminiInsight, pruneNodesWithAI, getArchitectureSummary, getCriticalPathNodes } from './services/geminiService';
+import { getGeminiInsight, pruneNodesWithAI, resolveSymbolFromQuery, generateAnswerForSymbol, findPathEndpoints, generatePathNarrative, getArchitectureSummary, getArchitectureNarrative, getFileRoleSummary } from './services/geminiService';
 import { findShortestPath, PathResult } from './utils/pathfinding';
 import {
   fetchGraphMap,
@@ -17,7 +17,11 @@ import {
   executeQuery,
   fetchFileGraph,
   fetchFileImports, // Added fetchFileImports
+  fetchFileCalls,
   fetchSource,
+  fetchSymbols,
+  fetchFlowPath,
+  fetchFileBackbone,
   GraphMapResponse,
   FileDetailsResponse
 } from './services/graphService';
@@ -108,9 +112,9 @@ const App: React.FC = () => {
     } catch (e) { return {}; }
   });
 
-  const [dataApiBase, setDataApiBase] = useState<string>(() => {
-    return sessionStorage.getItem('gca_data_api_base') || '';
-  });
+  // Additional UI states
+  const [dataApiBase, setDataApiBase] = useState<string>(() => sessionStorage.getItem('gca_api_base') || "http://localhost:8080");
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(() => localStorage.getItem('gca_gemini_api_key') || "");
 
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
@@ -161,8 +165,8 @@ const App: React.FC = () => {
   const currentFlowFileRef = useRef<string | null>(null);
   const [skipFlowZoom, setSkipFlowZoom] = useState(false);
 
-  // View Modes: flow (Architecture), map (Circle), discovery (Force), backbone (Cross-file architecture)
-  const [viewMode, setViewMode] = useState<'flow' | 'map' | 'discovery'>('discovery');
+  // View Modes: flow (Architecture), map (Circle), discovery (Force), backbone (Cross-file), architecture (File-to-File)
+  const [viewMode, setViewMode] = useState<'flow' | 'map' | 'discovery' | 'backbone' | 'architecture'>('discovery');
   const [isFlowLoading, setIsFlowLoading] = useState(false);
 
   // Trace Path state
@@ -185,9 +189,7 @@ const App: React.FC = () => {
 
   const [showArchitecturePanel, setShowArchitecturePanel] = useState(false);
 
-  // Focus Mode State
-  const [focusModeEnabled, setFocusModeEnabled] = useState(false);
-  const [criticalPathNodeIds, setCriticalPathNodeIds] = useState<Set<string>>(new Set());
+  // Focus Mode State - REMOVED
 
   // Debug wrapper for setViewMode
   const debugSetViewMode = useCallback((newMode: typeof viewMode) => {
@@ -206,6 +208,7 @@ const App: React.FC = () => {
   const setFlowMode = useCallback(() => debugSetViewMode('flow'), [debugSetViewMode]);
   const setMapMode = useCallback(() => debugSetViewMode('map'), [debugSetViewMode]);
   const setDiscoveryMode = useCallback(() => debugSetViewMode('discovery'), [debugSetViewMode]);
+  const setArchitectureMode = useCallback(() => debugSetViewMode('architecture'), [debugSetViewMode]);
 
 
 
@@ -226,12 +229,12 @@ const App: React.FC = () => {
     try {
       sessionStorage.setItem('gca_ast_data', JSON.stringify(astData));
     } catch (e) {
-      console.warn('Failed to save AST data to session storage:', e);
-    }
-    try {
-      sessionStorage.setItem('gca_ast_data', JSON.stringify(astData));
-    } catch (e) {
-      console.warn('Failed to save AST data to session storage:', e);
+      // Ignore quota errors for large graphs
+      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+        console.debug('Session storage quota exceeded, persistence disabled for this session.');
+      } else {
+        console.warn('Failed to save AST data to session storage:', e);
+      }
     }
   }, [astData]);
 
@@ -241,25 +244,23 @@ const App: React.FC = () => {
     } catch (e) {
       console.warn('Failed to save sandbox files to session storage:', e);
     }
-    try {
-      sessionStorage.setItem('gca_sandbox_files', JSON.stringify(sandboxFiles));
-    } catch (e) {
-      console.warn('Failed to save sandbox files to session storage:', e);
-    }
   }, [sandboxFiles]);
 
+  // Initialize from session storage if available
   useEffect(() => {
-    try {
-      sessionStorage.setItem('gca_data_api_base', dataApiBase);
-    } catch (e) {
-      console.warn('Failed to save API base to session storage:', e);
-    }
-    try {
-      sessionStorage.setItem('gca_data_api_base', dataApiBase);
-    } catch (e) {
-      console.warn('Failed to save API base to session storage:', e);
+    if (dataApiBase) {
+      sessionStorage.setItem('gca_api_base', dataApiBase);
     }
   }, [dataApiBase]);
+
+  // Persist Gemini API Key to local storage
+  useEffect(() => {
+    if (geminiApiKey) {
+      localStorage.setItem('gca_gemini_api_key', geminiApiKey);
+    } else {
+      localStorage.removeItem('gca_gemini_api_key');
+    }
+  }, [geminiApiKey]);
 
   useEffect(() => {
     const link = document.createElement('link');
@@ -411,146 +412,173 @@ const App: React.FC = () => {
     }
   };
 
-  // Search symbols or run Datalog query via API
-  const searchSymbols = useCallback(async (query: string) => {
-    console.log('=== searchSymbols called ===');
-    console.log('query:', query);
-    console.log('dataApiBase:', dataApiBase);
-    console.log('selectedProjectId:', selectedProjectId);
-
+  // Smart Search: Orchestrates Symbol Search and Pathfinding
+  const handleSmartSearch = useCallback(async (query: string) => {
+    console.log('=== handleSmartSearch called ===', query);
     setSearchError(null);
+    setIsSearching(true);
+    setQueryResults(null);
 
     if (!dataApiBase || !selectedProjectId || !query || query.length < 1) {
-      console.log('Search cancelled: missing dataApiBase or selectedProjectId or query');
-      if (!dataApiBase) {
-        setSearchError('API endpoint not configured. Please click the gear icon to set up the Data API.');
-      } else if (!selectedProjectId) {
-        setSearchError('No project selected. Please open settings and select a project.');
-      }
-      setQueryResults(null);
-
-      // If no API configured, try local search as fallback
-      if (!dataApiBase && query && astData?.nodes) {
-        console.log('Trying local search fallback...');
-        const localResults = {
-          nodes: astData.nodes.filter((n: any) =>
-            n.name?.toLowerCase().includes(query.toLowerCase()) ||
-            n.id?.toLowerCase().includes(query.toLowerCase())
-          ),
-          links: astData.links || []
-        };
-        console.log('Local search results:', localResults.nodes.length, 'nodes');
-        if (localResults.nodes.length > 0) {
-          setQueryResults(localResults);
-        }
-      }
+      setIsSearching(false);
       return;
     }
 
-    setIsSearching(true);
-    setQueryResults(null);
-    const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-
     try {
-      console.log('Fetching from API:', `${cleanBase}/v1/query?project=${encodeURIComponent(selectedProjectId)}`);
-      const res = await fetch(`${cleanBase}/v1/query?project=${encodeURIComponent(selectedProjectId)}&hydrate=true`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query })
-      });
+      // 1. First, search for symbols matching the query (broad search)
+      // Use the new /v1/search/symbols endpoint
+      let symbols = await fetchSymbols(dataApiBase, selectedProjectId, query);
+      console.log('Search candidates (exact):', symbols);
 
-      console.log('Response status:', res.status, res.statusText);
-      console.log('Response headers:', Object.fromEntries(res.headers.entries()));
+      // Fallback: If no symbols found, try keyword extraction (heuristic)
+      if (symbols.length === 0) {
+        console.log('No exact match, attempting keyword fallback...');
+        const stopWords = new Set(['what', 'is', 'the', 'how', 'does', 'where', 'are', 'in', 'of', 'for', 'to', 'a', 'an', 'who', 'calls', 'call', 'called', 'by']);
 
-      if (res.ok) {
-        const rawText = await res.text();
-        console.log('Raw response length:', rawText.length);
-        console.log('Raw response (first 500 chars):', rawText.substring(0, 500));
+        // Simple tokenization: remove punctuation, split by spaces, filter stop words
+        const tokens = query.toLowerCase().replace(/[?.,!]/g, ' ').split(/\s+/).filter(t => !stopWords.has(t) && t.length > 2);
 
-        // Try to parse JSON with better error handling
-        let data;
+        if (tokens.length > 0) {
+          // Find the longest significant token as the most likely primary symbol candidate
+          const longestToken = tokens.reduce((a, b) => a.length > b.length ? a : b);
+          console.log('Fallback: Searching for longest token:', longestToken);
+
+          symbols = await fetchSymbols(dataApiBase, selectedProjectId, longestToken);
+          console.log('Search candidates (fallback):', symbols);
+        }
+      }
+
+      if (symbols.length === 0) {
+        setSearchError("No symbols found matching your query.");
+        setIsSearching(false);
+        return;
+      }
+
+      // 2. AI Resolution: Check for Pathfinding OR Single Symbol
+      let pathEndpoints = null;
+      if (symbols.length > 1) {
+        setNodeInsight("Checking for flow path...");
+        pathEndpoints = await findPathEndpoints(query, symbols, geminiApiKey);
+      }
+
+      if (pathEndpoints && pathEndpoints.from && pathEndpoints.to && pathEndpoints.from !== pathEndpoints.to) {
+        // --- PATHFINDING MODE ---
+        console.log('Pathfinding Mode:', pathEndpoints);
+        setNodeInsight(`Tracing flow from ${pathEndpoints.from} to ${pathEndpoints.to}...`);
+
         try {
-          data = JSON.parse(rawText);
-        } catch (parseErr) {
-          console.error('JSON parse error:', parseErr);
-          // The response likely has trailing content after a valid JSON object
-          // Find the first complete JSON object by counting braces
-          let braceCount = 0;
-          let bracketCount = 0;
-          let inString = false;
-          let escapeNext = false;
-          let jsonEnd = -1;
+          const flowData = await fetchFlowPath(dataApiBase, selectedProjectId, pathEndpoints.from, pathEndpoints.to);
 
-          for (let i = 0; i < rawText.length; i++) {
-            const char = rawText[i];
+          if (!flowData.nodes || flowData.nodes.length === 0) {
+            setSearchError(`No path found between ${pathEndpoints.from} and ${pathEndpoints.to}`);
+            setIsSearching(false);
+            return;
+          }
 
-            if (escapeNext) {
-              escapeNext = false;
-              continue;
+          // AGGREGATION: Collapse to File -> File links
+          const fileSet = new Map<string, any>(); // path -> node
+          const fileLinks: any[] = [];
+
+          // 1. Create File Nodes
+          flowData.nodes.forEach((n: any) => {
+            // Extract file path from ID: "pkg/foo/bar.go:Func" -> "pkg/foo/bar.go"
+            const filePath = n.id.includes(':') ? n.id.split(':')[0] : n.id;
+            if (!fileSet.has(filePath)) {
+              fileSet.set(filePath, {
+                id: filePath,
+                name: filePath.split('/').pop(), // Short name
+                kind: 'file',
+                type: 'file', // Helper for visualization
+                _project: selectedProjectId,
+                _filePath: filePath
+              });
             }
+          });
 
-            if (char === '\\') {
-              escapeNext = true;
-              continue;
-            }
+          // 2. Create File Links based on Call Chain
+          for (let i = 0; i < flowData.nodes.length - 1; i++) {
+            const n1 = flowData.nodes[i];
+            const n2 = flowData.nodes[i + 1];
 
-            if (char === '"') {
-              inString = !inString;
-              continue;
-            }
+            const f1 = n1.id.includes(':') ? n1.id.split(':')[0] : n1.id;
+            const f2 = n2.id.includes(':') ? n2.id.split(':')[0] : n2.id;
 
-            if (!inString) {
-              if (char === '{') braceCount++;
-              else if (char === '}') braceCount--;
-              else if (char === '[') bracketCount++;
-              else if (char === ']') bracketCount--;
-
-              // Check if we've closed all braces and brackets
-              if (braceCount === 0 && bracketCount === 0 && i > 0) {
-                jsonEnd = i + 1;
-                break;
+            if (f1 !== f2) {
+              // Check if link already exists
+              const linkExists = fileLinks.find(l => l.source === f1 && l.target === f2);
+              if (!linkExists) {
+                fileLinks.push({
+                  source: f1,
+                  target: f2,
+                  relation: 'calls',
+                  weight: 1
+                });
               }
             }
           }
 
-          if (jsonEnd > 0) {
-            try {
-              const trimmedJson = rawText.substring(0, jsonEnd);
-              console.log('Trimmed JSON to', jsonEnd, 'chars (from', rawText.length, ')');
-              console.log('Last 100 chars of trimmed JSON:', trimmedJson.slice(-100));
-              data = JSON.parse(trimmedJson);
-              console.warn('Successfully parsed JSON by trimming trailing content');
-            } catch (retryErr) {
-              console.error('Failed to parse even trimmed JSON:', retryErr);
-              throw new Error(`Invalid JSON from API. ${parseErr instanceof Error ? parseErr.message : 'Unknown error'}`);
-            }
+          const aggregatedNodes = Array.from(fileSet.values());
+          console.log('Aggregated Flow:', aggregatedNodes, fileLinks);
+
+          if (aggregatedNodes.length > 0) {
+            setAstData({
+              nodes: aggregatedNodes,
+              links: fileLinks
+            });
           } else {
-            throw new Error(`Invalid JSON from API. ${parseErr instanceof Error ? parseErr.message : 'Unknown error'}`);
+            // Fallback if no file transitions (all in one file)
+            setAstData({
+              nodes: flowData.nodes.map((n: any) => ({ ...n, _project: selectedProjectId })),
+              links: flowData.links || []
+            });
           }
+
+          // Generate Narrative
+          const narrative = await generatePathNarrative(query, flowData.nodes, geminiApiKey);
+          setNodeInsight(narrative);
+          setSelectedNode(flowData.nodes[0]); // Select start node
+
+        } catch (pathErr) {
+          console.error("Pathfinding failed", pathErr);
+          setSearchError("Failed to trace path.");
         }
 
-        console.log('Parsed API response:', data);
-        const responseData: any = data;
-        setQueryResults(responseData);
-        if (responseData.nodes && responseData.nodes.length > 0) {
-          setAstData(prev => ({
-            nodes: responseData.nodes.map((n: any) => ({ ...n, _project: selectedProjectId })),
-            links: responseData.links || []
-          }));
-        }
       } else {
-        const errorText = await res.text();
-        console.error('API error response:', errorText);
-        setSearchError(`API error: ${res.status} ${res.statusText}${errorText ? ` - ${errorText}` : ''}`);
+        // --- SINGLE SYMBOL MODE ---
+        let targetId = symbols[0];
+        if (symbols.length > 1) {
+          setNodeInsight("Resolving best match...");
+          const resolved = await resolveSymbolFromQuery(query, symbols, geminiApiKey);
+          if (resolved && symbols.includes(resolved)) targetId = resolved;
+        }
+
+        console.log('Resolved target:', targetId);
+
+        // Single Symbol Context
+        const queryRes = await executeQuery(dataApiBase, selectedProjectId, `triples("${targetId}", ?p, ?o)`);
+        setAstData({
+          nodes: queryRes.nodes.map((n: any) => ({ ...n, _project: selectedProjectId })),
+          links: queryRes.links
+        });
+
+        const targetNode = queryRes.nodes.find((n: any) => n.id === targetId);
+        setSelectedNode(targetNode);
+
+        setNodeInsight(`Analyzing "${targetId}"...`);
+        const answer = await generateAnswerForSymbol(query, targetId, targetNode, geminiApiKey);
+        setNodeInsight(answer);
       }
+
     } catch (e) {
-      console.error("Search error:", e);
-      setSearchError(`Search failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
-      setQueryResults(null);
+      console.error("Smart Search failed:", e);
+      setSearchError("Search failed.");
     } finally {
       setIsSearching(false);
     }
-  }, [dataApiBase, selectedProjectId, astData]);
+  }, [dataApiBase, selectedProjectId, geminiApiKey]);
+
+  // Wrapper for UI
+  const searchSymbols = handleSmartSearch;
 
   // Additional memoized callbacks (defined after searchSymbols due to dependency)
   const runSearch = useCallback(() => {
@@ -561,14 +589,14 @@ const App: React.FC = () => {
 
   const generateInsights = useCallback(() => {
     setIsInsightLoading(true);
-    getGeminiInsight(selectedNode).then(i => {
+    getGeminiInsight(selectedNode, undefined, geminiApiKey).then(i => {
       setNodeInsight(i);
       setIsInsightLoading(false);
     }).catch(() => {
       setIsInsightLoading(false);
       setNodeInsight("Analysis connection failed.");
     });
-  }, [selectedNode]);
+  }, [selectedNode, geminiApiKey]);
 
   // Hydrate a single node's code from the backend
   const hydrateNode = useCallback(async (nodeId: string): Promise<any | null> => {
@@ -655,10 +683,15 @@ const App: React.FC = () => {
 
     try {
       const details = await fetchFileDetails(dataApiBase, fileId, selectedProjectId);
-      console.log('[Expand] Successfully fetched file details:', details);
+      console.log('[Expand] Successfully fetched file details:', {
+        fileId,
+        nodeCount: details.nodes?.length,
+        linkCount: details.links?.length,
+        sampleNodes: details.nodes?.slice(0, 3)
+      });
 
       // Get Architecture Summary from AI (non-blocking, show all nodes immediately)
-      getArchitectureSummary(fileId, details.nodes).then(summary => {
+      getArchitectureSummary(fileId, details.nodes, geminiApiKey).then(summary => {
         setNodeInsight(summary);
       }).catch(err => {
         console.warn('[Expand] Architecture Summary failed:', err);
@@ -752,34 +785,6 @@ const App: React.FC = () => {
   }, [fileScopedNodes, viewMode]);
 
   // Toggle Focus Mode
-  const toggleFocusMode = useCallback(async () => {
-    if (focusModeEnabled) {
-      setFocusModeEnabled(false);
-      setCriticalPathNodeIds(new Set());
-      setNodeInsight(null);
-    } else {
-      setFocusModeEnabled(true);
-      // Calculate critical path from *currently visible* nodes
-      // This is tricky because visible nodes depends on viewMode.
-      // For 'flow' mode, it's fileScopedNodes.
-      if (viewMode === 'flow' && fileScopedNodes.length > 0) {
-        setNodeInsight("Analyzing critical path...");
-        try {
-          const result = await getCriticalPathNodes(fileScopedNodes, fileScopedLinks);
-          setCriticalPathNodeIds(new Set(result.nodeIds));
-          setNodeInsight(result.explanation || "Critical path highlighted.");
-        } catch (err) {
-          console.error("Focus mode error:", err);
-          setNodeInsight("Failed to identify critical path.");
-          setFocusModeEnabled(false);
-        }
-      } else {
-        // For other modes, implement later
-        setNodeInsight("Focus mode only available in Flow view for now.");
-        setTimeout(() => setFocusModeEnabled(false), 2000);
-      }
-    }
-  }, [focusModeEnabled, viewMode, fileScopedNodes, fileScopedLinks]);
 
   // Toggle file expansion state
   const toggleFileExpansion = useCallback((fileId: string) => {
@@ -833,9 +838,74 @@ const App: React.FC = () => {
     };
   }, [astData, expandedFileIds, fileDetailsCache]);
 
+  const loadFileBackbone = useCallback(async (fileId: string) => {
+    if (!dataApiBase || !selectedProjectId) return;
+
+    setIsFlowLoading(true);
+    setNodeInsight("Generating Backbone Insight...");
+
+    try {
+      // 1. Fetch Backbone (File-to-File depth 1)
+      const backbone = await fetchFileBackbone(dataApiBase, selectedProjectId, fileId);
+
+      if (backbone && backbone.nodes) {
+        // Update Main Graph (Discovery View)
+        setAstData({
+          nodes: backbone.nodes.map(n => ({ ...n, _project: selectedProjectId })),
+          links: backbone.links || []
+        });
+
+        // Update Architecture Panel (Dagre View)
+        setFileScopedNodes(backbone.nodes);
+        setFileScopedLinks(backbone.links || []);
+        // Removed auto-switch: setShowArchitecturePanel(true);
+
+        currentFlowFileRef.current = fileId;
+        // Removed auto-switch: debugSetViewMode('backbone');
+
+        // 2. Fetch Source Code for the file immediately
+        const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+        fetchSource(cleanBase, selectedProjectId, fileId).then(src => {
+          // Update the selected node (the file itself) with code
+          setSelectedNode(prev => {
+            // Try to find the file node in backbone
+            const fileNode = backbone.nodes.find(n => n.id === fileId);
+            return { ...(fileNode || {}), id: fileId, code: src, _isFile: true, _project: selectedProjectId };
+          });
+        });
+
+        // 3. AI Insight
+        getFileRoleSummary(fileId, backbone.nodes, geminiApiKey).then(summary => {
+          setNodeInsight(summary);
+        });
+
+      } else {
+        setNodeInsight("No dependencies found.");
+        setFileScopedNodes([]);
+        setFileScopedLinks([]);
+      }
+    } catch (e) {
+      console.error("Backbone Load Failed", e);
+      setNodeInsight("Failed to load file backbone.");
+    } finally {
+      setIsFlowLoading(false);
+    }
+  }, [dataApiBase, selectedProjectId, geminiApiKey, debugSetViewMode]);
+
   const handleNodeSelect = useCallback(async (node: any) => {
     console.log('=== SYNC TRINITY: Node Clicked ===');
     console.log('1. Graph: Highlighting node:', node.id);
+
+    // Architecture Mode Navigation
+    // Check if node is a file (either by kind, type, _isFile flag or extension pattern)
+    const isFileNode = node.kind === 'file' || node.type === 'file' || node._isFile || (node.id && /\.\w+$/.test(node.id) && !node.id.includes(':'));
+
+    if (isFileNode) {
+      const path = node._filePath || (node.id.includes(':') ? node.id.split(':')[0] : node.id);
+      console.log('File Selected. Loading Backbone:', path);
+      loadFileBackbone(path);
+      return;
+    }
 
     // Handle Trace Path mode state updates
     if (tracePathMode) {
@@ -1343,108 +1413,112 @@ const App: React.FC = () => {
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-14 border-b border-white/5 flex items-center px-6 gap-6 bg-[#0a1118]/90 backdrop-blur-md z-20 shrink-0">
-          <div className="flex-1 flex items-center bg-[#16222a] border border-white/5 rounded-full px-1 py-1 max-w-xl shadow-inner relative">
-            <div className="px-3 py-1 rounded-full text-[9px] font-black bg-[#f59e0b] text-[#0a1118] border border-[#f59e0b] mr-2 uppercase">
-              Query
-            </div>
-            <input
-              type="text"
-              placeholder='Datalog query (e.g., triples(?s, "calls", ?o))...'
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setSearchError(null);
-                clearTimeout((e.target as any)._searchTimeout);
-                (e.target as any)._searchTimeout = setTimeout(() => {
-                  searchSymbols(e.target.value);
-                }, 500);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && searchTerm) {
-                  addToHistory(searchTerm);
-                  setShowHistory(false);
-                  searchSymbols(searchTerm);
-                }
-              }}
-              className="bg-transparent border-none flex-1 px-4 text-[11px] focus:outline-none text-white font-mono placeholder-slate-700"
-              onFocus={() => setShowHistory(true)}
-              onBlur={() => setTimeout(() => setShowHistory(false), 200)}
-            />
-            {showHistory && searchHistory.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-[#0d171d] border border-white/10 rounded-lg shadow-xl overflow-hidden z-[60] animate-in fade-in slide-in-from-top-1 duration-200">
-                <div className="flex items-center justify-between px-3 py-1.5 bg-white/5 border-b border-white/5">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Recent Queries</span>
-                  <button onClick={clearHistory} className="text-[9px] text-slate-500 hover:text-white transition-colors">Clear</button>
+          <div className="flex-1 flex items-center justify-center">
+            <div className={`flex items-center bg-[#16222a] border ${isSearching ? 'border-[#00f2ff] shadow-[0_0_15px_-3px_rgba(0,242,255,0.3)]' : 'border-white/10 hover:border-white/20'} rounded-full px-1.5 py-1.5 w-full max-w-2xl shadow-xl transition-all relative group`}>
+              <div className="px-3 py-1.5 rounded-full text-[10px] font-black bg-[#00f2ff]/10 text-[#00f2ff] border border-[#00f2ff]/20 mr-2 uppercase tracking-wide flex items-center gap-1.5">
+                <i className="fas fa-sparkles"></i>
+                Ask AI
+              </div>
+              <input
+                type="text"
+                placeholder='Ask a question (e.g. "How does Auth work?") or search symbols...'
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setSearchError(null);
+                  if (e.target.value.length > 2) {
+                    clearTimeout((e.target as any)._searchTimeout);
+                    (e.target as any)._searchTimeout = setTimeout(() => {
+                      // Only auto-search for symbols if typing specific names?
+                      // For AI questions, maybe wait for Enter.
+                      // Let's auto-search to show candidates.
+                      handleSmartSearch(e.target.value);
+                    }, 800);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchTerm) {
+                    addToHistory(searchTerm);
+                    setShowHistory(false);
+                    handleSmartSearch(searchTerm);
+                  }
+                }}
+                className="bg-transparent border-none flex-1 px-2 text-xs focus:outline-none text-white font-medium placeholder-slate-500 h-8"
+                onFocus={() => setShowHistory(true)}
+                onBlur={() => setTimeout(() => setShowHistory(false), 200)}
+              />
+
+              {showHistory && searchHistory.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-3 bg-[#0d171d]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[60] animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/5">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Recent Queries</span>
+                    <button onClick={clearHistory} className="text-[9px] text-slate-500 hover:text-white transition-colors">Clear</button>
+                  </div>
+                  <div className="max-h-[250px] overflow-y-auto custom-scrollbar">
+                    {searchHistory.map((q, i) => (
+                      <div
+                        key={i}
+                        className="px-4 py-2.5 text-[11px] text-slate-300 hover:bg-[#00f2ff]/10 hover:text-[#00f2ff] cursor-pointer transition-colors border-b border-white/5 last:border-0 flex items-center gap-3"
+                        onClick={() => {
+                          setSearchTerm(q);
+                          handleSmartSearch(q);
+                          setShowHistory(false);
+                        }}
+                      >
+                        <i className="fas fa-history text-slate-600 text-[10px]"></i>
+                        {q}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="max-h-[200px] overflow-y-auto">
-                  {searchHistory.map((q, i) => (
-                    <div
-                      key={i}
-                      className="px-3 py-2 text-[10px] font-mono text-slate-300 hover:bg-[#00f2ff]/10 hover:text-[#00f2ff] cursor-pointer transition-colors border-b border-white/5 last:border-0"
+              )}
+
+              {isSearching && <i className="fas fa-circle-notch fa-spin text-[#00f2ff] text-xs absolute right-12"></i>}
+
+              {/* Query results summary */}
+              {(queryResults || searchError) && !isSearching && (
+                <div className="absolute top-full left-0 right-0 mt-3 bg-[#0d171d]/95 backdrop-blur-xl border border-[#00f2ff]/30 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-start justify-between">
+                    {searchError ? (
+                      <div className="text-[11px] text-red-400 font-bold flex items-start gap-2">
+                        <i className="fas fa-exclamation-triangle mt-0.5"></i>
+                        <span>{searchError}</span>
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-[#00f2ff] font-bold flex items-center gap-2">
+                        <i className="fas fa-check-circle"></i>
+                        Found {queryResults.nodes?.length || 0} symbols.
+                        <span className="text-slate-500 font-normal ml-1">AI Context Loaded.</span>
+                      </div>
+                    )}
+                    <button
                       onClick={() => {
-                        setSearchTerm(q);
-                        searchSymbols(q);
-                        setShowHistory(false);
+                        setSearchTerm('');
+                        setQueryResults(null);
+                        setSearchError(null);
                       }}
+                      className="text-slate-500 hover:text-white ml-4 w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
+                      title="Clear"
                     >
-                      {q}
-                    </div>
-                  ))}
+                      <i className="fas fa-times"></i>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-            {isSearching && <i className="fas fa-circle-notch fa-spin text-[#00f2ff] text-[10px] absolute right-12"></i>}
+              )}
 
-            {/* Query results summary */}
-            {(queryResults || searchError) && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-[#0d171d] border border-[#f59e0b]/30 rounded-lg shadow-2xl z-50 p-3">
-                <div className="flex items-start justify-between">
-                  {searchError ? (
-                    <div className="text-[10px] text-red-400 font-black uppercase tracking-widest flex items-start gap-2">
-                      <i className="fas fa-exclamation-circle mt-0.5"></i>
-                      <span>{searchError}</span>
-                    </div>
-                  ) : (
-                    <div className="text-[10px] text-[#f59e0b] font-black uppercase tracking-widest">
-                      Query Results: {queryResults.nodes?.length || 0} nodes, {queryResults.links?.length || 0} links
-                    </div>
-                  )}
-                  <button
-                    onClick={() => {
-                      setSearchTerm('');
-                      setQueryResults(null);
-                      setSearchError(null);
-                    }}
-                    className="text-slate-500 hover:text-white ml-4"
-                    title={searchError ? 'Dismiss error' : 'Clear results'}
-                  >
-                    <i className="fas fa-times"></i>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Run query button */}
-            <button
-              onClick={runSearch}
-              disabled={!searchTerm || isSearching}
-              className="w-8 h-8 rounded-full bg-[#f59e0b] flex items-center justify-center text-[#0a1118] text-[10px] disabled:opacity-50"
-            >
-              <i className="fas fa-play"></i>
-            </button>
+              {/* Run query button */}
+              <button
+                onClick={runSearch}
+                disabled={!searchTerm || isSearching}
+                className="w-8 h-8 rounded-full bg-[#00f2ff] flex items-center justify-center text-[#0a1118] text-[10px] disabled:opacity-50 hover:scale-105 active:scale-95 transition-all shadow-[0_0_10px_rgba(0,242,255,0.4)] ml-1"
+              >
+                <i className="fas fa-arrow-right"></i>
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={setFlowMode}
-              className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'flow'
-                ? 'bg-[#10b981] border-[#10b981] text-[#0a1118]'
-                : 'bg-[#16222a] border-white/5 text-[#10b981] hover:bg-white/5'
-                }`}
-            >
-              Flow
-            </button>
 
+          <div className="flex items-center gap-2">
             <button
               onClick={setMapMode}
               className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'map'
@@ -1463,6 +1537,16 @@ const App: React.FC = () => {
                 }`}
             >
               Discovery
+            </button>
+
+            <button
+              onClick={setArchitectureMode}
+              className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'architecture'
+                ? 'bg-[#a855f7] border-[#a855f7] text-[#0a1118]'
+                : 'bg-[#16222a] border-white/5 text-[#a855f7] hover:bg-white/5'
+                }`}
+            >
+              Architecture
             </button>
 
 
@@ -1498,11 +1582,10 @@ const App: React.FC = () => {
           <div className="ml-auto flex gap-5 items-center">
             <div className="flex flex-col items-end">
               <span className="text-[10px] text-white font-bold leading-none">View Mode</span>
-              <span className={`text-[8px] font-black uppercase tracking-widest ${viewMode === 'flow' ? 'text-[#10b981]' :
-                viewMode === 'map' ? 'text-[#f59e0b]' :
-                  viewMode === 'backbone' ? 'text-[#a855f7]' : 'text-[#00f2ff]'
+              <span className={`text-[8px] font-black uppercase tracking-widest ${viewMode === 'map' ? 'text-[#f59e0b]' :
+                viewMode === 'backbone' ? 'text-[#a855f7]' : 'text-[#00f2ff]'
                 }`}>
-                {viewMode === 'flow' ? 'FLOW' : viewMode === 'map' ? 'MAP' : viewMode === 'backbone' ? 'BACKBONE' : 'DISCOVERY'}
+                {viewMode === 'map' ? 'MAP' : viewMode === 'backbone' ? 'BACKBONE' : 'DISCOVERY'}
               </span>
             </div>
             <div className="h-8 w-px bg-white/5"></div>
@@ -1555,7 +1638,7 @@ const App: React.FC = () => {
                 );
               }
 
-              return viewMode !== 'flow' ? (
+              return (
                 <>
                   {/* Trace Path Status Panel */}
                   {tracePathMode && (
@@ -1623,104 +1706,31 @@ const App: React.FC = () => {
                   )}
 
 
-                  <TreeVisualizer
-                    data={filteredAstData}
-                    onNodeSelect={handleNodeSelect}
-                    onNodeHover={() => { }}
-                    mode={viewMode}
-                    selectedId={selectedNode?.id}
-                    fileScopedData={filteredFileScopedData}
-                    skipFlowZoom={skipFlowZoom}
-                    tracePathResult={tracePathResult}
-                    expandedFileIds={expandedFileIds}
-                    onToggleFileExpansion={toggleFileExpansion}
-                    expandingFileId={expandingFileId}
-
-                  />
-                </>
-              ) : (
-                <>
-                  {/* Trace Path Status Panel for Flow Mode */}
-                  {tracePathMode && (
-                    <div className="absolute top-4 left-4 z-10 p-4 bg-[#0d171d]/95 backdrop-blur-xl border border-[#a855f7]/30 rounded shadow-2xl min-w-[200px]">
-                      <h3 className="text-[8px] font-black text-[#a855f7] uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                        <i className="fas fa-route"></i>
-                        <span>TRACE PATH MODE</span>
-                      </h3>
-                      <div className="space-y-2">
-                        {!traceStartNode ? (
-                          <div className="text-[10px] text-slate-400">
-                            <i className="fas fa-mouse-pointer mr-1.5 text-[#a855f7]"></i>
-                            Click start node...
-                          </div>
-                        ) : !traceEndNode ? (
-                          <>
-                            <div className="text-[10px] text-slate-300">
-                              <i className="fas fa-play-circle mr-1.5 text-[#10b981]"></i>
-                              Start: <span className="font-mono text-[#00f2ff]">{traceStartNode.split(':').pop()}</span>
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              <i className="fas fa-mouse-pointer mr-1.5 text-[#a855f7]"></i>
-                              Click end node...
-                            </div>
-                          </>
-                        ) : tracePathResult ? (
-                          <>
-                            <div className="text-[10px] text-slate-300">
-                              <i className="fas fa-play-circle mr-1.5 text-[#10b981]"></i>
-                              Start: <span className="font-mono text-[#00f2ff]">{traceStartNode.split(':').pop()}</span>
-                            </div>
-                            <div className="text-[10px] text-slate-300">
-                              <i className="fas fa-flag-checkered mr-1.5 text-[#f59e0b]"></i>
-                              End: <span className="font-mono text-[#00f2ff]">{traceEndNode.split(':').pop()}</span>
-                            </div>
-                            <div className="mt-3 pt-3 border-t border-white/10">
-                              <div className="text-[10px] text-[#10b981] font-bold">
-                                <i className="fas fa-check-circle mr-1.5"></i>
-                                Path found: {tracePathResult.path.length} nodes
-                              </div>
-                              <div className="text-[9px] text-slate-500 mt-1">
-                                Length: {tracePathResult.length} hops
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="text-[10px] text-red-400">
-                            <i className="fas fa-exclamation-triangle mr-1.5"></i>
-                            No path found
-                          </div>
-                        )}
-                        <button
-                          onClick={() => {
-                            setTraceStartNode(null);
-                            setTraceEndNode(null);
-                            setTracePathResult(null);
-                          }}
-                          className="w-full mt-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[9px] text-slate-400 font-black uppercase tracking-widest transition-all"
-                        >
-                          <i className="fas fa-redo mr-1.5"></i>
-                          Reset
-                        </button>
-                      </div>
+                  {viewMode === 'architecture' ? (
+                    <div className="w-full h-full bg-[#0d171d] relative z-0">
+                      <ClassDiagramCanvas
+                        nodes={fileScopedNodes}
+                        links={fileScopedLinks}
+                        onNodeClick={handleClassDiagramNodeClick}
+                        width={window.innerWidth - sidebarWidth - codePanelWidth}
+                        height={window.innerHeight - 56}
+                      />
                     </div>
+                  ) : (
+                    <TreeVisualizer
+                      data={filteredAstData}
+                      onNodeSelect={handleNodeSelect}
+                      onNodeHover={() => { }}
+                      mode={viewMode}
+                      selectedId={selectedNode?.id}
+                      fileScopedData={filteredFileScopedData}
+                      skipFlowZoom={skipFlowZoom}
+                      tracePathResult={tracePathResult}
+                      expandedFileIds={expandedFileIds}
+                      onToggleFileExpansion={toggleFileExpansion}
+                      expandingFileId={expandingFileId}
+                    />
                   )}
-                  <TreeVisualizer
-                    data={filteredAstData}
-                    onNodeSelect={handleNodeSelect}
-                    onNodeHover={() => { }}
-                    mode={viewMode}
-                    selectedId={selectedNode?.id}
-                    fileScopedData={filteredFileScopedData}
-                    isLoading={isFlowLoading}
-                    skipFlowZoom={skipFlowZoom}
-                    tracePathResult={tracePathResult}
-                    expandedFileIds={expandedFileIds}
-                    onToggleFileExpansion={toggleFileExpansion}
-                    expandingFileId={expandingFileId}
-                    // Focus Mode
-                    focusModeEnabled={focusModeEnabled}
-                    criticalPathNodeIds={criticalPathNodeIds}
-                  />
                 </>
               );
             })()}
@@ -1781,38 +1791,6 @@ const App: React.FC = () => {
           </aside>
         </div>
 
-        {showArchitecturePanel && (
-          <div className="absolute bottom-24 right-4 w-80 h-64 bg-[#0d171d]/95 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-20 flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 bg-[#0a1118]/50">
-              <div className="flex items-center gap-2">
-                <i className="fas fa-sitemap text-[#10b981] text-[10px]"></i>
-                <span className="text-[9px] font-black uppercase tracking-wider text-white/80">Architecture</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowArchitecturePanel(false)}
-                  className="text-slate-500 hover:text-white transition-colors"
-                >
-                  <i className="fas fa-times text-[10px]"></i>
-                </button>
-              </div>
-            </div>
-            <div className="flex-1">
-              <ClassDiagramCanvas
-                nodes={fileScopedNodes}
-                links={fileScopedLinks}
-                onNodeClick={handleClassDiagramNodeClick}
-                width={320}
-                height={220}
-              />
-            </div>
-            <div className="px-3 py-1.5 border-t border-white/5 bg-[#0a1118]/30 flex items-center justify-between">
-              <span className="text-[8px] text-slate-600 font-mono">
-                {fileScopedNodes.length} symbols
-              </span>
-            </div>
-          </div>
-        )}
 
         <footer className="h-10 border-t border-white/5 flex items-center px-6 gap-8 bg-[#0a1118] text-[9px] shrink-0 font-mono tracking-widest">
           <div className="text-slate-600">ARTIFACTS: <span className="text-[#00f2ff] font-bold">{(astData as FlatGraph)?.nodes?.length || 0}</span></div>
@@ -1829,111 +1807,115 @@ const App: React.FC = () => {
             <div className="w-1.5 h-1.5 rounded-full bg-slate-800"></div>
           </div>
         </footer>
-      </div>
+      </div >
 
       {/* Settings Modal */}
-      {isSettingsOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#000]/80 backdrop-blur-sm p-4" onClick={() => console.log('Settings modal opened')}>
-          <div className="bg-[#0d171d] border border-white/10 rounded-lg shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b border-white/5 flex items-center justify-between">
-              <h3 className="text-sm font-black uppercase tracking-widest text-white">System Configuration</h3>
-              <button onClick={closeSettings} className="text-slate-500 hover:text-white transition-colors"><i className="fas fa-times"></i></button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Data API Base URL</label>
-                <input
-                  type="text"
-                  value={dataApiBase}
-                  onChange={(e) => {
-                    setDataApiBase(e.target.value);
-                    setAvailableProjects([]);
-                    setSelectedProjectId('');
-                  }}
-                  placeholder="http://localhost:8080"
-                  className={`w-full bg-[#0a1118] border rounded px-4 py-2.5 text-xs text-white focus:outline-none font-mono ${dataApiBase && (() => {
+      {
+        isSettingsOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#000]/80 backdrop-blur-sm p-4" onClick={() => console.log('Settings modal opened')}>
+            <div className="bg-[#0d171d] border border-white/10 rounded-lg shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                <h3 className="text-sm font-black uppercase tracking-widest text-white">System Configuration</h3>
+                <button onClick={closeSettings} className="text-slate-500 hover:text-white transition-colors"><i className="fas fa-times"></i></button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Data API Base URL</label>
+                  <input
+                    type="text"
+                    value={dataApiBase}
+                    onChange={(e) => {
+                      setDataApiBase(e.target.value);
+                      setAvailableProjects([]);
+                      setSelectedProjectId('');
+                    }}
+                    placeholder="http://localhost:8080"
+                    className={`w-full bg-[#0a1118] border rounded px-4 py-2.5 text-xs text-white focus:outline-none font-mono ${dataApiBase && (() => {
+                      try {
+                        new URL(dataApiBase);
+                        return 'border-white/10 focus:border-[#00f2ff]/50';
+                      } catch {
+                        return 'border-red-500/50 focus:border-red-500';
+                      }
+                    })()
+                      }`}
+                  />
+                  {dataApiBase && (() => {
                     try {
                       new URL(dataApiBase);
-                      return 'border-white/10 focus:border-[#00f2ff]/50';
+                      return null;
                     } catch {
-                      return 'border-red-500/50 focus:border-red-500';
+                      return (
+                        <p className="mt-2 text-[9px] text-red-400">
+                          <i className="fas fa-exclamation-circle mr-1"></i>
+                          Invalid URL format. Include protocol (e.g., http://localhost:8080)
+                        </p>
+                      );
                     }
-                  })()
-                    }`}
-                />
-                {dataApiBase && (() => {
-                  try {
-                    new URL(dataApiBase);
-                    return null;
-                  } catch {
-                    return (
-                      <p className="mt-2 text-[9px] text-red-400">
-                        <i className="fas fa-exclamation-circle mr-1"></i>
-                        Invalid URL format. Include protocol (e.g., http://localhost:8080)
-                      </p>
-                    );
-                  }
-                })()}
-                <p className="mt-2 text-[9px] text-slate-600 leading-normal">
-                  This endpoint will be used to fetch /v1/projects, /v1/files, and /v1/query.
-                  <br />After connecting, select a project from the sidebar dropdown.
-                </p>
+                  })()}
+                  <p className="mt-2 text-[9px] text-slate-600 leading-normal">
+                    This endpoint will be used to fetch /v1/projects, /v1/files, and /v1/query.
+                    <br />After connecting, select a project from the sidebar dropdown.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Gemini API Key (Optional)</label>
+                  <input
+                    type="password"
+                    value={geminiApiKey}
+                    onChange={(e) => setGeminiApiKey(e.target.value)}
+                    placeholder="Enter your Gemini API Key..."
+                    className="w-full bg-[#0a1118] border border-white/10 rounded px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#00f2ff]/50 font-mono"
+                  />
+                  <p className="mt-2 text-[9px] text-slate-600 leading-normal">
+                    Leave blank to use the server-configured key (if available).
+                    <br />Get a key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[#00f2ff] hover:underline">Google AI Studio</a>.
+                  </p>
+                </div>
+
+                {syncError && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 rounded text-[10px] text-red-400">
+                    <i className="fas fa-exclamation-circle mr-2"></i>
+                    {syncError}
+                  </div>
+                )}
+
+                {isDataSyncing && (
+                  <div className="p-3 bg-[#00f2ff]/10 border border-[#00f2ff]/30 rounded flex items-center gap-2 text-[10px] text-[#00f2ff]">
+                    <i className="fas fa-sync fa-spin"></i>
+                    Connecting to API...
+                  </div>
+                )}
+
+                {!isDataSyncing && availableProjects.length > 0 && (
+                  <div className="p-3 bg-[#10b981]/10 border border-[#10b981]/30 rounded text-[10px] text-[#10b981]">
+                    <i className="fas fa-check-circle mr-2"></i>
+                    Connected! Found {availableProjects.length} project(s). Select one from the sidebar.
+                  </div>
+                )}
               </div>
-
-              {syncError && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded text-[10px] text-red-400">
-                  <i className="fas fa-exclamation-circle mr-2"></i>
-                  {syncError}
-                </div>
-              )}
-
-              {isDataSyncing && (
-                <div className="p-3 bg-[#00f2ff]/10 border border-[#00f2ff]/30 rounded flex items-center gap-2 text-[10px] text-[#00f2ff]">
-                  <i className="fas fa-sync fa-spin"></i>
-                  Connecting to API...
-                </div>
-              )}
-
-              {!isDataSyncing && availableProjects.length > 0 && (
-                <div className="p-3 bg-[#10b981]/10 border border-[#10b981]/30 rounded text-[10px] text-[#10b981]">
-                  <i className="fas fa-check-circle mr-2"></i>
-                  Connected! Found {availableProjects.length} project(s). Select one from the sidebar.
-                </div>
-              )}
-            </div>
-            <div className="p-6 bg-[#0a1118]/50 flex justify-end gap-3">
-              <button
-                onClick={() => syncDataFromApi(dataApiBase)}
-                className="px-6 py-2 bg-[#10b981] text-[#0a1118] rounded-sm text-[9px] font-black uppercase tracking-widest hover:brightness-110 transition-all"
-              >
-                Connect & Fetch Projects
-              </button>
-              {/* Focus Mode Toggle */}
-              {viewMode === 'flow' && (
+              <div className="p-6 bg-[#0a1118]/50 flex justify-end gap-3">
                 <button
-                  onClick={toggleFocusMode}
-                  className={`ml-2 px-3 py-1.5 rounded flex items-center gap-2 border transition-all ${focusModeEnabled
-                      ? 'bg-[#00f2ff]/20 border-[#00f2ff] text-[#00f2ff] shadow-[0_0_15px_-3px_#00f2ff]'
-                      : 'bg-[#0d171d]/50 border-white/10 text-slate-400 hover:text-white hover:border-white/30'
-                    }`}
-                  title="Focus on Critical Path (AI)"
+                  onClick={() => syncDataFromApi(dataApiBase)}
+                  className="px-6 py-2 bg-[#10b981] text-[#0a1118] rounded-sm text-[9px] font-black uppercase tracking-widest hover:brightness-110 transition-all"
                 >
-                  <i className={`fas fa-crosshairs ${focusModeEnabled ? 'animate-pulse' : ''}`}></i>
-                  <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">Focus</span>
+                  Connect & Fetch Projects
                 </button>
-              )}
+                {/* Focus Mode Toggle */}
 
-              <button
-                onClick={closeSettings}
-                className="px-6 py-2 bg-slate-800 text-white rounded-sm text-[9px] font-black uppercase tracking-widest hover:bg-slate-700 transition-all"
-              >
-                Close
-              </button>
+                <button
+                  onClick={closeSettings}
+                  className="px-6 py-2 bg-slate-800 text-white rounded-sm text-[9px] font-black uppercase tracking-widest hover:bg-slate-700 transition-all"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 };
 

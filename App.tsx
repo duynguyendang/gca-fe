@@ -233,10 +233,26 @@ const App: React.FC = () => {
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [codePanelWidth, setCodePanelWidth] = useState(500);
   const [synthesisHeight, setSynthesisHeight] = useState(256);
+  const [isCodeCollapsed, setIsCodeCollapsed] = useState(false);
+  const [isSynthesisCollapsed, setIsSynthesisCollapsed] = useState(false);
   const isResizingSidebar = useRef(false);
   const isResizingCode = useRef(false);
   const isResizingSynthesis = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-resize Synthesis Panel when Insight is loaded
+  useEffect(() => {
+    if (nodeInsight) {
+      // Expand to ~80% of screen height and expand panel if collapsed
+      setSynthesisHeight(window.innerHeight * 0.8);
+      setIsSynthesisCollapsed(false);
+      setIsCodeCollapsed(true); // Auto-collapse code when synthesis expands
+    } else {
+      // Reset to default
+      setSynthesisHeight(256);
+      setIsCodeCollapsed(false);
+    }
+  }, [nodeInsight]);
 
   useEffect(() => {
     try {
@@ -649,8 +665,28 @@ const App: React.FC = () => {
       return;
     }
 
-    // Default symbol insight
-    getGeminiInsight(selectedNode, undefined, geminiApiKey).then(i => {
+    // Default symbol insight with Graph Context
+    const links = (astData && 'links' in astData) ? (astData as FlatGraph).links : [];
+
+    // Resolve neighbors from current graph
+    // Note: link.source/target might be strings or objects depending on D3 simulation state
+    const inbound = links
+      .filter(l => (typeof l.target === 'object' ? l.target.id : l.target) === selectedNode.id)
+      .map(l => ({
+        id: (typeof l.source === 'object' ? l.source.id : l.source),
+        rel: l.relation || 'calls'
+      }));
+
+    const outbound = links
+      .filter(l => (typeof l.source === 'object' ? l.source.id : l.source) === selectedNode.id)
+      .map(l => ({
+        id: (typeof l.target === 'object' ? l.target.id : l.target),
+        rel: l.relation || 'calls'
+      }));
+
+    const context = { inbound, outbound };
+
+    getGeminiInsight(selectedNode, context, undefined, geminiApiKey).then(i => {
       setNodeInsight(i);
       setIsInsightLoading(false);
     }).catch(() => {
@@ -1877,6 +1913,12 @@ const App: React.FC = () => {
 
             <header className="h-12 px-5 border-b border-white/5 flex items-center justify-between bg-[#0a1118] shrink-0">
               <div className="flex items-center gap-3 overflow-hidden mr-4">
+                <button
+                  onClick={() => setIsCodeCollapsed(!isCodeCollapsed)}
+                  className="text-slate-500 hover:text-white transition-colors"
+                >
+                  <i className={`fas fa-chevron-${isCodeCollapsed ? 'down' : 'up'}`}></i>
+                </button>
                 <i className="fas fa-terminal text-[#00f2ff] text-[12px]"></i>
                 <span className="text-[10px] font-mono text-slate-300 truncate uppercase tracking-tighter">{selectedNode?.id || "IDLE"}</span>
               </div>
@@ -1887,15 +1929,15 @@ const App: React.FC = () => {
               </div>
             </header>
 
-            <div className="flex-1 overflow-auto custom-scrollbar">
+            <div className={`flex-1 overflow-auto custom-scrollbar ${isCodeCollapsed ? 'hidden' : ''}`}>
               {renderCode()}
             </div>
 
             {/* Reactive Synthesis Panel - Only visible when there's content */}
             {/* Reactive Synthesis Panel - Always Visible & Resizable */}
             <div
-              style={{ height: synthesisHeight }}
-              className="border-t border-white/10 p-5 bg-[#0a1118] shadow-2xl flex flex-col shrink-0 relative transition-none"
+              style={{ height: isSynthesisCollapsed ? 'auto' : synthesisHeight }}
+              className={`border-t border-white/10 ${isSynthesisCollapsed ? 'p-2 bg-[#0a1118]' : 'p-5 bg-[#0a1118]'} shadow-2xl flex flex-col shrink-0 relative transition-none`}
             >
               {/* Resize Handle */}
               <div
@@ -1909,6 +1951,16 @@ const App: React.FC = () => {
 
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2.5">
+                  <button
+                    onClick={() => {
+                      setIsSynthesisCollapsed(!isSynthesisCollapsed);
+                      // If expanding and was small, expand fully
+                      if (isSynthesisCollapsed) setIsCodeCollapsed(true);
+                    }}
+                    className="text-slate-500 hover:text-white transition-colors"
+                  >
+                    <i className={`fas fa-chevron-${isSynthesisCollapsed ? 'up' : 'down'}`}></i>
+                  </button>
                   <div className={`w-2 h-2 rounded-full ${nodeInsight ? 'bg-[#00f2ff] animate-pulse shadow-[0_0_8px_#00f2ff]' : 'bg-slate-700'}`}></div>
                   <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/90 italic">GenAI SYNTHESIS</h3>
                 </div>
@@ -1932,7 +1984,7 @@ const App: React.FC = () => {
                   )}
                 </div>
               </div>
-              <div className="flex-1 bg-[#0d171d] p-4 rounded border border-white/5 text-[11px] text-slate-400 leading-relaxed overflow-y-auto custom-scrollbar font-mono">
+              <div className={`flex-1 bg-[#0d171d] p-4 rounded border border-white/5 text-[11px] text-slate-400 leading-relaxed overflow-y-auto custom-scrollbar font-mono ${isSynthesisCollapsed ? 'hidden' : ''}`}>
                 {nodeInsight ? (
                   <MarkdownRenderer
                     content={nodeInsight}

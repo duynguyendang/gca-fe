@@ -3,7 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 
 const DEFAULT_MODEL = 'gemini-3-flash-preview';
 
-export const getGeminiInsight = async (node: any, customEndpoint?: string, apiKey?: string) => {
+export const getGeminiInsight = async (node: any, context?: { inbound: any[], outbound: any[] }, customEndpoint?: string, apiKey?: string) => {
   if (!node) return null;
 
   // Initialize with named parameter using provided key or process.env.API_KEY
@@ -11,17 +11,47 @@ export const getGeminiInsight = async (node: any, customEndpoint?: string, apiKe
     apiKey: apiKey || process.env.API_KEY,
   });
 
-  const prompt = `Analyze the following code component.
+  const inboundStr = context?.inbound?.map(n => `- Called by: ${n.id} (${n.rel})`).slice(0, 5).join('\n') || "No known callers in current graph.";
+  const outboundStr = context?.outbound?.map(n => `- Calls: ${n.id} (${n.rel})`).slice(0, 5).join('\n') || "No known calls in current graph.";
+
+  const prompt = `Analyze the following code component in the context of the current graph.
+
+  ## Component
   ID: ${node.id}
   Kind: ${node.kind}
-  Code Snippet:
-  ${node.code?.substring(0, 300)} (truncated)
+  
+  ## Code Snippet
+  ${node.code?.substring(0, 1000) || "// No code available"} (truncated)
 
-  Task: Provide a concise architectural summary.
-  Output Format: Markdown.
-  - Use **bold** for key responsibilities.
-  - Link related files using [\`path/to/file.ext\`] format.
-  - Highlight symbols as \`SymbolName\`.
+  ## Graph Context
+  ### Inbound Dependents (Used By)
+  ${inboundStr}
+  
+  ### Outbound Dependencies (Uses)
+  ${outboundStr}
+
+  ## Task
+  Provide a comprehensive architectural analysis (Markdown). Do NOT be superficial.
+  
+  ### 1. Architectural Role
+  - What is the specific responsibility of this component?
+  - Is it a data structure, a service, a utility, or a controller?
+  - **Bold** the primary purpose.
+
+  ### 2. Interaction Analysis
+  - Analyze the provided Inbound/Outbound context.
+  - Explain *why* these components interact. Data flow? Control flow?
+  - Example: "It is called by X to validate Y, and it calls Z to store the result."
+
+  ### 3. Design Patterns & Smells
+  - Identify any Go patterns (e.g., Option pattern, Middleware, Interface adaptation).
+  - Note any potential coupling issues or side effects.
+
+  **Guidelines**:
+  - Use markdown headers (#, ##).
+  - Use link format [\`path/to/file\`](path/to/file).
+  - Use symbol code format \`SymbolName\`.
+  - Avoid generic statements like "This is a function."
   `;
 
   console.log('[GeminiService] getGeminiInsight prompt:', prompt);
@@ -433,12 +463,28 @@ export const getFileRoleSummary = async (fileName: string, neighbors: any[], api
 
   const neighborList = neighbors.map(n => n.name).slice(0, 10).join(', ');
 
-  const prompt = `The user selected "${fileName}".
+  const prompt = `Analyze the architectural role of file: "${fileName}".
   
-  It interacts with: ${neighborList}.
+  ## Context
+  It interacts with (Imports/Calls): ${neighborList}.
   
-  Task: Give a 1-sentence summary of its role and list the 2 most important files it interacts with.
-  Start with "${fileName} serves as..."
+  ## Task
+  Provide a comprehensive analysis (Markdown).
+  
+  ### 1. Primary Responsibility
+  - What is the main purpose of this file? (Test suite, Core logic, API handler?)
+  - **Bold** the key responsibility.
+
+  ### 2. Key Interactions
+  - Select the top 2-3 most important neighbors.
+  - Explain *why* it interacts with them (e.g., "Tests the validation logic in X", "Uses Y for storage").
+
+  ### 3. Architectural Placement
+  - Where does this fit in the stack? (e.g. Infrastructure, Domain, Interface)
+  
+  **Guidelines**:
+  - Use markdown headers.
+  - Use link format [\`path/to/file\`](path/to/file).
   `;
 
   console.log('[GeminiService] getFileRoleSummary prompt:', prompt);

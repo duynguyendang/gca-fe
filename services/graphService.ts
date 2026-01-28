@@ -243,6 +243,28 @@ export async function fetchGraphMap(
 }
 
 /**
+ * Fetch project manifest (compressed symbol map)
+ * GET /v1/graph/manifest?project={projectId}
+ */
+export async function fetchManifest(
+  dataApiBase: string,
+  projectId: string
+): Promise<{ F: Record<string, string>, S: Record<string, number> }> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/v1/graph/manifest?project=${encodeURIComponent(projectId)}`;
+
+  console.log('[GraphService] Fetching manifest:', url);
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch manifest: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data;
+}
+
+/**
  * Fetch detailed graph for a specific file
  * GET /v1/graph/file-details?file={fileId}&project={projectId}
  */

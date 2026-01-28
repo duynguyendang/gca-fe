@@ -125,6 +125,11 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
 
   if (width === 0 || height === 0) return <div ref={containerRef} className="w-full h-full bg-slate-900" />;
 
+  // Calculate rendering logic at component scope
+  // Calculate rendering logic at component scope
+  const shouldRenderFlow = (mode === 'flow' || mode === 'architecture' || mode === 'backbone') &&
+    !!(fileScopedData && fileScopedData.nodes && fileScopedData.nodes.length > 0);
+
   return (
     <div ref={containerRef} className="w-full h-full relative bg-slate-900">
       {isLoading && (
@@ -137,35 +142,25 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
       )}
       <svg ref={svgRef} className="w-full h-full absolute inset-0" style={{ background: '#0f172a' }}>
         <g className="zoom-layer">
-          {(() => {
-            const shouldRenderFlow = (mode === 'flow' || mode === 'architecture') && fileScopedData;
-            console.log('FlowGraph Render Check:', {
-              mode,
-              modeIsFlow: mode === 'flow',
-              hasFileScopedData: !!fileScopedData,
-              fileScopedDataNodes: fileScopedData?.nodes?.length,
-              shouldRenderFlow
-            });
-            return shouldRenderFlow;
-          })() && (
-              <FlowGraph
-                nodes={fileScopedData.nodes}
-                links={fileScopedData.links}
-                width={width}
-                height={height}
-                onNodeSelect={onNodeSelect}
-                skipZoom={skipFlowZoom}
-                traceResult={tracePathResult}
-                expandedFileIds={expandedFileIds}
-                onToggleFileExpansion={onToggleFileExpansion}
-                expandingFileId={expandingFileId}
-                svgRef={svgRef}
-                zoomObj={zoomObj}
-                focusModeEnabled={focusModeEnabled}
-                criticalPathNodeIds={criticalPathNodeIds}
-              />
-            )}
-          {mode === 'discovery' && (
+          {shouldRenderFlow && (
+            <FlowGraph
+              nodes={fileScopedData!.nodes}
+              links={fileScopedData!.links}
+              width={width}
+              height={height}
+              onNodeSelect={onNodeSelect}
+              skipZoom={skipFlowZoom}
+              traceResult={tracePathResult}
+              expandedFileIds={expandedFileIds}
+              onToggleFileExpansion={onToggleFileExpansion}
+              expandingFileId={expandingFileId}
+              svgRef={svgRef}
+              zoomObj={zoomObj}
+              focusModeEnabled={focusModeEnabled}
+              criticalPathNodeIds={criticalPathNodeIds}
+            />
+          )}
+          {mode === 'discovery' && !shouldRenderFlow && (
             <DiscoveryGraph
               nodes={fileScopedData?.nodes?.length ? fileScopedData.nodes : nodes}
               links={fileScopedData?.links?.length ? fileScopedData.links : links}

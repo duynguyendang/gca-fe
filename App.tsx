@@ -5,8 +5,10 @@ import ClassDiagramCanvas from './components/ClassDiagramCanvas';
 import HighlightedCode from './components/HighlightedCode';
 import FileTreeItem from './components/FileTreeItem';
 import { ASTNode, FlatGraph, BackboneGraph, BackboneNode, BackboneLink } from './types';
-import { getGeminiInsight, pruneNodesWithAI, resolveSymbolFromQuery, generateAnswerForSymbol, findPathEndpoints, generatePathNarrative, getArchitectureSummary, getArchitectureNarrative, getFileRoleSummary } from './services/geminiService';
+import { getGeminiInsight, pruneNodesWithAI, resolveSymbolFromQuery, generateAnswerForSymbol, findPathEndpoints, generatePathNarrative, getArchitectureSummary, getArchitectureNarrative, getFileRoleSummary, translateNLToDatalog, generateReactiveNarrative } from './services/geminiService';
 import { findShortestPath, PathResult } from './utils/pathfinding';
+import { useManifest } from './hooks/useManifest';
+import MarkdownRenderer from './components/Synthesis/MarkdownRenderer'; // Added MarkdownRenderer
 import {
   fetchGraphMap,
   fetchFileDetails,
@@ -16,12 +18,14 @@ import {
   fetchHydrate,
   executeQuery,
   fetchFileGraph,
-  fetchFileImports, // Added fetchFileImports
+  fetchFileImports,
   fetchFileCalls,
   fetchSource,
   fetchSymbols,
   fetchFlowPath,
   fetchFileBackbone,
+  fetchPredicates,
+
   GraphMapResponse,
   FileDetailsResponse
 } from './services/graphService';
@@ -130,6 +134,13 @@ const App: React.FC = () => {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<string | null>(null);
+
+  // Dynamic Schema: Predicates from backend
+  const [availablePredicates, setAvailablePredicates] = useState<string[]>([]);
+
+  // Manifest Hook
+  const { manifest } = useManifest(dataApiBase, selectedProjectId);
 
   // Load history on mount
   useEffect(() => {
@@ -221,8 +232,10 @@ const App: React.FC = () => {
 
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [codePanelWidth, setCodePanelWidth] = useState(500);
+  const [synthesisHeight, setSynthesisHeight] = useState(256);
   const isResizingSidebar = useRef(false);
   const isResizingCode = useRef(false);
+  const isResizingSynthesis = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -262,6 +275,20 @@ const App: React.FC = () => {
     }
   }, [geminiApiKey]);
 
+  // Fetch predicates when project changes
+  useEffect(() => {
+    if (!dataApiBase || !selectedProjectId) return;
+
+    fetchPredicates(dataApiBase, selectedProjectId)
+      .then((preds: any[]) => {
+        // Extract predicate names (backend returns { name: "calls" })
+        const predNames = preds.map((p: any) => typeof p === 'string' ? p : p.name).filter(Boolean);
+        console.log('Fetched predicates:', predNames);
+        setAvailablePredicates(predNames);
+      })
+      .catch((err: any) => console.warn('Failed to fetch predicates:', err));
+  }, [dataApiBase, selectedProjectId]);
+
   useEffect(() => {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -284,11 +311,13 @@ const App: React.FC = () => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isResizingSidebar.current) setSidebarWidth(Math.max(200, Math.min(600, e.clientX)));
       if (isResizingCode.current) setCodePanelWidth(Math.max(300, Math.min(window.innerWidth * 0.7, window.innerWidth - e.clientX)));
+      if (isResizingSynthesis.current) setSynthesisHeight(Math.max(100, Math.min(window.innerHeight * 0.8, window.innerHeight - e.clientY)));
     };
 
     const handleMouseUp = () => {
       isResizingSidebar.current = false;
       isResizingCode.current = false;
+      isResizingSynthesis.current = false;
       document.body.style.cursor = 'default';
       document.body.style.userSelect = 'auto';
     };
@@ -412,175 +441,192 @@ const App: React.FC = () => {
     }
   };
 
-  // Smart Search: Orchestrates Symbol Search and Pathfinding
+  // Smart Search: Orchestrates Reactive Semantic Search
   const handleSmartSearch = useCallback(async (query: string) => {
     console.log('=== handleSmartSearch called ===', query);
     setSearchError(null);
     setIsSearching(true);
     setQueryResults(null);
+    setNodeInsight(null); // Clear previous insight
+    setSearchStatus("Analyzing query...");
 
     if (!dataApiBase || !selectedProjectId || !query || query.length < 1) {
       setIsSearching(false);
+      setSearchStatus(null);
       return;
     }
 
     try {
-      // 1. First, search for symbols matching the query (broad search)
-      // Use the new /v1/search/symbols endpoint
-      let symbols = await fetchSymbols(dataApiBase, selectedProjectId, query);
-      console.log('Search candidates (exact):', symbols);
+      // 0. Fast-Path: Check Manifest for Exact Match (Bypass AI)
+      if (manifest && manifest.S && manifest.F) {
+        const exactMatchId = manifest.S[query.trim()];
+        if (exactMatchId) {
+          console.log('[Fast-Path] Found exact match in manifest:', query, '->', exactMatchId);
+          setSearchStatus("Fast-path found...");
 
-      // Fallback: If no symbols found, try keyword extraction (heuristic)
-      if (symbols.length === 0) {
-        console.log('No exact match, attempting keyword fallback...');
-        const stopWords = new Set(['what', 'is', 'the', 'how', 'does', 'where', 'are', 'in', 'of', 'for', 'to', 'a', 'an', 'who', 'calls', 'call', 'called', 'by']);
+          // Generate Datalog Logic Locally
+          // Heuristic: If it's a file path, show its contents. If it's a symbol, show what it defines/calls.
+          // Since S maps to FileID, we know the file.
+          // But wait, the S map values are FileIDs. We need the Symbol ID if we want to center on it.
+          // The current Manifest format is S: SymbolName -> FileID.
+          // This allows us to find the file, but not the specific node ID of the symbol unless we construct it.
+          // Assumption: Symbol ID usually formatted as "relPath:SymbolName" or similar.
+          // Let's use the FileID to construct the likely Symbol ID or just query the file.
 
-        // Simple tokenization: remove punctuation, split by spaces, filter stop words
-        const tokens = query.toLowerCase().replace(/[?.,!]/g, ' ').split(/\s+/).filter(t => !stopWords.has(t) && t.length > 2);
+          const fileId = exactMatchId.toString();
+          const filePath = manifest.F[fileId];
 
-        if (tokens.length > 0) {
-          // Find the longest significant token as the most likely primary symbol candidate
-          const longestToken = tokens.reduce((a, b) => a.length > b.length ? a : b);
-          console.log('Fallback: Searching for longest token:', longestToken);
+          if (filePath) {
+            // Construct likely Symbol ID
+            const putativeSymbolId = `${filePath}:${query.trim()}`;
+            console.log('[Fast-Path] Inferring Symbol ID:', putativeSymbolId);
 
-          symbols = await fetchSymbols(dataApiBase, selectedProjectId, longestToken);
-          console.log('Search candidates (fallback):', symbols);
+            // Construct Datalog Query Locally
+            // Query: Everything defined by this symbol OR everything calling this symbol
+            // triples(?s, "calls", "putativeSymbolId")
+            // triples("putativeSymbolId", "calls", ?o)
+            // triples("putativeSymbolId", "defines", ?d)
+
+            const fastDatalog = `triples(?s, "calls", "${putativeSymbolId}"), triples("${putativeSymbolId}", "calls", ?o), triples("${putativeSymbolId}", "defines", ?d)`;
+
+            console.log('[Fast-Path] Generated Datalog:', fastDatalog);
+
+            // Execute Datalog directly
+            setSearchStatus("Executing fast query...");
+            const result = await executeQuery(dataApiBase, selectedProjectId, fastDatalog);
+
+            if (result && result.nodes.length > 0) {
+              setQueryResults(result);
+              setIsSearching(false);
+              setSearchStatus(null);
+              setNodeInsight(null);
+              // Center on the node
+              const targetNode = result.nodes.find((n: any) => n.id === putativeSymbolId) || result.nodes[0];
+              if (targetNode) {
+                setSelectedNode(targetNode);
+              }
+              return; // EXIT FAST PATH
+            }
+          }
         }
       }
 
-      if (symbols.length === 0) {
-        setSearchError("No symbols found matching your query.");
+      // 1. Extract Keywords & Search (skip raw NL query to avoid wasteful requests)
+      const stopWords = new Set(['what', 'is', 'the', 'how', 'does', 'where', 'are', 'in', 'of', 'for', 'to', 'a', 'an', 'who', 'calls', 'call', 'called', 'by', 'show', 'me', 'find', 'get', 'all']);
+      const tokens = query.toLowerCase().replace(/[?.,!'"]/g, ' ').split(/\s+/).filter(t => !stopWords.has(t) && t.length > 2);
+
+      let symbols: string[] = [];
+
+      // If query looks like a symbol (no spaces, short), search directly
+      if (!query.includes(' ') && query.length < 50) {
+        symbols = await fetchSymbols(dataApiBase, selectedProjectId, query);
+      } else if (tokens.length > 0) {
+        // For NL queries, search for keywords (longest first)
+        const sortedTokens = [...tokens].sort((a, b) => b.length - a.length);
+        for (const token of sortedTokens.slice(0, 3)) {
+          console.log('Searching keyword:', token);
+          const found = await fetchSymbols(dataApiBase, selectedProjectId, token);
+          if (found.length > 0) {
+            symbols = found;
+            break; // Use first successful keyword
+          }
+        }
+      }
+
+      // 2. Resolve Subject ID (if any candidates found)
+      let subjectId: string | null = null;
+      // Skip symbol resolution if we have a manifest and the query is simple
+      // Actually, translateNLToDatalog needs subjectId if provided, but it can also deduce from manifest if we don't resolve it here.
+      // However, existing logic relies on `symbols` array.
+      // Let's rely on Manifest inside translateNLToDatalog effectively replacing search_symbols usage
+      // IF the manifest contains the symbol.
+      // But search_symbols is also used to get IDs for subjectId.
+      // Let's keep this step but optimize: if manifest exists, we check it locally instead of calling API?
+      // For now, let's just pass the manifest to translateNLToDatalog and let it handle the heavy lifting.
+      // We can skip valid `search_symbols` calls if we trust the manifest, but `search_symbols` uses fuzzy matching
+      // while manifest lookup is exact or simple.
+      // Let's keep the existing flow but pass manifest to the final step.
+
+      if (symbols.length > 0) {
+        setSearchStatus("Resolving subject symbol...");
+        // If exact match exists, prefer it? Or let AI decide?
+        // Let's us resolveSymbolFromQuery for smart selection
+        subjectId = await resolveSymbolFromQuery(query, symbols, geminiApiKey);
+        // If AI fails but we have 1 candidate, use it
+        if (!subjectId && symbols.length === 1) subjectId = symbols[0];
+        console.log('Resolved Subject ID:', subjectId);
+      }
+
+      // 3. Translate to Datalog (with dynamic predicates)
+      setSearchStatus("Translating to Datalog...");
+      const datalogQuery = await translateNLToDatalog(query, subjectId, geminiApiKey, availablePredicates, manifest);
+      console.log('Generated Datalog:', datalogQuery);
+
+      if (!datalogQuery) {
+        setSearchError("Could not translate query to Datalog.");
+        setSearchStatus(null);
         setIsSearching(false);
         return;
       }
 
-      // 2. AI Resolution: Check for Pathfinding OR Single Symbol
-      let pathEndpoints = null;
-      if (symbols.length > 1) {
-        setNodeInsight("Checking for flow path...");
-        pathEndpoints = await findPathEndpoints(query, symbols, geminiApiKey);
+      // 4. Execute Query
+      setSearchStatus("Executing Datalog query...");
+      const results = await executeQuery(dataApiBase, selectedProjectId, datalogQuery, true); // hydrate=true
+      console.log('Query Results:', results);
+
+      if (!results || !results.nodes || results.nodes.length === 0) {
+        setSearchError("No results found for Datalog query.");
+        setNodeInsight("Query returned no facts.");
+        setSearchStatus(null);
+        setIsSearching(false);
+        return;
       }
 
-      if (pathEndpoints && pathEndpoints.from && pathEndpoints.to && pathEndpoints.from !== pathEndpoints.to) {
-        // --- PATHFINDING MODE ---
-        console.log('Pathfinding Mode:', pathEndpoints);
-        setNodeInsight(`Tracing flow from ${pathEndpoints.from} to ${pathEndpoints.to}...`);
+      // 5. Render Results (Hijack View)
+      // We use 'map' view mode logic but force our data
+      // Actually, 'discovery' uses 'filteredAstData' which comes from 'expandedGraphData'.
+      // We want to force `fileScopedNodes` and use 'backbone' or 'flow' mode?
+      // TreeVisualizer handles 'backbone' by using fileScopedData.
+      // So let's use that.
+      setFileScopedNodes(results.nodes.map((n: any) => ({
+        ...n,
+        // Ensure required fields for ClassDiagram
+        name: n.name || n.id.split('/').pop(),
+        kind: n.kind || 'struct' // Fallback to ensure color/size works
+      })));
+      setFileScopedLinks(results.links || []);
 
-        try {
-          const flowData = await fetchFlowPath(dataApiBase, selectedProjectId, pathEndpoints.from, pathEndpoints.to);
+      // Switch to Discovery view for search results
+      console.log('[DEBUG] Transitioning to Discovery view for search results');
+      debugSetViewMode('discovery');
 
-          if (!flowData.nodes || flowData.nodes.length === 0) {
-            setSearchError(`No path found between ${pathEndpoints.from} and ${pathEndpoints.to}`);
-            setIsSearching(false);
-            return;
-          }
+      setSearchStatus("Generating explanation...");
 
-          // AGGREGATION: Collapse to File -> File links
-          const fileSet = new Map<string, any>(); // path -> node
-          const fileLinks: any[] = [];
-
-          // 1. Create File Nodes
-          flowData.nodes.forEach((n: any) => {
-            // Extract file path from ID: "pkg/foo/bar.go:Func" -> "pkg/foo/bar.go"
-            const filePath = n.id.includes(':') ? n.id.split(':')[0] : n.id;
-            if (!fileSet.has(filePath)) {
-              fileSet.set(filePath, {
-                id: filePath,
-                name: filePath.split('/').pop(), // Short name
-                kind: 'file',
-                type: 'file', // Helper for visualization
-                _project: selectedProjectId,
-                _filePath: filePath
-              });
-            }
-          });
-
-          // 2. Create File Links based on Call Chain
-          for (let i = 0; i < flowData.nodes.length - 1; i++) {
-            const n1 = flowData.nodes[i];
-            const n2 = flowData.nodes[i + 1];
-
-            const f1 = n1.id.includes(':') ? n1.id.split(':')[0] : n1.id;
-            const f2 = n2.id.includes(':') ? n2.id.split(':')[0] : n2.id;
-
-            if (f1 !== f2) {
-              // Check if link already exists
-              const linkExists = fileLinks.find(l => l.source === f1 && l.target === f2);
-              if (!linkExists) {
-                fileLinks.push({
-                  source: f1,
-                  target: f2,
-                  relation: 'calls',
-                  weight: 1
-                });
-              }
-            }
-          }
-
-          const aggregatedNodes = Array.from(fileSet.values());
-          console.log('Aggregated Flow:', aggregatedNodes, fileLinks);
-
-          if (aggregatedNodes.length > 0) {
-            setAstData({
-              nodes: aggregatedNodes,
-              links: fileLinks
-            });
-          } else {
-            // Fallback if no file transitions (all in one file)
-            setAstData({
-              nodes: flowData.nodes.map((n: any) => ({ ...n, _project: selectedProjectId })),
-              links: flowData.links || []
-            });
-          }
-
-          // Generate Narrative
-          const narrative = await generatePathNarrative(query, flowData.nodes, geminiApiKey);
-          setNodeInsight(narrative);
-          setSelectedNode(flowData.nodes[0]); // Select start node
-
-        } catch (pathErr) {
-          console.error("Pathfinding failed", pathErr);
-          setSearchError("Failed to trace path.");
-        }
-
-      } else {
-        // --- SINGLE SYMBOL MODE ---
-        let targetId = symbols[0];
-        if (symbols.length > 1) {
-          setNodeInsight("Resolving best match...");
-          const resolved = await resolveSymbolFromQuery(query, symbols, geminiApiKey);
-          if (resolved && symbols.includes(resolved)) targetId = resolved;
-        }
-
-        console.log('Resolved target:', targetId);
-
-        // Single Symbol Context
-        const queryRes = await executeQuery(dataApiBase, selectedProjectId, `triples("${targetId}", ?p, ?o)`);
-        setAstData({
-          nodes: queryRes.nodes.map((n: any) => ({ ...n, _project: selectedProjectId })),
-          links: queryRes.links
-        });
-
-        const targetNode = queryRes.nodes.find((n: any) => n.id === targetId);
-        setSelectedNode(targetNode);
-
-        setNodeInsight(`Analyzing "${targetId}"...`);
-        const answer = await generateAnswerForSymbol(query, targetId, targetNode, geminiApiKey);
-        setNodeInsight(answer);
+      // Reactive Narrative Generation
+      try {
+        const explanation = await generateReactiveNarrative(query, { nodes: results.nodes, links: results.links || [] }, geminiApiKey);
+        setNodeInsight(explanation);
+      } catch (e) {
+        console.error("Narrative generation failed", e);
+        setNodeInsight(`Found ${results.nodes.length} nodes and ${results.links?.length || 0} links, but could not generate explanation.`);
       }
+      setSearchStatus(null);
 
-    } catch (e) {
-      console.error("Smart Search failed:", e);
-      setSearchError("Search failed.");
+    } catch (err: any) {
+      console.error("Smart Search Error:", err);
+      setSearchError(err.message || 'Search failed');
+      setNodeInsight("Search failed.");
+      setSearchStatus(null);
     } finally {
       setIsSearching(false);
+      // setSearchStatus(null); // Keep handling in try/catch to clear or show error
     }
-  }, [dataApiBase, selectedProjectId, geminiApiKey]);
+  }, [dataApiBase, selectedProjectId, geminiApiKey, availablePredicates, debugSetViewMode]);
 
   // Wrapper for UI
   const searchSymbols = handleSmartSearch;
 
-  // Additional memoized callbacks (defined after searchSymbols due to dependency)
+  // Additional memoized callbacks
   const runSearch = useCallback(() => {
     if (searchTerm) {
       searchSymbols(searchTerm);
@@ -589,6 +635,21 @@ const App: React.FC = () => {
 
   const generateInsights = useCallback(() => {
     setIsInsightLoading(true);
+
+    // If it's a file with scoped nodes (backbone), use architectural summary
+    if (selectedNode?._isFile && fileScopedNodes.length > 0) {
+      getFileRoleSummary(selectedNode.id, fileScopedNodes, geminiApiKey).then(summary => {
+        setNodeInsight(summary);
+        setIsInsightLoading(false);
+      }).catch(err => {
+        console.error("Architectural Insight Failed:", err);
+        setNodeInsight("Analysis failed.");
+        setIsInsightLoading(false);
+      });
+      return;
+    }
+
+    // Default symbol insight
     getGeminiInsight(selectedNode, undefined, geminiApiKey).then(i => {
       setNodeInsight(i);
       setIsInsightLoading(false);
@@ -596,10 +657,20 @@ const App: React.FC = () => {
       setIsInsightLoading(false);
       setNodeInsight("Analysis connection failed.");
     });
-  }, [selectedNode, geminiApiKey]);
+  }, [selectedNode, fileScopedNodes, geminiApiKey]);
 
   // Hydrate a single node's code from the backend
   const hydrateNode = useCallback(async (nodeId: string): Promise<any | null> => {
+    // Validate nodeId - skip obviously invalid IDs (comments, strings with spaces, etc.)
+    if (!nodeId ||
+      nodeId.startsWith('//') ||
+      nodeId.startsWith('/*') ||
+      nodeId.includes('\n') ||
+      nodeId.length > 200) {
+      console.warn('[Hydrate] Skipping invalid nodeId:', nodeId?.substring(0, 50));
+      return null;
+    }
+
     // Check cache first
     if (symbolCache.has(nodeId)) {
       console.log('[Hydrate] Cache hit for:', nodeId);
@@ -691,11 +762,12 @@ const App: React.FC = () => {
       });
 
       // Get Architecture Summary from AI (non-blocking, show all nodes immediately)
-      getArchitectureSummary(fileId, details.nodes, geminiApiKey).then(summary => {
-        setNodeInsight(summary);
-      }).catch(err => {
-        console.warn('[Expand] Architecture Summary failed:', err);
-      });
+      // DISABLED: User request to manual trigger only
+      // getArchitectureSummary(fileId, details.nodes, geminiApiKey).then(summary => {
+      //   setNodeInsight(summary);
+      // }).catch(err => {
+      //   console.warn('[Expand] Architecture Summary failed:', err);
+      // });
 
       // Cache the result
       setFileDetailsCache(prev => new Map(prev).set(fileId, details));
@@ -739,6 +811,44 @@ const App: React.FC = () => {
       setExpandingFileId(null);
     }
   }, [dataApiBase, selectedProjectId, expandedFileIds, fileDetailsCache, fileScopedNodes, fileScopedLinks, viewMode]);
+
+  // Markdown Interaction Handlers (Moved here to access expandFile)
+  const handleMarkdownLinkClick = useCallback((href: string) => {
+    console.log('[Markdown] Link clicked:', href);
+    // Remove leading slash if any
+    const cleanPath = href.replace(/^\//, '');
+
+    // Check if it's a file by extension
+    if (cleanPath.match(/\.[a-z]+$/i)) {
+      // Find file ID (simple match for now, ideally use manifest)
+      // We accept cleanPath as ID if it looks like a file path
+      expandFile(cleanPath);
+
+      // Auto-focus logic?
+      // const fileNode = (astData as FlatGraph).nodes.find(n => n.id === cleanPath);
+      // if (fileNode) setSelectedNode(fileNode);
+    }
+  }, [expandFile]);
+
+  const handleMarkdownSymbolClick = useCallback((symbol: string) => {
+    console.log('[Markdown] Symbol clicked:', symbol);
+    // Clean symbol
+    const cleanSymbol = symbol.trim();
+    if (!cleanSymbol) return;
+
+    // Trigger search or find node
+    // Let's try to find it in the current graph first
+    const existingNode = (astData as FlatGraph).nodes?.find((n: any) => n.name === cleanSymbol || n.id.endsWith(`:${cleanSymbol}`));
+
+    if (existingNode) {
+      setSelectedNode(existingNode);
+      debugSetViewMode('discovery'); // Switch to see it?
+    } else {
+      // Fallback to search
+      setSearchTerm(cleanSymbol);
+      handleSmartSearch(cleanSymbol);
+    }
+  }, [astData, handleSmartSearch, debugSetViewMode]);
 
   // Collapse a file to hide its internal symbols
   const collapseFile = useCallback((fileId: string) => {
@@ -842,7 +952,8 @@ const App: React.FC = () => {
     if (!dataApiBase || !selectedProjectId) return;
 
     setIsFlowLoading(true);
-    setNodeInsight("Generating Backbone Insight...");
+    // Silent load - no auto insight
+    // setNodeInsight("Generating Backbone Insight...");
 
     try {
       // 1. Fetch Backbone (File-to-File depth 1)
@@ -863,6 +974,7 @@ const App: React.FC = () => {
         currentFlowFileRef.current = fileId;
         // Removed auto-switch: debugSetViewMode('backbone');
 
+
         // 2. Fetch Source Code for the file immediately
         const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
         fetchSource(cleanBase, selectedProjectId, fileId).then(src => {
@@ -874,13 +986,14 @@ const App: React.FC = () => {
           });
         });
 
-        // 3. AI Insight
-        getFileRoleSummary(fileId, backbone.nodes, geminiApiKey).then(summary => {
-          setNodeInsight(summary);
-        });
+        // 3. AI Insight - DISABLED for Reactive Mode
+        // getFileRoleSummary(fileId, backbone.nodes, geminiApiKey).then(summary => {
+        //   setNodeInsight(summary);
+        // });
 
       } else {
-        setNodeInsight("No dependencies found.");
+        // Silent failure
+        // setNodeInsight("No dependencies found.");
         setFileScopedNodes([]);
         setFileScopedLinks([]);
       }
@@ -900,12 +1013,13 @@ const App: React.FC = () => {
     // Check if node is a file (either by kind, type, _isFile flag or extension pattern)
     const isFileNode = node.kind === 'file' || node.type === 'file' || node._isFile || (node.id && /\.\w+$/.test(node.id) && !node.id.includes(':'));
 
-    if (isFileNode) {
-      const path = node._filePath || (node.id.includes(':') ? node.id.split(':')[0] : node.id);
-      console.log('File Selected. Loading Backbone:', path);
-      loadFileBackbone(path);
-      return;
-    }
+    // Discovery Mode Polish: Don't switch view mode on file select
+    // if (isFileNode) {
+    //   const path = node._filePath || (node.id.includes(':') ? node.id.split(':')[0] : node.id);
+    //   console.log('File Selected. Loading Backbone:', path);
+    //   loadFileBackbone(path);
+    //   return;
+    // }
 
     // Handle Trace Path mode state updates
     if (tracePathMode) {
@@ -1066,7 +1180,7 @@ const App: React.FC = () => {
         setFileScopedLinks(diagramLinks);
         currentFlowFileRef.current = filePath; // Update current file ref
         console.log('[DEBUG] Setting viewMode to FLOW');
-        debugSetViewMode('flow');
+        // debugSetViewMode('flow'); // Disabled per user request
       } catch (e) {
         console.error('Error processing AST data:', e);
       }
@@ -1122,7 +1236,7 @@ const App: React.FC = () => {
 
           currentFlowFileRef.current = filePath;
           setIsFlowLoading(false);
-          debugSetViewMode('flow'); // Switch to flow view
+          // debugSetViewMode('flow'); // Interaction Polish: Don't force switch to flow view
 
           // Check if file was previously expanded, if so, re-trigger expansion to show internals?
           // For now, satisfy "hiding all internal symbols by default".
@@ -1432,7 +1546,7 @@ const App: React.FC = () => {
                       // Only auto-search for symbols if typing specific names?
                       // For AI questions, maybe wait for Enter.
                       // Let's auto-search to show candidates.
-                      handleSmartSearch(e.target.value);
+                      // handleSmartSearch(e.target.value); // DISABLED auto-search on type for now to be cleaner
                     }, 800);
                   }
                 }}
@@ -1447,6 +1561,14 @@ const App: React.FC = () => {
                 onFocus={() => setShowHistory(true)}
                 onBlur={() => setTimeout(() => setShowHistory(false), 200)}
               />
+
+              {/* Search Status Indicator */}
+              {searchStatus && (
+                <div className="absolute top-[80%] right-4 text-[10px] text-[#00f2ff] font-mono animate-pulse bg-[#0a1118]/80 px-2 py-1 rounded">
+                  <i className="fas fa-circle-notch animate-spin mr-2"></i>
+                  {searchStatus}
+                </div>
+              )}
 
               {showHistory && searchHistory.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-3 bg-[#0d171d]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[60] animate-in fade-in slide-in-from-top-2 duration-200">
@@ -1496,11 +1618,15 @@ const App: React.FC = () => {
                         setSearchTerm('');
                         setQueryResults(null);
                         setSearchError(null);
+                        setNodeInsight(null);
+                        setFileScopedNodes([]);
+                        setFileScopedLinks([]);
+                        // debugSetViewMode('backbone'); // Keep current view or reset?
                       }}
-                      className="text-slate-500 hover:text-white ml-4 w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
-                      title="Clear"
+                      className="text-slate-500 hover:text-white ml-4 px-2 py-0.5 text-[9px] border border-white/10 rounded hover:bg-white/10 transition-colors uppercase tracking-wider"
+                      title="Clear Search & Reset Graph"
                     >
-                      <i className="fas fa-times"></i>
+                      Clear
                     </button>
                   </div>
                 </div>
@@ -1765,22 +1891,55 @@ const App: React.FC = () => {
               {renderCode()}
             </div>
 
-            <div className="h-64 border-t border-white/10 p-5 bg-[#0a1118] shadow-2xl flex flex-col shrink-0">
+            {/* Reactive Synthesis Panel - Only visible when there's content */}
+            {/* Reactive Synthesis Panel - Always Visible & Resizable */}
+            <div
+              style={{ height: synthesisHeight }}
+              className="border-t border-white/10 p-5 bg-[#0a1118] shadow-2xl flex flex-col shrink-0 relative transition-none"
+            >
+              {/* Resize Handle */}
+              <div
+                onMouseDown={() => {
+                  isResizingSynthesis.current = true;
+                  document.body.style.cursor = 'row-resize';
+                  document.body.style.userSelect = 'none';
+                }}
+                className="absolute left-0 top-0 right-0 h-1.5 cursor-row-resize hover:bg-[#00f2ff]/20 active:bg-[#00f2ff]/50 transition-colors z-40"
+              />
+
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-2 h-2 rounded-full bg-[#00f2ff] animate-pulse shadow-[0_0_8px_#00f2ff]"></div>
+                  <div className={`w-2 h-2 rounded-full ${nodeInsight ? 'bg-[#00f2ff] animate-pulse shadow-[0_0_8px_#00f2ff]' : 'bg-slate-700'}`}></div>
                   <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/90 italic">GenAI SYNTHESIS</h3>
                 </div>
-                <button
-                  onClick={generateInsights}
-                  disabled={isInsightLoading || !selectedNode}
-                  className="px-4 py-2 bg-[#00f2ff] text-[#0a1118] rounded-sm text-[9px] font-black uppercase tracking-widest hover:brightness-110 disabled:opacity-20 transition-all shadow-[0_4px_15_rgba(0,242,255,0.2)]"
-                >
-                  {isInsightLoading ? <i className="fas fa-circle-notch animate-spin"></i> : "Generate Insights"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={generateInsights}
+                    disabled={isInsightLoading || !selectedNode}
+                    className="px-3 py-1.5 bg-[#00f2ff]/10 hover:bg-[#00f2ff]/20 border border-[#00f2ff]/30 text-[#00f2ff] rounded-sm text-[9px] font-black uppercase tracking-widest disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                    title="Generate AI analysis for selected node"
+                  >
+                    {isInsightLoading ? <i className="fas fa-circle-notch animate-spin"></i> : <><i className="fas fa-sparkles mr-1.5"></i>ANALYZE</>}
+                  </button>
+                  {nodeInsight && (
+                    <button
+                      onClick={() => setNodeInsight(null)}
+                      className="px-2 py-1 text-slate-500 hover:text-white text-xs"
+                      title="Clear insight"
+                    >
+                      <i className="fas fa-times"></i>
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex-1 bg-[#0d171d] p-4 rounded border border-white/5 text-[11px] text-slate-400 leading-relaxed overflow-y-auto custom-scrollbar font-mono">
-                {nodeInsight ? nodeInsight : (
+                {nodeInsight ? (
+                  <MarkdownRenderer
+                    content={nodeInsight}
+                    onLinkClick={handleMarkdownLinkClick}
+                    onSymbolClick={handleMarkdownSymbolClick}
+                  />
+                ) : (
                   <div className="flex flex-col items-center justify-center h-full opacity-10 gap-3 grayscale">
                     <i className="fas fa-brain text-4xl"></i>
                     <p className="text-[10px] uppercase font-black tracking-[0.4em]">Inference Engine Standby</p>

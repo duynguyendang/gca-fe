@@ -53,7 +53,15 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
     const gRef = useRef<SVGGElement>(null);
 
     useEffect(() => {
-        if (!gRef.current || !svgRef.current || !zoomObj) return;
+        // SVG Race Condition Fix: Verify both ref and svgRef are ready
+        if (!gRef.current || !svgRef.current) return;
+
+        // If zoomObj is missing, we might still want to render, but scaling won't work yet.
+        // Ideally we wait for zoomObj.
+        if (!zoomObj) {
+            console.log('[FlowGraph] Waiting for zoomObj...');
+            return;
+        }
 
         const g = d3.select(gRef.current);
         const svg = d3.select(svgRef.current);

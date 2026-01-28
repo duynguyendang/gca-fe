@@ -11,15 +11,26 @@ export const getGeminiInsight = async (node: any, customEndpoint?: string, apiKe
     apiKey: apiKey || process.env.API_KEY,
   });
 
-  const prompt = `Analyze Go component: ID: ${node.id}, Kind: ${node.kind}, LOC: ${node.end_line - node.start_line}. Provide architectural responsibility summary in <50 words. Code snippet: ${node.code?.substring(0, 100)}`;
+  const prompt = `Analyze the following code component.
+  ID: ${node.id}
+  Kind: ${node.kind}
+  Code Snippet:
+  ${node.code?.substring(0, 300)} (truncated)
 
+  Task: Provide a concise architectural summary.
+  Output Format: Markdown.
+  - Use **bold** for key responsibilities.
+  - Link related files using [\`path/to/file.ext\`] format.
+  - Highlight symbols as \`SymbolName\`.
+  `;
+
+  console.log('[GeminiService] getGeminiInsight prompt:', prompt);
   try {
-    // Correct way to call generateContent: use ai.models.generateContent
     const response = await ai.models.generateContent({
       model: DEFAULT_MODEL,
       contents: prompt,
     });
-    // Correct way to access text: use response.text property (not a method)
+    console.log('[GeminiService] getGeminiInsight response:', response.text);
     return response.text || "Insight unavailable.";
   } catch (err) {
     console.error("Gemini Error:", err);
@@ -50,6 +61,7 @@ export const pruneNodesWithAI = async (nodes: any[], apiKey?: string) => {
     `;
 
   try {
+    console.log('[GeminiService] pruneNodesWithAI prompt:', prompt);
     const response = await ai.models.generateContent({
       model: DEFAULT_MODEL,
       contents: prompt,
@@ -59,6 +71,7 @@ export const pruneNodesWithAI = async (nodes: any[], apiKey?: string) => {
     });
 
     const text = response.text;
+    console.log('[GeminiService] pruneNodesWithAI response:', text);
     if (!text) throw new Error("Empty response from AI");
 
     return JSON.parse(text);
@@ -94,11 +107,13 @@ Provide a 2-3 sentence architectural summary explaining:
 
 Be concise and technical.`;
 
+  console.log('[GeminiService] getArchitectureSummary prompt:', prompt);
   try {
     const response = await ai.models.generateContent({
       model: DEFAULT_MODEL,
       contents: prompt,
     });
+    console.log('[GeminiService] getArchitectureSummary response:', response.text);
     return response.text || "Summary unavailable.";
   } catch (err) {
     console.error("Gemini Summary Error:", err);
@@ -145,37 +160,58 @@ Keep it concise (2-3 sentences).`;
 
 /**
  * Tool: Resolve user query to a specific Symbol ID
+ * IMPORTANT: Returns ONLY an ID from the candidate list, validated
  */
 export const resolveSymbolFromQuery = async (query: string, candidateSymbols: string[], apiKey?: string): Promise<string | null> => {
   if (!candidateSymbols || candidateSymbols.length === 0) return null;
+
+  // If only one candidate, return it immediately
+  if (candidateSymbols.length === 1) return candidateSymbols[0];
 
   const ai = new GoogleGenAI({
     apiKey: apiKey || process.env.API_KEY,
   });
 
-  const prompt = `You are an intelligent code search assistant.
-  
-  User Query: "${query}"
-  
-  Candidate Symbols:
-  ${candidateSymbols.slice(0, 50).join('\n')}
-  
-  Task: Select the ONE symbol ID that best matches the user's intent.
-  If the user asks about "Auth", prefer "auth.go:Login" or "auth_service.go".
-  If multiple matches, pick the definition (struct/func) over usage.
-  
-  Return strictly the ID string. If no good match, return "null".`;
+  // Number the candidates for easier selection
+  const numberedCandidates = candidateSymbols.slice(0, 30).map((s, i) => `${i + 1}. ${s}`).join('\n');
 
+  const prompt = `Select the best matching symbol for this query.
+
+Query: "${query}"
+
+Candidates:
+${numberedCandidates}
+
+Rules:
+- Return ONLY the number (1-${Math.min(30, candidateSymbols.length)}) of the best match
+- Prefer definitions (structs, funcs) over usages
+- If no good match, return 0
+
+Your answer (just the number):`;
+
+  console.log('[GeminiService] resolveSymbolFromQuery prompt:', prompt);
   try {
     const response = await ai.models.generateContent({
       model: DEFAULT_MODEL,
       contents: prompt,
     });
-    const text = response.text?.trim();
-    return text === "null" ? null : text || null;
+    const text = response.text?.trim() || "";
+    console.log('[GeminiService] resolveSymbolFromQuery response:', text);
+
+    // Parse the number response
+    const num = parseInt(text.replace(/[^0-9]/g, ''), 10);
+
+    if (isNaN(num) || num < 1 || num > candidateSymbols.length) {
+      console.log('AI returned invalid selection:', text, '- falling back to first candidate');
+      return candidateSymbols[0];
+    }
+
+    const selected = candidateSymbols[num - 1];
+    console.log('AI selected symbol:', selected);
+    return selected;
   } catch (err) {
     console.error("Gemini Resolution Error:", err);
-    return null;
+    return candidateSymbols[0]; // Fallback to first candidate
   }
 };
 
@@ -263,6 +299,99 @@ export const generatePathNarrative = async (query: string, pathNodes: any[], api
 }
 
 /**
+ * Generate Reactive Narrative with Architectural Insights
+ * 
+ * Analyzes Datalog query results to provide deep architectural understanding
+ * instead of simple summaries.
+ */
+export const generateReactiveNarrative = async (
+  query: string,
+  results: { nodes: any[]; links: any[] },
+  apiKey?: string
+): Promise<string> => {
+  const ai = new GoogleGenAI({
+    apiKey: apiKey || process.env.API_KEY,
+  });
+
+  // Format triples as (Subject --Predicate--> Object) for better context
+  const formattedTriples = results.links.map(link => {
+    const source = link.source || link.source_id || 'unknown';
+    const target = link.target || link.target_id || 'unknown';
+    const relation = link.relation || 'unknown';
+    return `(${source} --${relation}--> ${target})`;
+  }).join('\n  ');
+
+  // Calculate node statistics for pattern detection
+  const nodeStats = new Map<string, { inDegree: number; outDegree: number; kind: string }>();
+  results.nodes.forEach(node => {
+    nodeStats.set(node.id, { inDegree: 0, outDegree: 0, kind: node.kind || 'unknown' });
+  });
+  results.links.forEach(link => {
+    const source = link.source || link.source_id;
+    const target = link.target || link.target_id;
+    if (source && nodeStats.has(source)) {
+      nodeStats.get(source)!.outDegree++;
+    }
+    if (target && nodeStats.has(target)) {
+      nodeStats.get(target)!.inDegree++;
+    }
+  });
+
+  // Format node statistics for architectural pattern detection
+  const nodeStatsText = Array.from(nodeStats.entries())
+    .map(([id, stats]) => `  ${id}: kind=${stats.kind}, in=${stats.inDegree}, out=${stats.outDegree}`)
+    .join('\n');
+
+  const systemPrompt = `# Role: GCA Software Architect
+You are an expert software architect analyzing a codebase visualization.
+
+## Output Format (STRICT MARKDOWN)
+You MUST output your response in valid Markdown.
+- Use \`#\` for major titles (e.g. # Architecture Insight)
+- Use \`##\` for sections.
+- **Links**: When referring to a file, you MUST use the link format: \`[path/to/file.ext](path/to/file.ext)\`. Example: \`[pkg/auth/auth.go](pkg/auth/auth.go)\`.
+- **Symbols**: When referring to a function, struct, or variable, you MUST use inline code: \`SymbolName\`. Example: \`ValidateToken\`.
+- **Formatting**: Use bullet points, bold text, and tables where appropriate.
+
+## Analysis Goals
+1. **Flow & Role**: Identify 'Drivers' (callers) and 'Sinks' (callees).
+2. **Patterns**: Detect architectural patterns (Factory, singleton, etc.).
+3. **Anomalies**: Point out weird connections or missing validation.
+4. **Summary**: What is the "Story" of this subgraph?
+
+Keep it under 10 sentences. Focus on interaction and data flow.
+`;
+
+  const userPrompt = `User Query: "${query}"
+
+Query Results:
+  ${results.nodes.length} nodes, ${results.links.length} links
+
+Triples:
+  ${formattedTriples || '(no relationships found)'}
+
+Node Statistics:
+${nodeStatsText || '(no nodes)'}
+
+Task: Provide a concise architectural insight about these results. What pattern or flow does this reveal?`;
+
+  try {
+    // Combine system and user prompts since systemInstruction isn't supported
+    const fullPrompt = `${systemPrompt}\n\n---\n\n${userPrompt}`;
+    console.log('[GeminiService] generateReactiveNarrative prompt:', fullPrompt);
+    const response = await ai.models.generateContent({
+      model: DEFAULT_MODEL,
+      contents: fullPrompt,
+    });
+    console.log('[GeminiService] generateReactiveNarrative response:', response.text);
+    return response.text || "No insights generated.";
+  } catch (err) {
+    console.error("Gemini Reactive Narrative Error:", err);
+    return "Failed to generate architectural narrative.";
+  }
+};
+
+/**
  * Generate an answer connecting the user's query to the resolved symbol.
  */
 export const generateAnswerForSymbol = async (query: string, symbolId: string, symbolDetails: any, apiKey?: string): Promise<string> => {
@@ -312,14 +441,150 @@ export const getFileRoleSummary = async (fileName: string, neighbors: any[], api
   Start with "${fileName} serves as..."
   `;
 
+  console.log('[GeminiService] getFileRoleSummary prompt:', prompt);
   try {
     const response = await ai.models.generateContent({
       model: DEFAULT_MODEL,
       contents: prompt,
     });
+    console.log('[GeminiService] getFileRoleSummary response:', response.text);
     return response.text || "Role summary unavailable.";
   } catch (err) {
-      console.error("Gemini Role Summary Error:", err);
-      return "Failed to generate file summary.";
+    console.error("Gemini Role Summary Error:", err);
+    return "Failed to generate file summary.";
   }
 }
+/**
+ * Convert Natural Language Query to Datalog
+ * Uses GCA Datalog Architect role with dynamic schema injection
+ */
+export const translateNLToDatalog = async (
+  query: string,
+  subjectId?: string | null,
+  apiKey?: string,
+  predicates?: string[],
+  manifest?: { F: Record<string, string>, S: Record<string, number> } | null
+): Promise<string | null> => {
+  const ai = new GoogleGenAI({
+    apiKey: apiKey || process.env.API_KEY,
+  });
+
+  // Use dynamic predicates if provided, otherwise fall back to defaults
+  const predicateList = predicates && predicates.length > 0
+    ? predicates
+    : ['calls', 'defines', 'reads', 'writes', 'imports'];
+
+  const predicateSchema = predicateList.map(p => `- \`${p}\``).join('\n');
+
+  // 1. Manifest Pruning (Optimization)
+  let manifestToUse = manifest;
+  if (manifest && manifest.S && Object.keys(manifest.S).length > 50) {
+    const tokens = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+    // If query is very short/empty, don't prune or maybe don't send anything?
+    if (tokens.length > 0) {
+      const prunedS: Record<string, number> = {};
+      const relevantFileIds = new Set<string>();
+
+      // Match Symbols
+      Object.entries(manifest.S).forEach(([symbol, fileId]) => {
+        if (tokens.some(t => symbol.toLowerCase().includes(t))) {
+          prunedS[symbol] = fileId;
+          relevantFileIds.add(fileId.toString());
+        }
+      });
+
+      // Match Files
+      if (manifest.F) {
+        Object.entries(manifest.F).forEach(([fid, path]) => {
+          if (tokens.some(t => path.toLowerCase().includes(t))) {
+            relevantFileIds.add(fid);
+          }
+        });
+      }
+
+      // Reconstruct Pruned Manifest
+      const prunedF: Record<string, string> = {};
+      if (manifest.F) {
+        relevantFileIds.forEach(fid => {
+          if (manifest.F[fid]) prunedF[fid] = manifest.F[fid];
+        });
+      }
+
+      // Only prune if we found relevant things. If 0 matches, AI might need full context or standard tools.
+      // But sending 1000s of unrelated symbols is noise.
+      // Let's fallback to a "Light" mode if 0 matches?
+      // For now, if > 0 matches, strict prune.
+      if (Object.keys(prunedS).length > 0 || Object.keys(prunedF).length > 0) {
+        manifestToUse = { S: prunedS, F: prunedF };
+        console.log(`[GeminiService] Pruned manifest: ${Object.keys(prunedS).length} symbols, ${Object.keys(prunedF).length} files.`);
+      }
+    }
+  }
+
+
+  const rolePrompt = `# Role: GCA Datalog Architect
+You are a specialist in source code architecture. Your sole task is to translate user questions into Datalog queries.
+
+## Schema (Available Predicates)
+You MUST only use these predicates:
+${predicateSchema}
+
+## Datalog Syntax
+- Variables: \`?var\` (e.g., \`?file\`, \`?func\`)
+- String IDs: \`"path/to/file.go"\`
+- Query format: \`triples(?s, "predicate", ?o)\`
+- Joins: \`triples(?a, "calls", ?b), triples(?b, "calls", ?c)\`
+
+## Query Patterns
+- **Who calls X?**: \`triples(?caller, "calls", "X_ID")\`
+- **What does X call?**: \`triples("X_ID", "calls", ?callee)\`
+- **What defines X?**: \`triples(?file, "defines", "X_ID")\`
+- **What imports X?**: \`triples(?file, "imports", "X_ID")\`
+
+## Rules
+- Use Subject ID EXACTLY when provided
+- Output ONLY the query string
+- No markdown, no explanation
+
+${manifestToUse ? `
+## Project Manifest (Compressed & Pruned)
+Use this map to resolve symbol names to file IDs without asking.
+Format: S:{"Symbol":FileID}, F:{"FileID":"Path"}
+
+Manifest:
+${JSON.stringify(manifestToUse).substring(0, 30000)} (truncated if too large)
+
+## Rules for Manifest
+- If user mentions "Auth", look up "Auth" in S. If S["Auth"] is 1, and F["1"] is "pkg/auth/auth.go", use "pkg/auth/auth.go".
+- **NEVER** use the \`search_symbols\` tool if a symbol name is found in the manifest. Directly generate the Datalog query using these IDs.
+` : ''}
+`;
+
+  const userQuery = `Query: "${query}"
+${subjectId ? `Subject ID: "${subjectId}"` : ""}
+
+Output the Datalog query:`;
+
+  try {
+    const fullPrompt = `${rolePrompt}\n\n---\n\n${userQuery}`;
+    console.log('[GeminiService] translateNLToDatalog prompt:', fullPrompt);
+    const response = await ai.models.generateContent({
+      model: DEFAULT_MODEL,
+      contents: fullPrompt,
+    });
+
+    console.log('[GeminiService] translateNLToDatalog response:', response.text);
+    let datalogQuery = response.text?.trim() || null;
+
+    // Clean up - remove markdown code blocks
+    if (datalogQuery) {
+      datalogQuery = datalogQuery.replace(/```\w*\n?/g, '').replace(/```/g, '').trim();
+    }
+
+    console.log('Generated Datalog:', datalogQuery);
+    return datalogQuery;
+  } catch (err) {
+    console.error("Gemini Translation Error:", err);
+    return null;
+  }
+};

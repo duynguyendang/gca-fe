@@ -585,6 +585,67 @@ const App: React.FC = () => {
         return;
       }
 
+      // INTERCEPTION: Check for Tool Call (Discovery Mode)
+      if (datalogQuery.trim().startsWith('{')) {
+        try {
+          const toolCall = JSON.parse(datalogQuery);
+          if (toolCall.tool === 'find_connection') {
+            console.log('[App] Executing Tool Call:', toolCall);
+            setSearchStatus(`Tracing path from ${toolCall.source_id} to ${toolCall.target_id}...`);
+
+            // Dynamic Import to avoid circular dependency issues if any, or just use imported function
+            const { fetchGraphPath } = await import('./services/graphService');
+
+            const pathGraph = await fetchGraphPath(dataApiBase, selectedProjectId, toolCall.source_id, toolCall.target_id);
+
+            if (!pathGraph || !pathGraph.nodes || pathGraph.nodes.length === 0) {
+              setSearchStatus(null);
+              setSearchError("No path found between these symbols.");
+              setIsSearching(false);
+              return;
+            }
+
+            // Visualize Path
+            setFileScopedNodes(pathGraph.nodes.map((n: any) => ({
+              ...n,
+              name: n.name || n.id.split('/').pop(),
+              kind: n.kind || 'unknown',
+              _isPath: true // Mark for highlighting
+            })));
+            setFileScopedLinks(pathGraph.links.map((l: any) => ({
+              ...l,
+              _isPath: true
+            })));
+
+            debugSetViewMode('discovery');
+
+            // Generate detailed AI analysis of the path
+            setSearchStatus("Analyzing interaction path with AI...");
+            try {
+              const { analyzePathWithCode } = await import('./services/geminiService');
+              const analysis = await analyzePathWithCode(
+                pathGraph,
+                query, // Use 'query' instead of 'searchQuery'
+                dataApiBase,
+                selectedProjectId,
+                geminiApiKey // Use existing geminiApiKey from scope
+              );
+              setNodeInsight(analysis);
+            } catch (err) {
+              console.error("Path analysis failed:", err);
+              setNodeInsight(`Found interaction path with ${pathGraph.nodes.length} steps.\n\n*AI analysis unavailable*`);
+            }
+
+            setSearchStatus(null);
+            setIsSearching(false);
+            return;
+          }
+        } catch (e) {
+          console.warn("Failed to parse tool call JSON:", e);
+          // Continue to execute as query if it happens to be valid Datalog starting with { (unlikely)
+        }
+      }
+
       // 4. Execute Query
       setSearchStatus("Executing Datalog query...");
       const results = await executeQuery(dataApiBase, selectedProjectId, datalogQuery, true); // hydrate=true
@@ -654,12 +715,45 @@ const App: React.FC = () => {
 
     // If it's a file with scoped nodes (backbone), use architectural summary
     if (selectedNode?._isFile && fileScopedNodes.length > 0) {
-      getFileRoleSummary(selectedNode.id, fileScopedNodes, geminiApiKey).then(summary => {
+      // 1. Fetch File Content (Local Context)
+      setIsInsightLoading(true);
+      fetchSource(dataApiBase, selectedProjectId, selectedNode.id).then(fileContent => {
+
+        // 2. Compute Relational Context from fileScopedLinks
+        const neighbors = {
+          callers: [] as string[],
+          dependencies: [] as string[]
+        };
+
+        // Current file ID
+        const currentId = selectedNode.id;
+
+        fileScopedLinks.forEach(link => {
+          const s = typeof link.source === 'object' ? link.source.id : link.source;
+          const t = typeof link.target === 'object' ? link.target.id : link.target;
+          const sName = typeof link.source === 'object' ? link.source.name : link.source.split('/').pop();
+          const tName = typeof link.target === 'object' ? link.target.name : link.target.split('/').pop();
+
+          if (t === currentId && s !== currentId) {
+            neighbors.callers.push(`[${sName}](${s})`);
+          }
+          if (s === currentId && t !== currentId) {
+            neighbors.dependencies.push(`[${tName}](${t})`);
+          }
+        });
+
+        // Deduplicate
+        neighbors.callers = Array.from(new Set(neighbors.callers));
+        neighbors.dependencies = Array.from(new Set(neighbors.dependencies));
+
+        // 3. Call Service with All Contexts
+        return getFileRoleSummary(selectedNode.name, fileContent, neighbors, geminiApiKey);
+      }).then(summary => {
         setNodeInsight(summary);
-        setIsInsightLoading(false);
       }).catch(err => {
         console.error("Architectural Insight Failed:", err);
-        setNodeInsight("Analysis failed.");
+        setNodeInsight("Analysis failed or source unavailable.");
+      }).finally(() => {
         setIsInsightLoading(false);
       });
       return;
@@ -671,16 +765,26 @@ const App: React.FC = () => {
     // Resolve neighbors from current graph
     // Note: link.source/target might be strings or objects depending on D3 simulation state
     const inbound = links
-      .filter(l => (typeof l.target === 'object' ? l.target.id : l.target) === selectedNode.id)
+      .filter(l => {
+        const target = l.target;
+        if (!target) return false;
+        const targetId = typeof target === 'object' ? (target as any).id : target;
+        return targetId === selectedNode.id;
+      })
       .map(l => ({
-        id: (typeof l.source === 'object' ? l.source.id : l.source),
+        id: (l.source && typeof l.source === 'object' ? (l.source as any).id : l.source),
         rel: l.relation || 'calls'
       }));
 
     const outbound = links
-      .filter(l => (typeof l.source === 'object' ? l.source.id : l.source) === selectedNode.id)
+      .filter(l => {
+        const source = l.source;
+        if (!source) return false;
+        const sourceId = typeof source === 'object' ? (source as any).id : source;
+        return sourceId === selectedNode.id;
+      })
       .map(l => ({
-        id: (typeof l.target === 'object' ? l.target.id : l.target),
+        id: (l.target && typeof l.target === 'object' ? (l.target as any).id : l.target),
         rel: l.relation || 'calls'
       }));
 

@@ -460,3 +460,28 @@ export async function fetchFileBackbone(
   console.log('[GraphService] File backbone response:', data);
   return data;
 }
+
+/**
+ * Fetch shortest path between two symbols
+ * GET /v1/graph/path?project={projectId}&source={source}&target={target}
+ */
+export async function fetchGraphPath(
+  dataApiBase: string,
+  projectId: string,
+  source: string,
+  target: string
+): Promise<GraphMapResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/v1/graph/path?project=${encodeURIComponent(projectId)}&source=${encodeURIComponent(source)}&target=${encodeURIComponent(target)}`;
+
+  console.log('[GraphService] Fetching graph path:', url);
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch graph path: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] Graph path response:', data);
+  return data;
+}

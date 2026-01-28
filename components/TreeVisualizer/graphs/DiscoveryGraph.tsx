@@ -71,7 +71,12 @@ const DiscoveryGraph: React.FC<DiscoveryGraphProps> = ({
             .attr("stroke-dasharray", (d: any) => isVirtualLink(d) ? "5,5" : null);
 
         const nodeGroup = g.append("g").selectAll("g").data(validNodes).join("g")
-            .attr("class", (d: any) => d._isExpandedChild ? 'node node-expanding' : 'node')
+            .attr("class", (d: any) => {
+                let cls = 'node';
+                if (d._isExpandedChild) cls += ' node-expanding';
+                if (d._isPath) cls += ' path-active';
+                return cls;
+            })
             .style("opacity", (d: any) => getNodeOpacity(d, expandedFileIds))
             .attr("cursor", "pointer")
             .on("click", (e, d) => {

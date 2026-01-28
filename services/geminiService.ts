@@ -3,6 +3,29 @@ import { GoogleGenAI } from "@google/genai";
 
 const DEFAULT_MODEL = 'gemini-3-flash-preview';
 
+const PROJECT_DNA = `
+## 🟢 1. Project DNA (Global Context)
+Mangle is a Datalog engine implemented in Go. It manages a FactStore (triples) and uses Unification for logic programming. Key components include an Interpreter, a Validator, and Built-in Predicates.
+`;
+
+/**
+ * Extract Local Context (The "Scout")
+ * Uses Regex to find exported symbols
+ */
+const extractLocalContext = (fileContent: string) => {
+  if (!fileContent) return { functions: [], structs: [], interfaces: [] };
+
+  const functionRegex = /func\s+([A-Z][a-zA-Z0-9]+)/g;
+  const structRegex = /type\s+([A-Z][a-zA-Z0-9]+)\s+struct/g;
+  const interfaceRegex = /type\s+([A-Z][a-zA-Z0-9]+)\s+interface/g;
+
+  const functions = [...fileContent.matchAll(functionRegex)].map(m => m[1]);
+  const structs = [...fileContent.matchAll(structRegex)].map(m => m[1]);
+  const interfaces = [...fileContent.matchAll(interfaceRegex)].map(m => m[1]);
+
+  return { functions, structs, interfaces };
+};
+
 export const getGeminiInsight = async (node: any, context?: { inbound: any[], outbound: any[] }, customEndpoint?: string, apiKey?: string) => {
   if (!node) return null;
 
@@ -456,36 +479,43 @@ export const generateAnswerForSymbol = async (query: string, symbolId: string, s
 /**
  * Get a role summary for a selected file.
  */
-export const getFileRoleSummary = async (fileName: string, neighbors: any[], apiKey?: string): Promise<string> => {
+export const getFileRoleSummary = async (fileName: string, fileContent: string, neighbors: { callers: string[], dependencies: string[] }, apiKey?: string): Promise<string> => {
   const ai = new GoogleGenAI({
     apiKey: apiKey || process.env.API_KEY,
   });
 
-  const neighborList = neighbors.map(n => n.name).slice(0, 10).join(', ');
+  // 1. Extract Local Context (The "Scout")
+  const localContext = extractLocalContext(fileContent);
+  const exportedFunctions = localContext.functions.join(', ') || "None";
+  const structs = localContext.structs.join(', ') || "None";
+  const interfaces = localContext.interfaces.join(', ') || "None";
 
-  const prompt = `Analyze the architectural role of file: "${fileName}".
-  
-  ## Context
-  It interacts with (Imports/Calls): ${neighborList}.
-  
-  ## Task
-  Provide a comprehensive analysis (Markdown).
-  
-  ### 1. Primary Responsibility
-  - What is the main purpose of this file? (Test suite, Core logic, API handler?)
-  - **Bold** the key responsibility.
+  // 2. Relational Context (The "Map")
+  // Limit to Top 3 most relevant neighbors
+  const parentFiles = neighbors.callers.slice(0, 3).join(', ') || "None";
+  const childFiles = neighbors.dependencies.slice(0, 3).join(', ') || "None";
 
-  ### 2. Key Interactions
-  - Select the top 2-3 most important neighbors.
-  - Explain *why* it interacts with them (e.g., "Tests the validation logic in X", "Uses Y for storage").
+  // 3. Construct Dynamic Expert Prompt
+  const prompt = `# Role: Principal Software Architect
+Analyze the architectural role of file: "${fileName}" within the Mangle Project.
 
-  ### 3. Architectural Placement
-  - Where does this fit in the stack? (e.g. Infrastructure, Domain, Interface)
-  
-  **Guidelines**:
-  - Use markdown headers.
-  - Use link format [\`path/to/file\`](path/to/file).
-  `;
+${PROJECT_DNA}
+
+## 🔵 2. Local Anatomy (Inside this file)
+- **Key Functions**: ${exportedFunctions}
+- **Data Structures**: ${structs}
+- **Interfaces**: ${interfaces}
+
+## 🟠 3. Ecosystem Placement (Relational Context)
+- **Primary Callers**: ${parentFiles} (These files rely on this component).
+- **Primary Dependencies**: ${childFiles} (This file relies on these for logic).
+
+## 📝 Task:
+1. Provide a **1-sentence bold summary** of the file's core responsibility.
+2. Explain the **logic flow**: How do its local functions interact with its dependencies to serve the callers?
+3. Use Markdown with backticks for symbols (e.g., \`Decide\`) and brackets for files (e.g., \`[builtin.go]\`).
+4. **STYLE RULE**: Do NOT start with "As a ...". Start directly with the analysis content.
+`;
 
   console.log('[GeminiService] getFileRoleSummary prompt:', prompt);
   try {
@@ -571,6 +601,14 @@ export const translateNLToDatalog = async (
   const rolePrompt = `# Role: GCA Datalog Architect
 You are a specialist in source code architecture. Your sole task is to translate user questions into Datalog queries.
 
+## New Reasoning Protocol
+1. **Discovery Mode**: If the user asks about the relationship, interaction, or flow between two specific entities (e.g., "How does A talk to B?", "Trace from A to B"), **DO NOT** write a multi-hop Datalog query.
+2. **Tool Usage**: Instead, return a JSON object to use the \`find_connection\` tool:
+   \`\`\`json
+   { "tool": "find_connection", "source_id": "resolved_id_A", "target_id": "resolved_id_B" }
+   \`\`\`
+3. **Standard Mode**: For all other queries (definitions, usages, listings), output the Datalog query string as usual.
+
 ## Schema (Available Predicates)
 You MUST only use these predicates:
 ${predicateSchema}
@@ -628,9 +666,128 @@ Output the Datalog query:`;
     }
 
     console.log('Generated Datalog:', datalogQuery);
+
+    // Check if it's a JSON tool call
+    if (datalogQuery && datalogQuery.trim().startsWith('{')) {
+      return datalogQuery; // Return JSON string directly
+    }
+
     return datalogQuery;
   } catch (err) {
     console.error("Gemini Translation Error:", err);
     return null;
+  }
+};
+
+/**
+ * Analyze an interaction path with source code context
+ * Fetches source code for each node and generates detailed AI analysis
+ */
+export const analyzePathWithCode = async (
+  pathGraph: { nodes: any[], links: any[] },
+  originalQuery: string,
+  dataApiBase: string,
+  projectId: string,
+  apiKey?: string
+): Promise<string> => {
+  const ai = new GoogleGenAI({
+    apiKey: apiKey || process.env.API_KEY,
+  });
+
+  try {
+    // Import fetchSource dynamically to avoid circular dependencies
+    const { fetchSource } = await import('./graphService');
+
+    // Fetch source code for each node in the path
+    const nodeCodePairs: { node: any, code: string }[] = [];
+
+    for (const node of pathGraph.nodes) {
+      try {
+        // Fetch source code (limit to reasonable size)
+        const code = await fetchSource(dataApiBase, projectId, node.id, node.start_line, node.end_line);
+        nodeCodePairs.push({ node, code: code.substring(0, 2000) }); // Limit to 2KB per node
+      } catch (err) {
+        console.warn(`Failed to fetch source for ${node.id}:`, err);
+        nodeCodePairs.push({ node, code: '// Source code unavailable' });
+      }
+    }
+
+    // Build the path visualization string
+    const pathStr = pathGraph.nodes.map(n => n.id).join(' → ');
+
+    // Build detailed step-by-step analysis prompt
+    let stepDetails = '';
+    nodeCodePairs.forEach((pair, idx) => {
+      const { node, code } = pair;
+      stepDetails += `\n### Step ${idx + 1}: \`${node.id}\` (${node.kind})\n\n`;
+
+      // Add call relationship context
+      if (idx > 0) {
+        const prevNode = nodeCodePairs[idx - 1].node;
+        const link = pathGraph.links.find(l => l.source === prevNode.id && l.target === node.id);
+        stepDetails += `Called from Step ${idx} via **${link?.relation || 'calls'}** relationship\n\n`;
+      }
+
+      stepDetails += `\`\`\`go\n${code}\n\`\`\`\n`;
+    });
+
+    const prompt = `${PROJECT_DNA}
+
+## 🔍 Interaction Path Analysis
+
+**User Question**: "${originalQuery}"
+
+**Path Discovered** (${pathGraph.nodes.length} steps):
+${pathStr}
+
+---
+
+${stepDetails}
+
+---
+
+## 📋 Analysis Task
+
+Provide a **detailed, code-aware explanation** of this interaction path. Your analysis should:
+
+### 1. Flow Overview
+- What triggers this interaction chain?
+- What is the high-level purpose of this path?
+
+### 2. Step-by-Step Breakdown
+For each step in the path:
+- **What does this component do?** (based on the source code)
+- **Why is it called?** (what triggers it from the previous step)
+- **What data/state does it process or transform?**
+- Highlight specific method calls, parameters, or logic branches
+
+### 3. Data Flow & Transformations
+- Trace the data as it flows through each step
+- Identify key transformations or validations
+- Note any side effects or state changes
+
+### 4. Architectural Insights
+- Design patterns used (if any)
+- Why this path exists (architectural purpose)
+- Any potential optimization or coupling concerns
+
+**Guidelines**:
+- Reference specific lines of code when explaining logic
+- Use markdown code format: \`symbolName\`
+- Be concrete and precise, avoid generic statements
+- Explain the "why" behind each interaction, not just "what"
+`;
+
+    console.log('[GeminiService] analyzePathWithCode prompt length:', prompt.length);
+
+    const response = await ai.models.generateContent({
+      model: DEFAULT_MODEL,
+      contents: prompt,
+    });
+
+    return response.text || "Analysis unavailable.";
+  } catch (err) {
+    console.error("Path Analysis Error:", err);
+    return `Failed to analyze path: ${err instanceof Error ? err.message : 'Unknown error'}`;
   }
 };

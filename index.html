@@ -1,6 +1,6 @@
-
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap');
-        
+
         :root {
             --bg-main: #0a1118;
             --bg-sidebar: #0d171d;
@@ -25,7 +25,9 @@
             overflow: hidden;
         }
 
-        .font-mono { font-family: 'Fira Code', monospace; }
+        .font-mono {
+            font-family: 'Fira Code', monospace;
+        }
 
         .dot-grid {
             background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 0);
@@ -37,10 +39,23 @@
             border-right: 1px solid var(--border);
         }
 
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0, 242, 255, 0.2); }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 242, 255, 0.2);
+        }
 
         /* Override Prism styles for ultra-compact look */
         pre[class*="language-"] {
@@ -49,6 +64,7 @@
             background: transparent !important;
             font-size: 11px !important;
         }
+
         code[class*="language-"] {
             font-family: 'Fira Code', monospace !important;
             text-shadow: none !important;
@@ -56,19 +72,25 @@
 
         /* Glowing path animations */
         @keyframes pulse-glow {
-            0%, 100% {
+
+            0%,
+            100% {
                 filter: drop-shadow(0 0 8px #00f2ff) drop-shadow(0 0 15px #00f2ff);
             }
+
             50% {
                 filter: drop-shadow(0 0 15px #00f2ff) drop-shadow(0 0 30px #00f2ff);
             }
         }
 
         @keyframes path-pulse {
-            0%, 100% {
+
+            0%,
+            100% {
                 filter: drop-shadow(0 0 6px #00f2ff);
                 opacity: 1;
             }
+
             50% {
                 filter: drop-shadow(0 0 12px #00f2ff) drop-shadow(0 0 20px #00f2ff);
                 opacity: 0.8;
@@ -81,9 +103,11 @@
                 transform: translateY(-100%);
                 opacity: 0;
             }
+
             50% {
                 opacity: 1;
             }
+
             100% {
                 transform: translateY(100%);
                 opacity: 0;
@@ -107,9 +131,11 @@
                 transform: scale(0);
                 opacity: 0;
             }
+
             70% {
                 transform: scale(1.1);
             }
+
             100% {
                 transform: scale(1);
                 opacity: 1;
@@ -121,6 +147,7 @@
                 transform: scale(1);
                 opacity: 1;
             }
+
             100% {
                 transform: scale(0.8);
                 opacity: 0;
@@ -137,9 +164,12 @@
 
         /* Expand button pulse animation */
         @keyframes button-pulse {
-            0%, 100% {
+
+            0%,
+            100% {
                 transform: scale(1);
             }
+
             50% {
                 transform: scale(1.1);
             }
@@ -149,7 +179,7 @@
             animation: button-pulse 2s ease-in-out infinite;
         }
     </style>
-<script type="importmap">
+    <script type="importmap">
 {
   "imports": {
     "react/": "https://esm.sh/react@^19.2.3/",
@@ -161,8 +191,10 @@
 }
 </script>
 </head>
+
 <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
 </body>
+
 </html>

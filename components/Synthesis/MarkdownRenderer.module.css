@@ -2,7 +2,7 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     color: #e2e8f0;
     line-height: 1.6;
-    font-size: 14px;
+    font-size: 11px;
 }
 
 .markdownContainer h1,
@@ -15,7 +15,7 @@
 }
 
 .markdownContainer h1 {
-    font-size: 1.4em;
+    font-size: 1.25em;
     border-bottom: 1px solid #334155;
     padding-bottom: 0.3em;
     background: linear-gradient(90deg, #60a5fa, #c084fc);
@@ -24,7 +24,7 @@
 }
 
 .markdownContainer h2 {
-    font-size: 1.2em;
+    font-size: 1.15em;
     color: #60a5fa;
 }
 

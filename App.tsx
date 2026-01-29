@@ -2,13 +2,13 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import TreeVisualizer from './components/TreeVisualizer/index';
 import ClassDiagramCanvas from './components/ClassDiagramCanvas';
-import HighlightedCode from './components/HighlightedCode';
-import FileTreeItem from './components/FileTreeItem';
+import FileTreeItem from './components/FileTreeItem'; // Keep for now
 import { ASTNode, FlatGraph, BackboneGraph, BackboneNode, BackboneLink } from './types';
-import { getGeminiInsight, pruneNodesWithAI, resolveSymbolFromQuery, generateAnswerForSymbol, findPathEndpoints, generatePathNarrative, getArchitectureSummary, getArchitectureNarrative, getFileRoleSummary, translateNLToDatalog, generateReactiveNarrative } from './services/geminiService';
 import { findShortestPath, PathResult } from './utils/pathfinding';
-import { useManifest } from './hooks/useManifest';
-import MarkdownRenderer from './components/Synthesis/MarkdownRenderer'; // Added MarkdownRenderer
+import { useAppContext } from './context/AppContext';
+import { useApiSync, useResizePanels, useSmartSearch, useInsights, useManifest, useNodeHydration } from './hooks';
+import { CodePanel, SynthesisPanel } from './components/Layout';
+// import MarkdownRenderer from './components/Synthesis/MarkdownRenderer'; // Removed in favor of SynthesisPanel
 import {
   fetchGraphMap,
   fetchFileDetails,
@@ -102,56 +102,98 @@ const stratifyPaths = (nodes: any[], filePaths: string[] = []) => {
 
 
 const App: React.FC = () => {
-  const [astData, setAstData] = useState<ASTNode | FlatGraph>(() => {
-    try {
-      const saved = sessionStorage.getItem('gca_ast_data');
-      return saved ? JSON.parse(saved) : SAMPLE_DATA;
-    } catch (e) { return SAMPLE_DATA; }
-  });
+  // 1. Global Context
+  const context = useAppContext();
+  const {
+    astData, setAstData,
+    sandboxFiles, setSandboxFiles,
+    dataApiBase, setDataApiBase,
+    geminiApiKey, setGeminiApiKey,
+    currentProject, setCurrentProject,
+    availableProjects, setAvailableProjects,
+    selectedProjectId, setSelectedProjectId,
+    isDataSyncing, setIsDataSyncing,
+    syncError, setSyncError,
 
-  const [sandboxFiles, setSandboxFiles] = useState<Record<string, any>>(() => {
-    try {
-      const saved = sessionStorage.getItem('gca_sandbox_files');
-      return saved ? JSON.parse(saved) : {};
-    } catch (e) { return {}; }
-  });
+    selectedNode, setSelectedNode,
+    hydratingNodeId, setHydratingNodeId,
+    symbolCache, setSymbolCache,
 
-  // Additional UI states
-  const [dataApiBase, setDataApiBase] = useState<string>(() => sessionStorage.getItem('gca_api_base') || "http://localhost:8080");
-  const [geminiApiKey, setGeminiApiKey] = useState<string>(() => localStorage.getItem('gca_gemini_api_key') || "");
+    nodeInsight, setNodeInsight,
+    isInsightLoading, setIsInsightLoading,
 
-  const [selectedNode, setSelectedNode] = useState<any>(null);
-  const [isInsightLoading, setIsInsightLoading] = useState(false);
-  const [isDataSyncing, setIsDataSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-  const [nodeInsight, setNodeInsight] = useState<string | null>(null);
-  const [currentProject, setCurrentProject] = useState<string>("GCA-Sandbox-Default");
-  const [availableProjects, setAvailableProjects] = useState<Array<{ id: string; name: string; description?: string }>>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
-  const [searchTerm, setSearchTerm] = useState("");
-  const [queryResults, setQueryResults] = useState<any>(null);
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
+    searchTerm, setSearchTerm,
+    queryResults, setQueryResults,
+    isSearching, setIsSearching,
+    searchError, setSearchError,
+    searchStatus, setSearchStatus,
+
+    viewMode, setViewMode,
+    isFlowLoading, setIsFlowLoading,
+
+    fileScopedNodes, setFileScopedNodes,
+    fileScopedLinks, setFileScopedLinks,
+    currentFlowFileRef,
+    skipFlowZoom, setSkipFlowZoom,
+    expandedFileIds, setExpandedFileIds,
+    fileDetailsCache, setFileDetailsCache,
+    expandingFileId, setExpandingFileId,
+
+    isSettingsOpen, setIsSettingsOpen,
+    availablePredicates, setAvailablePredicates,
+  } = context;
+
+  // 2. Local State
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
-  const [searchStatus, setSearchStatus] = useState<string | null>(null);
+  const [showArchitecturePanel, setShowArchitecturePanel] = useState(false);
 
-  // Dynamic Schema: Predicates from backend
-  const [availablePredicates, setAvailablePredicates] = useState<string[]>([]);
-
-  // Manifest Hook
+  // 3. Hooks initialization
   const { manifest } = useManifest(dataApiBase, selectedProjectId);
+  const { syncDataFromApi } = useApiSync();
+  const { hydrateNode } = useNodeHydration();
 
-  // Load history on mount
+  const {
+    startResizeSidebar,
+    startResizeCodePanel,
+    startResizeSynthesis,
+    sidebarWidth,
+    codePanelWidth,
+    synthesisHeight,
+    setSynthesisHeight,
+    isCodeCollapsed,
+    setIsCodeCollapsed,
+    isSynthesisCollapsed,
+    setIsSynthesisCollapsed
+  } = useResizePanels();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Debug wrapper
+  const debugSetViewMode = useCallback((newMode: typeof viewMode) => {
+    // console.log('setViewMode called:', { from: viewMode, to: newMode });
+    setViewMode(newMode);
+  }, [viewMode, setViewMode]);
+
+  // Search Hook
+  const {
+    handleSmartSearch,
+  } = useSmartSearch({
+    ...context,
+    manifest,
+    onViewModeChange: debugSetViewMode,
+  });
+  const searchSymbols = handleSmartSearch; // Alias
+
+  // Insights Hook
+  const { generateInsights, clearInsight } = useInsights();
+
+  // History Logic
   useEffect(() => {
     try {
       const saved = localStorage.getItem('queryHistory');
-      if (saved) {
-        setSearchHistory(JSON.parse(saved));
-      }
-    } catch (e) {
-      console.error('Failed to parse history', e);
-    }
+      if (saved) setSearchHistory(JSON.parse(saved));
+    } catch (e) { }
   }, []);
 
   const addToHistory = useCallback((query: string) => {
@@ -167,73 +209,17 @@ const App: React.FC = () => {
     setSearchHistory([]);
     localStorage.removeItem('queryHistory');
   }, []);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // Class Diagram state
-  const [fileScopedNodes, setFileScopedNodes] = useState<any[]>([]);
-  const [fileScopedLinks, setFileScopedLinks] = useState<any[]>([]);
-  const codeScrollRef = useRef<HTMLDivElement>(null);
-  const currentFlowFileRef = useRef<string | null>(null);
-  const [skipFlowZoom, setSkipFlowZoom] = useState(false);
-
-  // View Modes: flow (Architecture), map (Circle), discovery (Force), backbone (Cross-file), architecture (File-to-File)
-  const [viewMode, setViewMode] = useState<'flow' | 'map' | 'discovery' | 'backbone' | 'architecture'>('discovery');
-  const [isFlowLoading, setIsFlowLoading] = useState(false);
-
-
-
-  // Symbol hydration state
-  const [symbolCache, setSymbolCache] = useState<Map<string, any>>(new Map());
-  const [hydratingNodeId, setHydratingNodeId] = useState<string | null>(null);
-
-  // Progressive expansion state
-  const [expandedFileIds, setExpandedFileIds] = useState<Set<string>>(new Set());
-  const [fileDetailsCache, setFileDetailsCache] = useState<Map<string, FileDetailsResponse>>(new Map());
-  const [expandingFileId, setExpandingFileId] = useState<string | null>(null);
-
-  // Backbone mode state
-
-  const [showArchitecturePanel, setShowArchitecturePanel] = useState(false);
-
-  // Focus Mode State - REMOVED
-
-  // Debug wrapper for setViewMode
-  const debugSetViewMode = useCallback((newMode: typeof viewMode) => {
-    console.log('setViewMode called:', { from: viewMode, to: newMode });
-    if (newMode === 'discovery' && viewMode === 'flow') {
-      console.trace('Trace for switching to DISCOVERY from FLOW');
-    }
-    setViewMode(newMode);
-  }, [viewMode]);
-
-  // Memoized callbacks to prevent re-renders
-  const openSettings = useCallback(() => setIsSettingsOpen(true), []);
-  const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
+  // Callbacks
+  const openSettings = useCallback(() => setIsSettingsOpen(true), [setIsSettingsOpen]);
+  const closeSettings = useCallback(() => setIsSettingsOpen(false), [setIsSettingsOpen]);
   const triggerFileInput = useCallback(() => fileInputRef.current?.click(), []);
-  const syncApi = useCallback(() => syncDataFromApi(dataApiBase), [dataApiBase]);
+  const syncApi = useCallback(() => syncDataFromApi(dataApiBase), [dataApiBase, syncDataFromApi]);
+
   const setFlowMode = useCallback(() => debugSetViewMode('flow'), [debugSetViewMode]);
   const setMapMode = useCallback(() => debugSetViewMode('map'), [debugSetViewMode]);
   const setDiscoveryMode = useCallback(() => debugSetViewMode('discovery'), [debugSetViewMode]);
   const setArchitectureMode = useCallback(() => debugSetViewMode('architecture'), [debugSetViewMode]);
-
-
-
-
-
-  // Debug: log viewMode changes
-  useEffect(() => {
-    console.log('viewMode changed to:', viewMode);
-  }, [viewMode]);
-
-  const [sidebarWidth, setSidebarWidth] = useState(280);
-  const [codePanelWidth, setCodePanelWidth] = useState(Math.round(window.innerWidth * 0.35)); // 35% of screen width
-  const [synthesisHeight, setSynthesisHeight] = useState(Math.round(window.innerHeight * 0.5)); // 50% of screen height
-  const [isCodeCollapsed, setIsCodeCollapsed] = useState(false);
-  const [isSynthesisCollapsed, setIsSynthesisCollapsed] = useState(false);
-  const isResizingSidebar = useRef(false);
-  const isResizingCode = useRef(false);
-  const isResizingSynthesis = useRef(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-resize Synthesis Panel when Insight is loaded
   useEffect(() => {
@@ -319,384 +305,15 @@ const App: React.FC = () => {
     script.onerror = (e) => console.warn('Failed to load Prism core', e);
     document.head.appendChild(script);
 
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isResizingSidebar.current) setSidebarWidth(Math.max(200, Math.min(600, e.clientX)));
-      if (isResizingCode.current) setCodePanelWidth(Math.max(300, Math.min(window.innerWidth * 0.7, window.innerWidth - e.clientX)));
-      if (isResizingSynthesis.current) setSynthesisHeight(Math.max(100, Math.min(window.innerHeight * 0.8, window.innerHeight - e.clientY)));
-    };
-
-    const handleMouseUp = () => {
-      isResizingSidebar.current = false;
-      isResizingCode.current = false;
-      isResizingSynthesis.current = false;
-      document.body.style.cursor = 'default';
-      document.body.style.userSelect = 'auto';
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
+    // Resize handlers are now managed by useResizePanels hook
   }, []);
 
-  const syncDataFromApi = async (baseUrl: string, projectId?: string, onComplete?: () => void) => {
 
-    if (!baseUrl) return;
-    setIsDataSyncing(true);
-    setSyncError(null);
-    const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 
-    try {
-      // Fetch all projects
-      const projectsRes = await fetch(`${cleanBase}/v1/projects`);
-      if (!projectsRes.ok) {
-        setSyncError('Failed to fetch projects');
-        setIsDataSyncing(false);
-        setIsDataSyncing(false);
-        return;
-      }
 
-      const projects = await projectsRes.json() as Array<{ id: string; name: string; description?: string }>;
-      setAvailableProjects(projects);
-
-      // Require project selection
-      if (!projectId && projects.length > 0) {
-        // Auto-select first project if none selected
-        projectId = projects[0].id;
-        setSelectedProjectId(projectId);
-      }
-
-      if (!projectId) {
-        setSyncError('No projects available');
-        setIsDataSyncing(false);
-        setIsDataSyncing(false);
-        return;
-      }
-
-      setCurrentProject(projects.find(p => p.id === projectId)?.name || projectId);
-
-      // Fetch files for the project
-      const filesUrl = `${cleanBase}/v1/files?project=${encodeURIComponent(projectId)}`;
-      const filesRes = await fetch(filesUrl);
-      if (!filesRes.ok) {
-        setSyncError(`Failed to fetch files: ${filesRes.statusText}`);
-        setIsDataSyncing(false);
-        setIsDataSyncing(false);
-        return;
-      }
-
-      const filesData = await filesRes.json();
-      const filesList = Array.isArray(filesData) ? filesData : (filesData.files || []);
-      setSandboxFiles(prev => ({ ...prev, 'files.json': filesList }));
-
-      // Build AST from files list
-      if (filesList.length > 0) {
-        const astNodes: any[] = [];
-        const astLinks: any[] = [];
-
-        filesList.forEach((filePath: string) => {
-          const fileName = filePath.split('/').pop() || filePath;
-          const ext = fileName.split('.').pop()?.toLowerCase();
-          const kind = ['py', 'ts', 'js', 'go', 'rs'].includes(ext || '') ? 'function' : 'file';
-
-          astNodes.push({
-            id: filePath,
-            name: fileName,
-            type: kind,
-            kind: kind,
-            start_line: 1,
-            end_line: 100,
-            code: '',
-            _filePath: filePath,
-            _project: projectId
-          });
-        });
-
-        setAstData({ nodes: astNodes, links: astLinks });
-      }
-
-      // Fetch enriched AST from query endpoint (POST with body)
-      try {
-        const queryRes = await fetch(`${cleanBase}/v1/query?project=${encodeURIComponent(projectId)}&hydrate=true`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: 'triples(?s, "defines", ?o)' })
-        });
-
-        if (queryRes.ok) {
-          const ast = await queryRes.json();
-          if (ast && ast.nodes && ast.nodes.length > 0) {
-            // Enrich existing nodes with code from query response
-            setAstData(prev => {
-              const enrichedNodes = prev.nodes.map(node => {
-                const enrichedNode = ast.nodes.find((n: any) => n.id === node.id || n.id === node._filePath);
-                return enrichedNode ? { ...node, ...enrichedNode, _project: projectId } : { ...node, _project: projectId };
-              });
-              return { nodes: enrichedNodes, links: ast.links || prev.links };
-            });
-          }
-        }
-      } catch (queryErr) {
-        console.log('Query endpoint not available, using file-based AST');
-      }
-
-      // Success - don't auto-close, let user select project in main UI
-      if (onComplete) onComplete();
-    } catch (err: any) {
-      console.error("API Sync Error:", err);
-      setSyncError(err.message || 'Unknown error during sync');
-    } finally {
-      setIsDataSyncing(false);
-    }
-  };
-
-  // Smart Search: Orchestrates Reactive Semantic Search
-  const handleSmartSearch = useCallback(async (query: string) => {
-    console.log('=== handleSmartSearch called ===', query);
-    setSearchError(null);
-    setIsSearching(true);
-    setQueryResults(null);
-    setNodeInsight(null); // Clear previous insight
-    setSearchStatus("Analyzing query...");
-
-    if (!dataApiBase || !selectedProjectId || !query || query.length < 1) {
-      setIsSearching(false);
-      setSearchStatus(null);
-      return;
-    }
-
-    try {
-      // 0. Fast-Path: Check Manifest for Exact Match (Bypass AI)
-      if (manifest && manifest.S && manifest.F) {
-        const exactMatchId = manifest.S[query.trim()];
-        if (exactMatchId) {
-          console.log('[Fast-Path] Found exact match in manifest:', query, '->', exactMatchId);
-          setSearchStatus("Fast-path found...");
-
-          // Generate Datalog Logic Locally
-          // Heuristic: If it's a file path, show its contents. If it's a symbol, show what it defines/calls.
-          // Since S maps to FileID, we know the file.
-          // But wait, the S map values are FileIDs. We need the Symbol ID if we want to center on it.
-          // The current Manifest format is S: SymbolName -> FileID.
-          // This allows us to find the file, but not the specific node ID of the symbol unless we construct it.
-          // Assumption: Symbol ID usually formatted as "relPath:SymbolName" or similar.
-          // Let's use the FileID to construct the likely Symbol ID or just query the file.
-
-          const fileId = exactMatchId.toString();
-          const filePath = manifest.F[fileId];
-
-          if (filePath) {
-            // Construct likely Symbol ID
-            const putativeSymbolId = `${filePath}:${query.trim()}`;
-            console.log('[Fast-Path] Inferring Symbol ID:', putativeSymbolId);
-
-            // Construct Datalog Query Locally
-            // Query: Everything defined by this symbol OR everything calling this symbol
-            // triples(?s, "calls", "putativeSymbolId")
-            // triples("putativeSymbolId", "calls", ?o)
-            // triples("putativeSymbolId", "defines", ?d)
-
-            const fastDatalog = `triples(?s, "calls", "${putativeSymbolId}"), triples("${putativeSymbolId}", "calls", ?o), triples("${putativeSymbolId}", "defines", ?d)`;
-
-            console.log('[Fast-Path] Generated Datalog:', fastDatalog);
-
-            // Execute Datalog directly
-            setSearchStatus("Executing fast query...");
-            const result = await executeQuery(dataApiBase, selectedProjectId, fastDatalog);
-
-            if (result && result.nodes.length > 0) {
-              setQueryResults(result);
-              setIsSearching(false);
-              setSearchStatus(null);
-              setNodeInsight(null);
-              // Center on the node
-              const targetNode = result.nodes.find((n: any) => n.id === putativeSymbolId) || result.nodes[0];
-              if (targetNode) {
-                setSelectedNode(targetNode);
-              }
-              return; // EXIT FAST PATH
-            }
-          }
-        }
-      }
-
-      // 1. Extract Keywords & Search (skip raw NL query to avoid wasteful requests)
-      const stopWords = new Set(['what', 'is', 'the', 'how', 'does', 'where', 'are', 'in', 'of', 'for', 'to', 'a', 'an', 'who', 'calls', 'call', 'called', 'by', 'show', 'me', 'find', 'get', 'all']);
-      const tokens = query.toLowerCase().replace(/[?.,!'"]/g, ' ').split(/\s+/).filter(t => !stopWords.has(t) && t.length > 2);
-
-      let symbols: string[] = [];
-
-      // If query looks like a symbol (no spaces, short), search directly
-      if (!query.includes(' ') && query.length < 50) {
-        symbols = await fetchSymbols(dataApiBase, selectedProjectId, query);
-      } else if (tokens.length > 0) {
-        // For NL queries, search for keywords (longest first)
-        const sortedTokens = [...tokens].sort((a, b) => b.length - a.length);
-        for (const token of sortedTokens.slice(0, 3)) {
-          console.log('Searching keyword:', token);
-          const found = await fetchSymbols(dataApiBase, selectedProjectId, token);
-          if (found.length > 0) {
-            symbols = found;
-            break; // Use first successful keyword
-          }
-        }
-      }
-
-      // 2. Resolve Subject ID (if any candidates found)
-      let subjectId: string | null = null;
-      // Skip symbol resolution if we have a manifest and the query is simple
-      // Actually, translateNLToDatalog needs subjectId if provided, but it can also deduce from manifest if we don't resolve it here.
-      // However, existing logic relies on `symbols` array.
-      // Let's rely on Manifest inside translateNLToDatalog effectively replacing search_symbols usage
-      // IF the manifest contains the symbol.
-      // But search_symbols is also used to get IDs for subjectId.
-      // Let's keep this step but optimize: if manifest exists, we check it locally instead of calling API?
-      // For now, let's just pass the manifest to translateNLToDatalog and let it handle the heavy lifting.
-      // We can skip valid `search_symbols` calls if we trust the manifest, but `search_symbols` uses fuzzy matching
-      // while manifest lookup is exact or simple.
-      // Let's keep the existing flow but pass manifest to the final step.
-
-      if (symbols.length > 0) {
-        setSearchStatus("Resolving subject symbol...");
-        // If exact match exists, prefer it? Or let AI decide?
-        // Let's us resolveSymbolFromQuery for smart selection
-        subjectId = await resolveSymbolFromQuery(query, symbols, geminiApiKey);
-        // If AI fails but we have 1 candidate, use it
-        if (!subjectId && symbols.length === 1) subjectId = symbols[0];
-        console.log('Resolved Subject ID:', subjectId);
-      }
-
-      // 3. Translate to Datalog (with dynamic predicates)
-      setSearchStatus("Translating to Datalog...");
-      const datalogQuery = await translateNLToDatalog(query, subjectId, geminiApiKey, availablePredicates, manifest);
-      console.log('Generated Datalog:', datalogQuery);
-
-      if (!datalogQuery) {
-        setSearchError("Could not translate query to Datalog.");
-        setSearchStatus(null);
-        setIsSearching(false);
-        return;
-      }
-
-      // INTERCEPTION: Check for Tool Call (Discovery Mode)
-      if (datalogQuery.trim().startsWith('{')) {
-        try {
-          const toolCall = JSON.parse(datalogQuery);
-          if (toolCall.tool === 'find_connection') {
-            console.log('[App] Executing Tool Call:', toolCall);
-            setSearchStatus(`Tracing path from ${toolCall.source_id} to ${toolCall.target_id}...`);
-
-            // Dynamic Import to avoid circular dependency issues if any, or just use imported function
-            const { fetchGraphPath } = await import('./services/graphService');
-
-            const pathGraph = await fetchGraphPath(dataApiBase, selectedProjectId, toolCall.source_id, toolCall.target_id);
-
-            if (!pathGraph || !pathGraph.nodes || pathGraph.nodes.length === 0) {
-              setSearchStatus(null);
-              setSearchError("No path found between these symbols.");
-              setIsSearching(false);
-              return;
-            }
-
-            // Visualize Path
-            setFileScopedNodes(pathGraph.nodes.map((n: any) => ({
-              ...n,
-              name: n.name || n.id.split('/').pop(),
-              kind: n.kind || 'unknown',
-              _isPath: true // Mark for highlighting
-            })));
-            setFileScopedLinks(pathGraph.links.map((l: any) => ({
-              ...l,
-              _isPath: true
-            })));
-
-            debugSetViewMode('discovery');
-
-            // Generate detailed AI analysis of the path
-            setSearchStatus("Analyzing interaction path with AI...");
-            try {
-              const { analyzePathWithCode } = await import('./services/geminiService');
-              const analysis = await analyzePathWithCode(
-                pathGraph,
-                query, // Use 'query' instead of 'searchQuery'
-                dataApiBase,
-                selectedProjectId,
-                geminiApiKey // Use existing geminiApiKey from scope
-              );
-              setNodeInsight(analysis);
-            } catch (err) {
-              console.error("Path analysis failed:", err);
-              setNodeInsight(`Found interaction path with ${pathGraph.nodes.length} steps.\n\n*AI analysis unavailable*`);
-            }
-
-            setSearchStatus(null);
-            setIsSearching(false);
-            return;
-          }
-        } catch (e) {
-          console.warn("Failed to parse tool call JSON:", e);
-          // Continue to execute as query if it happens to be valid Datalog starting with { (unlikely)
-        }
-      }
-
-      // 4. Execute Query
-      setSearchStatus("Executing Datalog query...");
-      const results = await executeQuery(dataApiBase, selectedProjectId, datalogQuery, true); // hydrate=true
-      console.log('Query Results:', results);
-
-      if (!results || !results.nodes || results.nodes.length === 0) {
-        setSearchError("No results found for Datalog query.");
-        setNodeInsight("Query returned no facts.");
-        setSearchStatus(null);
-        setIsSearching(false);
-        return;
-      }
-
-      // 5. Render Results (Hijack View)
-      // We use 'map' view mode logic but force our data
-      // Actually, 'discovery' uses 'filteredAstData' which comes from 'expandedGraphData'.
-      // We want to force `fileScopedNodes` and use 'backbone' or 'flow' mode?
-      // TreeVisualizer handles 'backbone' by using fileScopedData.
-      // So let's use that.
-      setFileScopedNodes(results.nodes.map((n: any) => ({
-        ...n,
-        // Ensure required fields for ClassDiagram
-        name: n.name || n.id.split('/').pop(),
-        kind: n.kind || 'struct' // Fallback to ensure color/size works
-      })));
-      setFileScopedLinks(results.links || []);
-
-      // Switch to Discovery view for search results
-      console.log('[DEBUG] Transitioning to Discovery view for search results');
-      debugSetViewMode('discovery');
-
-      setSearchStatus("Generating explanation...");
-
-      // Reactive Narrative Generation
-      try {
-        const explanation = await generateReactiveNarrative(query, { nodes: results.nodes, links: results.links || [] }, geminiApiKey);
-        setNodeInsight(explanation);
-      } catch (e) {
-        console.error("Narrative generation failed", e);
-        setNodeInsight(`Found ${results.nodes.length} nodes and ${results.links?.length || 0} links, but could not generate explanation.`);
-      }
-      setSearchStatus(null);
-
-    } catch (err: any) {
-      console.error("Smart Search Error:", err);
-      setSearchError(err.message || 'Search failed');
-      setNodeInsight("Search failed.");
-      setSearchStatus(null);
-    } finally {
-      setIsSearching(false);
-      // setSearchStatus(null); // Keep handling in try/catch to clear or show error
-    }
-  }, [dataApiBase, selectedProjectId, geminiApiKey, availablePredicates, debugSetViewMode]);
 
   // Wrapper for UI
-  const searchSymbols = handleSmartSearch;
+
 
   // Additional memoized callbacks
   const runSearch = useCallback(() => {
@@ -705,164 +322,9 @@ const App: React.FC = () => {
     }
   }, [searchTerm, searchSymbols]);
 
-  const generateInsights = useCallback(() => {
-    setIsInsightLoading(true);
 
-    // If it's a file with scoped nodes (backbone), use architectural summary
-    if (selectedNode?._isFile && fileScopedNodes.length > 0) {
-      // 1. Fetch File Content (Local Context)
-      setIsInsightLoading(true);
-      fetchSource(dataApiBase, selectedProjectId, selectedNode.id).then(fileContent => {
 
-        // 2. Compute Relational Context from fileScopedLinks
-        const neighbors = {
-          callers: [] as string[],
-          dependencies: [] as string[]
-        };
 
-        // Current file ID
-        const currentId = selectedNode.id;
-
-        fileScopedLinks.forEach(link => {
-          const s = typeof link.source === 'object' ? link.source.id : link.source;
-          const t = typeof link.target === 'object' ? link.target.id : link.target;
-          const sName = typeof link.source === 'object' ? link.source.name : link.source.split('/').pop();
-          const tName = typeof link.target === 'object' ? link.target.name : link.target.split('/').pop();
-
-          if (t === currentId && s !== currentId) {
-            neighbors.callers.push(`[${sName}](${s})`);
-          }
-          if (s === currentId && t !== currentId) {
-            neighbors.dependencies.push(`[${tName}](${t})`);
-          }
-        });
-
-        // Deduplicate
-        neighbors.callers = Array.from(new Set(neighbors.callers));
-        neighbors.dependencies = Array.from(new Set(neighbors.dependencies));
-
-        // 3. Call Service with All Contexts
-        return getFileRoleSummary(selectedNode.name, fileContent, neighbors, geminiApiKey);
-      }).then(summary => {
-        setNodeInsight(summary);
-      }).catch(err => {
-        console.error("Architectural Insight Failed:", err);
-        setNodeInsight("Analysis failed or source unavailable.");
-      }).finally(() => {
-        setIsInsightLoading(false);
-      });
-      return;
-    }
-
-    // Default symbol insight with Graph Context
-    const links = (astData && 'links' in astData) ? (astData as FlatGraph).links : [];
-
-    // Resolve neighbors from current graph
-    // Note: link.source/target might be strings or objects depending on D3 simulation state
-    const inbound = links
-      .filter(l => {
-        const target = l.target;
-        if (!target) return false;
-        const targetId = typeof target === 'object' ? (target as any).id : target;
-        return targetId === selectedNode.id;
-      })
-      .map(l => ({
-        id: (l.source && typeof l.source === 'object' ? (l.source as any).id : l.source),
-        rel: l.relation || 'calls'
-      }));
-
-    const outbound = links
-      .filter(l => {
-        const source = l.source;
-        if (!source) return false;
-        const sourceId = typeof source === 'object' ? (source as any).id : source;
-        return sourceId === selectedNode.id;
-      })
-      .map(l => ({
-        id: (l.target && typeof l.target === 'object' ? (l.target as any).id : l.target),
-        rel: l.relation || 'calls'
-      }));
-
-    const context = { inbound, outbound };
-
-    getGeminiInsight(selectedNode, context, undefined, geminiApiKey).then(i => {
-      setNodeInsight(i);
-      setIsInsightLoading(false);
-    }).catch(() => {
-      setIsInsightLoading(false);
-      setNodeInsight("Analysis connection failed.");
-    });
-  }, [selectedNode, fileScopedNodes, geminiApiKey]);
-
-  // Hydrate a single node's code from the backend
-  const hydrateNode = useCallback(async (nodeId: string): Promise<any | null> => {
-    // Validate nodeId - skip obviously invalid IDs (comments, strings with spaces, etc.)
-    if (!nodeId ||
-      nodeId.startsWith('//') ||
-      nodeId.startsWith('/*') ||
-      nodeId.includes('\n') ||
-      nodeId.length > 200) {
-      console.warn('[Hydrate] Skipping invalid nodeId:', nodeId?.substring(0, 50));
-      return null;
-    }
-
-    // Check cache first
-    if (symbolCache.has(nodeId)) {
-      console.log('[Hydrate] Cache hit for:', nodeId);
-      return symbolCache.get(nodeId);
-    }
-
-    // Check if node already has code
-    const existingNode = (astData as FlatGraph)?.nodes?.find((n: any) => n.id === nodeId);
-    if (existingNode?.code) {
-      console.log('[Hydrate] Node already has code:', nodeId);
-      // Cache it for future
-      setSymbolCache(prev => new Map(prev).set(nodeId, existingNode));
-      return existingNode;
-    }
-
-    if (!dataApiBase || !selectedProjectId) {
-      console.warn('[Hydrate] Missing dataApiBase or selectedProjectId');
-      return null;
-    }
-
-    console.log('[Hydrate] Fetching node from API:', nodeId);
-    setHydratingNodeId(nodeId);
-
-    try {
-      const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-      const response = await fetch(`${cleanBase}/v1/hydrate?id=${encodeURIComponent(nodeId)}&project=${encodeURIComponent(selectedProjectId)}`);
-
-      if (!response.ok) {
-        console.error('[Hydrate] Failed to hydrate node:', response.status, response.statusText);
-        return null;
-      }
-
-      const hydratedNode = await response.json();
-      console.log('[Hydrate] Successfully hydrated node:', hydratedNode);
-
-      // Update cache
-      setSymbolCache(prev => new Map(prev).set(nodeId, hydratedNode));
-
-      // Update astData with the hydrated node
-      setAstData(prev => {
-        if (!prev || !('nodes' in prev)) return prev;
-        return {
-          ...prev,
-          nodes: prev.nodes.map(n =>
-            n.id === nodeId ? { ...n, ...hydratedNode } : n
-          )
-        };
-      });
-
-      return hydratedNode;
-    } catch (error) {
-      console.error('[Hydrate] Error hydrating node:', error);
-      return null;
-    } finally {
-      setHydratingNodeId(null);
-    }
-  }, [dataApiBase, selectedProjectId, astData, symbolCache]);
 
   // Expand a file to show its internal symbols
   const expandFile = useCallback(async (fileId: string) => {
@@ -1544,81 +1006,54 @@ const App: React.FC = () => {
     return fileScopedData;
   }, [fileScopedData]);
 
-  const renderCode = () => {
-    if (!selectedNode) return (
-      <div className="h-full flex items-center justify-center flex-col gap-4 grayscale opacity-20">
-        <i className="fas fa-microchip text-5xl"></i>
-        <p className="text-[9px] uppercase font-black tracking-[0.2em]">Select an Asset to Inspect</p>
-      </div>
-    );
 
-    // Show loading skeleton when hydrating
-    if (hydratingNodeId === selectedNode.id || (!selectedNode.code && !selectedNode._isMissingCode)) {
-      return (
-        <div className="h-full flex items-center justify-center flex-col gap-4">
-          <div className="flex items-center gap-3">
-            <i className="fas fa-circle-notch fa-spin text-[#00f2ff] text-2xl"></i>
-            <p className="text-[10px] text-[#00f2ff] font-medium">Loading code...</p>
-          </div>
-          {/* Code skeleton */}
-          <div className="flex-1 w-full max-w-2xl mx-4 space-y-2">
-            <div className="h-4 bg-[#16222a] rounded animate-pulse" style={{ width: '40%' }}></div>
-            <div className="h-4 bg-[#16222a] rounded animate-pulse" style={{ width: '70%' }}></div>
-            <div className="h-4 bg-[#16222a] rounded animate-pulse" style={{ width: '60%' }}></div>
-            <div className="h-4 bg-[#16222a] rounded animate-pulse" style={{ width: '50%' }}></div>
-            <div className="h-4 bg-[#16222a] rounded animate-pulse" style={{ width: '80%' }}></div>
-          </div>
-        </div>
-      );
-    }
-
-    let code = selectedNode.code;
-    if (!code && selectedNode._isMissingCode) {
-      return (
-        <div className="h-full flex items-center justify-center flex-col gap-3 opacity-30 italic">
-          <i className="fas fa-file-invoice text-3xl"></i>
-          <p className="text-[10px] uppercase font-bold tracking-widest">Source Buffer Unavailable</p>
-        </div>
-      );
-    }
-
-    let language = 'go';
-    const id = (selectedNode.id || "").toLowerCase();
-    if (id.endsWith('.ts') || id.endsWith('.tsx')) language = 'typescript';
-    else if (id.endsWith('.js') || id.endsWith('.jsx')) language = 'javascript';
-    else if (id.endsWith('.py')) language = 'python';
-    else if (id.endsWith('.rs')) language = 'rust';
-    else if (id.endsWith('.cpp')) language = 'cpp';
-
-    return (
-      <HighlightedCode
-        code={code || "// Code snippet missing."}
-        language={language}
-        startLine={selectedNode.start_line || 1}
-        scrollToLine={selectedNode._scrollToLine}
-      />
-    );
-  };
 
   const handleClassDiagramNodeClick = (node: any) => {
     console.log('Class diagram node clicked:', node);
 
+    // Get the file path - use filePath, _filePath, or id for file nodes
+    const isFileNode = node.kind === 'file' || node.type === 'file';
+    const fileId = node.filePath || node._filePath || (isFileNode ? node.id : null);
+
+    console.log('[Class Diagram] Debug:', {
+      fileId,
+      isFileNode,
+      hasCode: !!node.code,
+      dataApiBase,
+      selectedProjectId
+    });
+
+    // Set node with scroll position if available
+    const nodeToSet = { ...node, _filePath: fileId };
     if (node.start_line) {
-      setSelectedNode((prev: any) => ({ ...prev, ...node, _scrollToLine: node.start_line }));
-    } else {
-      setSelectedNode((prev: any) => ({ ...prev, ...node }));
+      nodeToSet._scrollToLine = node.start_line;
     }
+    setSelectedNode(nodeToSet);
 
     // Fetch source code if missing
-    if (!node.code && node.filePath && dataApiBase && selectedProjectId) {
+    if (!node.code && fileId && dataApiBase && selectedProjectId) {
+      console.log('[Source] Fetching source for:', fileId, 'project:', selectedProjectId);
+      setHydratingNodeId(node.id); // Show loading state
       const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-      fetchSource(cleanBase, selectedProjectId, node.filePath)
+      fetchSource(cleanBase, selectedProjectId, fileId)
         .then(code => {
-          setSelectedNode((prev: any) => ({ ...prev, code }));
+          console.log('[Source] Got code, length:', code?.length, 'preview:', code?.substring(0, 50));
+          setSelectedNode((prev: any) => {
+            console.log('[Source] Updating selectedNode, prev:', prev?.id);
+            return { ...prev, code };
+          });
           // Update cache
-          setSymbolCache(prev => new Map(prev).set(node.filePath, { ...node, code }));
+          setSymbolCache(prev => new Map(prev).set(fileId, { ...node, code }));
         })
-        .catch(err => console.error('[Source] Failed to fetch source:', err));
+        .catch(err => console.error('[Source] Failed to fetch source:', err))
+        .finally(() => setHydratingNodeId(null)); // Clear loading state
+    } else {
+      console.log('[Source] Skipping fetch - condition not met:', {
+        hasCode: !!node.code,
+        fileId,
+        dataApiBase: !!dataApiBase,
+        selectedProjectId
+      });
     }
   };
 
@@ -1708,11 +1143,7 @@ const App: React.FC = () => {
         </div>
 
         <div
-          onMouseDown={() => {
-            isResizingSidebar.current = true;
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-          }}
+          onMouseDown={startResizeSidebar}
           className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[#00f2ff]/20 active:bg-[#00f2ff]/50 transition-colors z-40"
         />
       </aside>
@@ -1965,108 +1396,23 @@ const App: React.FC = () => {
             })()}
           </div>
 
-          <aside
-            style={{ width: codePanelWidth }}
-            className="code-panel flex flex-col shrink-0 border-l border-white/10 shadow-2xl z-10 relative bg-[#0d171d]"
+          <CodePanel
+            width={codePanelWidth}
+            isCollapsed={isCodeCollapsed}
+            onToggleCollapse={() => setIsCodeCollapsed(!isCodeCollapsed)}
+            onStartResize={startResizeCodePanel}
           >
-            <div
-              onMouseDown={() => {
-                isResizingCode.current = true;
-                document.body.style.cursor = 'col-resize';
-                document.body.style.userSelect = 'none';
-              }}
-              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[#00f2ff]/20 active:bg-[#00f2ff]/50 transition-colors z-40"
+            <SynthesisPanel
+              height={synthesisHeight}
+              isCollapsed={isSynthesisCollapsed}
+              onToggleCollapse={() => setIsSynthesisCollapsed(!isSynthesisCollapsed)}
+              onStartResize={startResizeSynthesis}
+              onAnalyze={generateInsights}
+              onClearInsight={() => setNodeInsight(null)}
+              onLinkClick={handleMarkdownLinkClick}
+              onSymbolClick={handleMarkdownSymbolClick}
             />
-
-            <header className="h-12 px-5 border-b border-white/5 flex items-center justify-between bg-[#0a1118] shrink-0">
-              <div className="flex items-center gap-3 overflow-hidden mr-4">
-                <button
-                  onClick={() => setIsCodeCollapsed(!isCodeCollapsed)}
-                  className="text-slate-500 hover:text-white transition-colors"
-                >
-                  <i className={`fas fa-chevron-${isCodeCollapsed ? 'down' : 'up'}`}></i>
-                </button>
-                <i className="fas fa-terminal text-[#00f2ff] text-[12px]"></i>
-                <span className="text-[10px] font-mono text-slate-300 truncate uppercase tracking-tighter">{selectedNode?.id || "IDLE"}</span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <div className="text-[8px] font-black px-2 py-0.5 rounded bg-[#00f2ff]/5 border border-[#00f2ff]/20 text-[#00f2ff] uppercase tracking-widest">
-                  {selectedNode?.kind || "raw"}
-                </div>
-              </div>
-            </header>
-
-            <div className={`flex-1 overflow-auto custom-scrollbar ${isCodeCollapsed ? 'hidden' : ''}`}>
-              {renderCode()}
-            </div>
-
-            {/* Reactive Synthesis Panel - Only visible when there's content */}
-            {/* Reactive Synthesis Panel - Always Visible & Resizable */}
-            <div
-              style={{ height: isSynthesisCollapsed ? 'auto' : synthesisHeight }}
-              className={`border-t border-white/10 ${isSynthesisCollapsed ? 'p-2 bg-[#0a1118]' : 'p-5 bg-[#0a1118]'} shadow-2xl flex flex-col shrink-0 relative transition-none`}
-            >
-              {/* Resize Handle */}
-              <div
-                onMouseDown={() => {
-                  isResizingSynthesis.current = true;
-                  document.body.style.cursor = 'row-resize';
-                  document.body.style.userSelect = 'none';
-                }}
-                className="absolute left-0 top-0 right-0 h-1.5 cursor-row-resize hover:bg-[#00f2ff]/20 active:bg-[#00f2ff]/50 transition-colors z-40"
-              />
-
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2.5">
-                  <button
-                    onClick={() => {
-                      setIsSynthesisCollapsed(!isSynthesisCollapsed);
-                      // If expanding and was small, expand fully
-                      if (isSynthesisCollapsed) setIsCodeCollapsed(true);
-                    }}
-                    className="text-slate-500 hover:text-white transition-colors"
-                  >
-                    <i className={`fas fa-chevron-${isSynthesisCollapsed ? 'up' : 'down'}`}></i>
-                  </button>
-                  <div className={`w-2 h-2 rounded-full ${nodeInsight ? 'bg-[#00f2ff] animate-pulse shadow-[0_0_8px_#00f2ff]' : 'bg-slate-700'}`}></div>
-                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/90 italic">GenAI SYNTHESIS</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={generateInsights}
-                    disabled={isInsightLoading || !selectedNode}
-                    className="px-3 py-1.5 bg-[#00f2ff]/10 hover:bg-[#00f2ff]/20 border border-[#00f2ff]/30 text-[#00f2ff] rounded-sm text-[9px] font-black uppercase tracking-widest disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                    title="Generate AI analysis for selected node"
-                  >
-                    {isInsightLoading ? <i className="fas fa-circle-notch animate-spin"></i> : <><i className="fas fa-sparkles mr-1.5"></i>ANALYZE</>}
-                  </button>
-                  {nodeInsight && (
-                    <button
-                      onClick={() => setNodeInsight(null)}
-                      className="px-2 py-1 text-slate-500 hover:text-white text-xs"
-                      title="Clear insight"
-                    >
-                      <i className="fas fa-times"></i>
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className={`flex-1 bg-[#0d171d] p-4 rounded border border-white/5 text-[11px] text-slate-400 leading-relaxed overflow-y-auto custom-scrollbar font-mono ${isSynthesisCollapsed ? 'hidden' : ''}`}>
-                {nodeInsight ? (
-                  <MarkdownRenderer
-                    content={nodeInsight}
-                    onLinkClick={handleMarkdownLinkClick}
-                    onSymbolClick={handleMarkdownSymbolClick}
-                  />
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full opacity-10 gap-3 grayscale">
-                    <i className="fas fa-brain text-4xl"></i>
-                    <p className="text-[10px] uppercase font-black tracking-[0.4em]">Inference Engine Standby</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </aside>
+          </CodePanel>
         </div>
 
 

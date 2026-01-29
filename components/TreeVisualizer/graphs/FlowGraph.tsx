@@ -2,7 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 import dagre from 'dagre';
-import { PathResult } from '../../../utils/pathfinding';
+
 import {
     getAccent,
     getNodeFill,
@@ -11,8 +11,6 @@ import {
     isExpandableNode,
     isNodeExpanded,
     isNodeExpanding,
-    isInTracePath,
-    isInTracePathLink,
     needsHydration,
     groupNodesByParent
 } from '../utils/graphUtils';
@@ -24,7 +22,7 @@ interface FlowGraphProps {
     height: number;
     onNodeSelect: (node: any) => void;
     skipZoom?: boolean;
-    traceResult?: PathResult | null;
+
     expandedFileIds: Set<string>;
     onToggleFileExpansion?: (fileId: string) => void;
     expandingFileId?: string | null;
@@ -41,7 +39,7 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
     height,
     onNodeSelect,
     skipZoom = false,
-    traceResult = null,
+
     expandedFileIds,
     onToggleFileExpansion,
     expandingFileId,
@@ -294,17 +292,15 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
                     if (criticalPathNodeIds.has(d.v) && criticalPathNodeIds.has(d.w)) return '#00f2ff'; // Cyan
                     return '#334155'; // Dimmed
                 }
-                const isInPath = isInTracePathLink(d.v, d.w, traceResult);
                 const isVirtual = d.source_type === 'virtual' || (d.relation && d.relation.startsWith('v:'));
-                return isInPath ? '#00f2ff' : (isVirtual ? '#a855f7' : '#475569');
+                return isVirtual ? '#a855f7' : '#475569';
             })
             .attr('stroke-width', (d: any) => {
                 if (focusModeEnabled) {
                     if (criticalPathNodeIds.has(d.v) && criticalPathNodeIds.has(d.w)) return 2.5;
                     return 1;
                 }
-                const isInPath = isInTracePathLink(d.v, d.w, traceResult);
-                return isInPath ? 3 : (d.source_type === 'virtual' || (d.relation && d.relation.startsWith('v:')) ? 2 : 1.5);
+                return d.source_type === 'virtual' || (d.relation && d.relation.startsWith('v:')) ? 2 : 1.5;
             })
             .style('opacity', (d: any) => {
                 if (focusModeEnabled) {
@@ -386,7 +382,7 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
                 if (originalNode.kind === 'file' && isNodeExpanded(originalNode, expandedFileIds)) {
                     return 'rgba(0,0,0,0)'; // Invisible, let cluster rect show
                 }
-                return getNodeFill(originalNode, getAccent(originalNode.kind || 'func'), isInTracePath(d.id, traceResult));
+                return getNodeFill(originalNode, getAccent(originalNode.kind || 'func'), false);
             })
             .attr('stroke', (d: any) => {
                 const originalNode = nodes.find(n => n.id === d.id);
@@ -398,11 +394,11 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
                 }
 
                 if (originalNode.kind === 'file' && isNodeExpanded(originalNode, expandedFileIds)) return 'none';
-                return getNodeStroke(originalNode, getAccent(originalNode.kind || 'func'), isInTracePath(d.id, traceResult));
+                return getNodeStroke(originalNode, getAccent(originalNode.kind || 'func'), false);
             })
             .attr('stroke-width', (d: any) => {
                 if (focusModeEnabled && criticalPathNodeIds.has(d.id)) return 3;
-                return isInTracePath(d.id, traceResult) ? 3 : 2;
+                return 2;
             })
             // Add Glow Filter effect if critical? (Optional enhancement)
             .style('filter', (d: any) => {
@@ -460,7 +456,7 @@ const FlowGraph: React.FC<FlowGraphProps> = ({
             // Actually, parent passes skipZoom=true usually.
         }
 
-    }, [nodes, links, width, height, expandedFileIds, expandingFileId, traceResult, skipZoom, zoomObj, svgRef, focusModeEnabled, criticalPathNodeIds]);
+    }, [nodes, links, width, height, expandedFileIds, expandingFileId, skipZoom, zoomObj, svgRef, focusModeEnabled, criticalPathNodeIds]);
 
     return <g ref={gRef} className="flow-graph" />;
 };

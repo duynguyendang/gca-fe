@@ -1,5 +1,5 @@
 
-import { PathResult } from '../../../utils/pathfinding';
+
 
 export const hexToRgb = (hex: string): string => {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -80,19 +80,7 @@ export const getLinkOpacity = (link: any): number => {
     return isVirtualLink(link) ? 0.6 : 0.7;
 };
 
-export const isInTracePath = (nodeId: string, pathResult: PathResult | null): boolean => {
-    if (!pathResult) return false;
-    return pathResult.path.includes(nodeId);
-};
 
-export const isInTracePathLink = (sourceId: string, targetId: string, pathResult: PathResult | null): boolean => {
-    if (!pathResult) return false;
-    return pathResult.links.some(link => {
-        const s = typeof link.source === 'string' ? link.source : link.source.id;
-        const t = typeof link.target === 'string' ? link.target : link.target.id;
-        return (s === sourceId && t === targetId) || (s === targetId && t === sourceId);
-    });
-};
 
 export const needsHydration = (node: any): boolean => {
     return !node.code && node.kind !== 'file' && node.kind !== 'package' && node.kind !== 'folder';
@@ -119,14 +107,12 @@ export const getSymbol = (kind: string) => {
     }
 };
 
-export const getNodeFill = (node: any, accentColor: string, isInPath: boolean): string => {
-    if (isInPath) return 'rgba(0, 242, 255, 0.15)';
+export const getNodeFill = (node: any, accentColor: string, isInPath: boolean = false): string => {
     if (needsHydration(node)) return 'rgba(168, 85, 247, 0.08)';
     return `rgba(${hexToRgb(accentColor)}, 0.15)`;
 };
 
-export const getNodeStroke = (node: any, accentColor: string, isInPath: boolean): string => {
-    if (isInPath) return '#00f2ff';
+export const getNodeStroke = (node: any, accentColor: string, isInPath: boolean = false): string => {
     if (needsHydration(node)) return 'rgba(168, 85, 247, 0.4)';
     return accentColor;
 };

@@ -180,12 +180,7 @@ const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<'flow' | 'map' | 'discovery' | 'backbone' | 'architecture'>('discovery');
   const [isFlowLoading, setIsFlowLoading] = useState(false);
 
-  // Trace Path state
-  const [tracePathMode, setTracePathMode] = useState(false);
-  const [traceStartNode, setTraceStartNode] = useState<string | null>(null);
-  const [traceEndNode, setTraceEndNode] = useState<string | null>(null);
-  const [tracePathResult, setTracePathResult] = useState<PathResult | null>(null);
-  const [showVirtualLinks, setShowVirtualLinks] = useState(false);
+
 
   // Symbol hydration state
   const [symbolCache, setSymbolCache] = useState<Map<string, any>>(new Map());
@@ -231,8 +226,8 @@ const App: React.FC = () => {
   }, [viewMode]);
 
   const [sidebarWidth, setSidebarWidth] = useState(280);
-  const [codePanelWidth, setCodePanelWidth] = useState(500);
-  const [synthesisHeight, setSynthesisHeight] = useState(256);
+  const [codePanelWidth, setCodePanelWidth] = useState(Math.round(window.innerWidth * 0.35)); // 35% of screen width
+  const [synthesisHeight, setSynthesisHeight] = useState(Math.round(window.innerHeight * 0.5)); // 50% of screen height
   const [isCodeCollapsed, setIsCodeCollapsed] = useState(false);
   const [isSynthesisCollapsed, setIsSynthesisCollapsed] = useState(false);
   const isResizingSidebar = useRef(false);
@@ -1149,38 +1144,151 @@ const App: React.FC = () => {
     console.log('=== SYNC TRINITY: Node Clicked ===');
     console.log('1. Graph: Highlighting node:', node.id);
 
+    // Extract file path early for external node detection
+    const projectId = node._project || selectedProjectId;
+    const filePath = node._isFile ? (node._filePath || node.id) : (node.id ? node.id.split(':')[0] : null);
+
+    console.log('handleNodeSelect:', {
+      id: node.id,
+      kind: node.kind,
+      type: node.type,
+      _isFile: node._isFile,
+      _filePath: node._filePath,
+      filePath,
+      hasCode: !!node.code,
+      is_internal: node.is_internal,
+      metadata: node.metadata
+    });
+
+    // UNIVERSAL DETECTION: Use backend-provided metadata
+    // The backend knows the actual project structure and marks nodes appropriately
+    // This works for all languages: Go, Python, TypeScript, Rust, etc.
+
+    // Check if node is external based on backend metadata
+    const isExternalByMetadata = node.is_internal === false || node.metadata?.is_external_lib === true;
+
+    // Graceful fallback: if backend doesn't provide is_internal yet, assume internal
+    // This allows the system to work during transition period
+    const hasExternalMetadata = node.is_internal !== undefined || node.metadata?.is_external_lib !== undefined;
+
+    console.log('Universal detection:', {
+      filePath,
+      is_internal: node.is_internal,
+      is_external_lib: node.metadata?.is_external_lib,
+      hasExternalMetadata,
+      isExternalByMetadata,
+      willBlockNode: isExternalByMetadata
+    });
+
+    if (isExternalByMetadata) {
+      console.log('External node (per backend metadata), skipping graph reload:', node.id);
+      // Only update the selected node for display purposes
+      setSelectedNode(node);
+      setNodeInsight(null);
+      return;
+    }
+
     // Architecture Mode Navigation
     // Check if node is a file (either by kind, type, _isFile flag or extension pattern)
-    const isFileNode = node.kind === 'file' || node.type === 'file' || node._isFile || (node.id && /\.\w+$/.test(node.id) && !node.id.includes(':'));
+    // Be more specific about file extensions to avoid matching github.com, go.uber.org, etc.
+    const fileExtensions = /\.(go|ts|tsx|js|jsx|py|rs|java|cpp|c|h|md|json|yaml|yml|toml)$/i;
+    const isFileNode = node.kind === 'file' || node.type === 'file' || node._isFile || (node.id && fileExtensions.test(node.id) && !node.id.includes(':'));
+
+    // Check if this is a package node (Go import path without file extension)
+    // Examples: "github.com/google/mangle/ast", "analysis", "engine"
+    const isPackageNode = !isFileNode && (
+      node.kind === 'package' ||
+      (filePath && !filePath.includes(':') && !/\.\w+$/.test(filePath))
+    );
+
+    // Handle package navigation - find a specific file and load its neighbors
+    // OPTIMIZATION: Don't load entire package (causes 204 nodes explosion)
+    // Instead, find the first file in the package and load its graph
+    if (isPackageNode && filePath && dataApiBase && projectId) {
+      console.log('[File-level Nav] Package detected, finding specific file:', filePath);
+
+      const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+      const filesUrl = `${cleanBase}/v1/files?project=${encodeURIComponent(projectId)}&prefix=${encodeURIComponent(filePath)}`;
+
+      setSelectedNode(node);
+      setNodeInsight(null);
+
+      fetch(filesUrl)
+        .then(res => res.json())
+        .then((response: any) => {
+          const files: string[] = Array.isArray(response) ? response : (response.files || []);
+          console.log('[File-level Nav] Found files in package:', files.length);
+
+          if (!files || files.length === 0) {
+            console.warn('[File-level Nav] No files found in package:', filePath);
+            return;
+          }
+
+          // Pick the first non-test Go file, or just the first file
+          const targetFile = files.find((f: string) => f.endsWith('.go') && !f.includes('_test.')) || files[0];
+          console.log('[File-level Nav] Loading graph for file:', targetFile);
+
+          // Load the file's graph (immediate neighbors only)
+          const graphUrl = `${cleanBase}/v1/graph?project=${encodeURIComponent(projectId)}&file=${encodeURIComponent(targetFile)}&lazy=true`;
+
+          return fetch(graphUrl)
+            .then(res => res.json())
+            .then((graphData: any) => {
+              console.log('[File-level Nav] Graph loaded:', graphData.nodes?.length, 'nodes,', graphData.links?.length, 'links');
+
+              if (graphData.nodes && graphData.nodes.length > 0) {
+                // Clear previous state first to free memory
+                setFileScopedNodes([]);
+                setFileScopedLinks([]);
+
+                // Normalize nodes to show file-level names
+                const normalizedNodes = graphData.nodes.map((n: any) => {
+                  // Extract a friendly name from the node ID
+                  let displayName = n.name || n.id;
+
+                  // For symbols like "file.go:FuncName", extract just the symbol
+                  if (n.id && n.id.includes(':')) {
+                    const parts = n.id.split(':');
+                    const fileName = parts[0].split('/').pop() || parts[0];
+                    const symbolName = parts[1];
+                    displayName = `${fileName}:${symbolName}`;
+                  }
+                  // For package paths like "github.com/google/mangle/ast", show just "ast"
+                  else if (n.id && n.id.includes('/') && !n.id.includes('.go')) {
+                    displayName = n.id.split('/').pop() || n.id;
+                    // Mark as package for styling
+                    n.kind = n.kind || 'package';
+                  }
+                  // For file paths, show just the filename
+                  else if (n.id && n.id.includes('/')) {
+                    displayName = n.id.split('/').pop() || n.id;
+                  }
+
+                  return {
+                    ...n,
+                    name: displayName,
+                    // Preserve original ID for navigation
+                    _originalId: n.id
+                  };
+                });
+
+                // Set new data
+                setFileScopedNodes(normalizedNodes);
+                setFileScopedLinks(graphData.links || []);
+                currentFlowFileRef.current = targetFile;
+              }
+            });
+        })
+        .catch(err => {
+          console.error('[File-level Nav] Error:', err);
+        });
+
+      return;
+    }
 
     // Discovery Mode Polish: Don't switch view mode on file select
-    // if (isFileNode) {
-    //   const path = node._filePath || (node.id.includes(':') ? node.id.split(':')[0] : node.id);
-    //   console.log('File Selected. Loading Backbone:', path);
-    //   loadFileBackbone(path);
-    //   return;
-    // }
 
-    // Handle Trace Path mode state updates
-    if (tracePathMode) {
-      if (!traceStartNode) {
-        setTraceStartNode(node.id);
-        setTracePathResult(null);
-      } else if (!traceEndNode && node.id !== traceStartNode) {
-        setTraceEndNode(node.id);
-        // Find path using BFS/Dijkstra
-        const nodes = (astData as FlatGraph)?.nodes || [];
-        const links = (astData as FlatGraph)?.links || [];
-        const result = findShortestPath(nodes, links, traceStartNode, node.id, true);
-        setTracePathResult(result);
-      } else if (traceStartNode && traceEndNode) {
-        // Reset and start new path
-        setTraceStartNode(node.id);
-        setTraceEndNode(null);
-        setTracePathResult(null);
-      }
-      // Note: Don't return early - allow normal node selection to proceed
-    }
+
 
     // Always set the selected node so the code panel updates
     setSelectedNode(node);
@@ -1204,29 +1312,7 @@ const App: React.FC = () => {
       }
     }
 
-    // Extract file path
-    const projectId = node._project || selectedProjectId;
-    const filePath = node._isFile ? (node._filePath || node.id) : (node.id ? node.id.split(':')[0] : null);
-
-    console.log('handleNodeSelect:', { id: node.id, _isFile: node._isFile, _filePath: node._filePath, filePath });
     console.log('Current flow file:', currentFlowFileRef.current, 'New file:', filePath);
-
-    // Check if node is from an external library by path patterns
-    // Only block if we can confidently identify it as external
-    const isExternalLibrary = filePath && (
-      filePath.includes('/node_modules/') ||
-      filePath.startsWith('node_modules/') ||
-      filePath.includes('/std/') ||
-      filePath.includes('/vendor/') ||
-      filePath.includes('/external/')
-    );
-
-    if (isExternalLibrary) {
-      console.log('External library detected, staying in current view:', filePath);
-      setSelectedNode(node);
-      setNodeInsight(null);
-      return;
-    }
 
     // Check if we're clicking a node in the same file (in flow mode)
     const isSameFile = currentFlowFileRef.current && currentFlowFileRef.current === filePath;
@@ -1262,14 +1348,6 @@ const App: React.FC = () => {
       nodeHasCode: !!node.code,
       filePath: filePath
     });
-
-    // Check if this is likely an external function reference (no file path separators, no code)
-    // External functions are often referenced as just "fmt", "console", etc.
-    const isExternalFunctionRef = filePath && !filePath.includes('/') && !node.code && !node._isFile;
-    if (isExternalFunctionRef) {
-      console.log('Likely external function reference (no path separators, no code), staying in current view:', filePath);
-      return;
-    }
 
     // Use AST data if it has nodes for this file
     if (filePath && fileNodesFromAst.length > 0) {
@@ -1333,12 +1411,12 @@ const App: React.FC = () => {
 
       setIsFlowLoading(true);
 
-      // REFACTOR: Use fetchFileImports to get "Import-Only" view
-      console.log('Fetching imports only for:', filePath);
+      // Use fetchFileGraph which includes package-to-file resolution
+      console.log('Fetching file graph for:', filePath);
 
-      fetchFileImports(cleanBase, projectId, filePath)
+      fetchFileGraph(cleanBase, projectId, filePath, true)
         .then(data => {
-          console.log('[Flow] File imports loaded:', data);
+          console.log('[Flow] File graph loaded:', data);
 
           if (!data || !data.nodes || data.nodes.length === 0) {
             console.warn("No imports found or empty graph");
@@ -1452,45 +1530,19 @@ const App: React.FC = () => {
   }), [fileScopedNodes, fileScopedLinks]);
 
   // Filter data based on showVirtualLinks state and expansion
+  // Use expanded graph data directly (no filtering needed)
   const filteredAstData = useMemo(() => {
-    const baseData = expandedGraphData;
-    if (!baseData || !('nodes' in baseData)) return baseData;
+    return expandedGraphData;
+  }, [expandedGraphData]);
 
-    const nodes = baseData.nodes;
-    const links = baseData.links || [];
-
-    if (showVirtualLinks) {
-      return { nodes, links };
-    }
-
-    // Filter out virtual links (relation starts with 'v:' or source_type === 'virtual')
-    const filteredLinks = links.filter((link: any) => {
-      const isVirtual = link.source_type === 'virtual' ||
-        (link.relation && link.relation.startsWith('v:'));
-      return !isVirtual;
-    });
-
-    return { nodes, links: filteredLinks };
-  }, [expandedGraphData, showVirtualLinks]);
-
-  // Filter fileScopedData based on showVirtualLinks state
+  // Use file scoped data directly (no filtering needed)
   const filteredFileScopedData = useMemo(() => {
     console.log('[DEBUG] filteredFileScopedData RECALC', {
       nodes: fileScopedData.nodes?.length,
-      links: fileScopedData.links?.length,
-      showVirtualLinks
+      links: fileScopedData.links?.length
     });
-    return {
-      nodes: fileScopedData.nodes,
-      links: showVirtualLinks
-        ? fileScopedData.links
-        : fileScopedData.links.filter((link: any) => {
-          const isVirtual = link.source_type === 'virtual' ||
-            (link.relation && link.relation.startsWith('v:'));
-          return !isVirtual;
-        })
-    };
-  }, [fileScopedData, showVirtualLinks]);
+    return fileScopedData;
+  }, [fileScopedData]);
 
   const renderCode = () => {
     if (!selectedNode) return (
@@ -1817,32 +1869,7 @@ const App: React.FC = () => {
 
 
 
-            {/* Trace Path Mode Button */}
-            <button
-              onClick={() => {
-                setTracePathMode(!tracePathMode);
-                if (!tracePathMode) {
-                  setTraceStartNode(null);
-                  setTraceEndNode(null);
-                  setTracePathResult(null);
-                }
-              }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 border ${tracePathMode ? 'bg-[#a855f7] border-[#a855f7] text-[#0a1118]' : 'bg-transparent border-white/10 text-slate-400 hover:border-[#a855f7]/50'} rounded transition-all`}
-              title="Toggle Trace Path mode"
-            >
-              <i className={`fas fa-route text-[8px] font-black ${tracePathMode ? 'text-[#0a1118]' : 'text-[#a855f7]'}`}></i>
-              <span className="text-[8px] font-black uppercase tracking-widest">Trace</span>
-            </button>
 
-            {/* Enrich Graph Button */}
-            <button
-              onClick={() => setShowVirtualLinks(!showVirtualLinks)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 border ${showVirtualLinks ? 'bg-[#a855f7] border-[#a855f7] text-[#0a1118]' : 'bg-transparent border-white/10 text-slate-400 hover:border-[#a855f7]/50'} rounded transition-all`}
-              title="Toggle virtual links"
-            >
-              <i className={`fas fa-project-diagram text-[8px] font-black ${showVirtualLinks ? 'text-[#0a1118]' : 'text-[#a855f7]'}`}></i>
-              <span className="text-[8px] font-black uppercase tracking-widest">Enrich</span>
-            </button>
           </div>
 
           <div className="ml-auto flex gap-5 items-center">
@@ -1906,70 +1933,7 @@ const App: React.FC = () => {
 
               return (
                 <>
-                  {/* Trace Path Status Panel */}
-                  {tracePathMode && (
-                    <div className="absolute top-4 left-4 z-10 p-4 bg-[#0d171d]/95 backdrop-blur-xl border border-[#a855f7]/30 rounded shadow-2xl min-w-[200px]">
-                      <h3 className="text-[8px] font-black text-[#a855f7] uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                        <i className="fas fa-route"></i>
-                        <span>TRACE PATH MODE</span>
-                      </h3>
-                      <div className="space-y-2">
-                        {!traceStartNode ? (
-                          <div className="text-[10px] text-slate-400">
-                            <i className="fas fa-mouse-pointer mr-1.5 text-[#a855f7]"></i>
-                            Click start node...
-                          </div>
-                        ) : !traceEndNode ? (
-                          <>
-                            <div className="text-[10px] text-slate-300">
-                              <i className="fas fa-play-circle mr-1.5 text-[#10b981]"></i>
-                              Start: <span className="font-mono text-[#00f2ff]">{traceStartNode.split(':').pop()}</span>
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              <i className="fas fa-mouse-pointer mr-1.5 text-[#a855f7]"></i>
-                              Click end node...
-                            </div>
-                          </>
-                        ) : tracePathResult ? (
-                          <>
-                            <div className="text-[10px] text-slate-300">
-                              <i className="fas fa-play-circle mr-1.5 text-[#10b981]"></i>
-                              Start: <span className="font-mono text-[#00f2ff]">{traceStartNode.split(':').pop()}</span>
-                            </div>
-                            <div className="text-[10px] text-slate-300">
-                              <i className="fas fa-flag-checkered mr-1.5 text-[#f59e0b]"></i>
-                              End: <span className="font-mono text-[#00f2ff]">{traceEndNode.split(':').pop()}</span>
-                            </div>
-                            <div className="mt-3 pt-3 border-t border-white/10">
-                              <div className="text-[10px] text-[#10b981] font-bold">
-                                <i className="fas fa-check-circle mr-1.5"></i>
-                                Path found: {tracePathResult.path.length} nodes
-                              </div>
-                              <div className="text-[9px] text-slate-500 mt-1">
-                                Length: {tracePathResult.length} hops
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="text-[10px] text-red-400">
-                            <i className="fas fa-exclamation-triangle mr-1.5"></i>
-                            No path found
-                          </div>
-                        )}
-                        <button
-                          onClick={() => {
-                            setTraceStartNode(null);
-                            setTraceEndNode(null);
-                            setTracePathResult(null);
-                          }}
-                          className="w-full mt-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[9px] text-slate-400 font-black uppercase tracking-widest transition-all"
-                        >
-                          <i className="fas fa-redo mr-1.5"></i>
-                          Reset
-                        </button>
-                      </div>
-                    </div>
-                  )}
+
 
 
                   {viewMode === 'architecture' ? (
@@ -1991,7 +1955,6 @@ const App: React.FC = () => {
                       selectedId={selectedNode?.id}
                       fileScopedData={filteredFileScopedData}
                       skipFlowZoom={skipFlowZoom}
-                      tracePathResult={tracePathResult}
                       expandedFileIds={expandedFileIds}
                       onToggleFileExpansion={toggleFileExpansion}
                       expandingFileId={expandingFileId}

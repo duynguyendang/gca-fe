@@ -3,7 +3,6 @@ import React, { useRef, useEffect, useState } from 'react';
 import * as d3 from 'd3';
 import { ASTNode, FlatGraph, BackboneGraph as BackboneGraphType } from '../../types';
 import { useGraphData } from '../../hooks/useGraphData';
-import { PathResult } from '../../utils/pathfinding';
 import FlowGraph from './graphs/FlowGraph';
 import DiscoveryGraph from './graphs/DiscoveryGraph';
 import TreeMapGraph from './graphs/TreeMapGraph';
@@ -18,7 +17,7 @@ interface TreeVisualizerProps {
   selectedId?: string;
   fileScopedData?: { nodes: any[]; links: any[] };
   skipFlowZoom?: boolean;
-  tracePathResult?: PathResult | null;
+
   expandedFileIds?: Set<string>;
   onToggleFileExpansion?: (fileId: string) => void;
   expandingFileId?: string | null;
@@ -35,7 +34,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
   selectedId,
   fileScopedData,
   skipFlowZoom = false,
-  tracePathResult = null,
+
   expandedFileIds = new Set<string>(),
   onToggleFileExpansion,
   expandingFileId = null,
@@ -150,7 +149,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
               height={height}
               onNodeSelect={onNodeSelect}
               skipZoom={skipFlowZoom}
-              traceResult={tracePathResult}
+
               expandedFileIds={expandedFileIds}
               onToggleFileExpansion={onToggleFileExpansion}
               expandingFileId={expandingFileId}

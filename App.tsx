@@ -124,9 +124,10 @@ const App: React.FC = () => {
 
     searchTerm, setSearchTerm,
     queryResults, setQueryResults,
-    isSearching, setIsSearching,
-    searchError, setSearchError,
-    searchStatus, setSearchStatus,
+    // vars below shadowed by useSmartSearch hook
+    isSearching: ctxIsSearching, setIsSearching: setCtxIsSearching,
+    searchError: ctxSearchError, setSearchError: setCtxSearchError,
+    searchStatus: ctxSearchStatus, setSearchStatus: setCtxSearchStatus,
 
     viewMode, setViewMode,
     isFlowLoading, setIsFlowLoading,
@@ -178,6 +179,10 @@ const App: React.FC = () => {
   // Search Hook
   const {
     handleSmartSearch,
+    searchStatus,     // Use hook state for UI
+    isSearching,      // Use hook state for UI 
+    searchError,      // Use hook state for UI
+    setSearchError    // Expose setter for UI clearing
   } = useSmartSearch({
     ...context,
     manifest,
@@ -665,87 +670,54 @@ const App: React.FC = () => {
 
     // Handle package navigation - find a specific file and load its neighbors
     // OPTIMIZATION: Don't load entire package (causes 204 nodes explosion)
-    // Instead, find the first file in the package and load its graph
-    if (isPackageNode && filePath && dataApiBase && projectId) {
-      console.log('[File-level Nav] Package detected, finding specific file:', filePath);
+    if (isPackageNode) {
+      console.log('Package node clicked, resolving to file:', node.id);
 
-      const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-      const filesUrl = `${cleanBase}/v1/files?project=${encodeURIComponent(projectId)}&prefix=${encodeURIComponent(filePath)}`;
+      // We need to find *a* file in this package to anchor the view.
+      // Queries "defines" predicate where object is this package ID (if modeled that way)
+      // OR finds a file that declares this package.
+      // Safe bet: find a file that starts with this package path.
 
-      setSelectedNode(node);
-      setNodeInsight(null);
+      try {
+        // Find files in this package
+        const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+        const resp = await fetch(`${cleanBase}/v1/files?project=${projectId}`);
+        const allFiles = await resp.json();
 
-      fetch(filesUrl)
-        .then(res => res.json())
-        .then((response: any) => {
-          const files: string[] = Array.isArray(response) ? response : (response.files || []);
-          console.log('[File-level Nav] Found files in package:', files.length);
-
-          if (!files || files.length === 0) {
-            console.warn('[File-level Nav] No files found in package:', filePath);
-            return;
-          }
-
-          // Pick the first non-test Go file, or just the first file
-          const targetFile = files.find((f: string) => f.endsWith('.go') && !f.includes('_test.')) || files[0];
-          console.log('[File-level Nav] Loading graph for file:', targetFile);
-
-          // Load the file's graph (immediate neighbors only)
-          const graphUrl = `${cleanBase}/v1/graph?project=${encodeURIComponent(projectId)}&file=${encodeURIComponent(targetFile)}&lazy=true`;
-
-          return fetch(graphUrl)
-            .then(res => res.json())
-            .then((graphData: any) => {
-              console.log('[File-level Nav] Graph loaded:', graphData.nodes?.length, 'nodes,', graphData.links?.length, 'links');
-
-              if (graphData.nodes && graphData.nodes.length > 0) {
-                // Clear previous state first to free memory
-                setFileScopedNodes([]);
-                setFileScopedLinks([]);
-
-                // Normalize nodes to show file-level names
-                const normalizedNodes = graphData.nodes.map((n: any) => {
-                  // Extract a friendly name from the node ID
-                  let displayName = n.name || n.id;
-
-                  // For symbols like "file.go:FuncName", extract just the symbol
-                  if (n.id && n.id.includes(':')) {
-                    const parts = n.id.split(':');
-                    const fileName = parts[0].split('/').pop() || parts[0];
-                    const symbolName = parts[1];
-                    displayName = `${fileName}:${symbolName}`;
-                  }
-                  // For package paths like "github.com/google/mangle/ast", show just "ast"
-                  else if (n.id && n.id.includes('/') && !n.id.includes('.go')) {
-                    displayName = n.id.split('/').pop() || n.id;
-                    // Mark as package for styling
-                    n.kind = n.kind || 'package';
-                  }
-                  // For file paths, show just the filename
-                  else if (n.id && n.id.includes('/')) {
-                    displayName = n.id.split('/').pop() || n.id;
-                  }
-
-                  return {
-                    ...n,
-                    name: displayName,
-                    // Preserve original ID for navigation
-                    _originalId: n.id
-                  };
-                });
-
-                // Set new data
-                setFileScopedNodes(normalizedNodes);
-                setFileScopedLinks(graphData.links || []);
-                currentFlowFileRef.current = targetFile;
-              }
-            });
-        })
-        .catch(err => {
-          console.error('[File-level Nav] Error:', err);
+        // Filter files in this package (simple prefix match)
+        // We want direct children or files declared in this package
+        // For Go: files in the dir.
+        const pkgPath = node.id;
+        const pkgFiles = allFiles.filter((f: string) => {
+          // Exact dir match (pkgPath is dir)
+          const dir = f.substring(0, f.lastIndexOf('/'));
+          return dir === pkgPath || dir.endsWith('/' + pkgPath);
         });
 
-      return;
+        if (pkgFiles.length > 0) {
+          // Pick "best" file: doc.go, package.go, main.go, or first alphabetical
+          let bestFile = pkgFiles.find((f: string) => f.endsWith('/doc.go')) ||
+            pkgFiles.find((f: string) => f.endsWith('/package.go')) ||
+            pkgFiles.find((f: string) => f.endsWith('/main.go')) ||
+            pkgFiles[0];
+
+          console.log('Resolved package', pkgPath, 'to file', bestFile);
+
+          // Navigate to this file instead
+          // Recurse safely
+          handleNodeSelect({
+            id: bestFile,
+            kind: 'file',
+            type: 'file',
+            _isFile: true,
+            _project: projectId,
+            _filePath: bestFile
+          });
+          return;
+        }
+      } catch (e) {
+        console.warn('Failed to resolve package files', e);
+      }
     }
 
     // Discovery Mode Polish: Don't switch view mode on file select

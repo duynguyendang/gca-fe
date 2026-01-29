@@ -46,6 +46,9 @@ export const getGeminiInsight = async (node: any, context?: { inbound: any[], ou
   ## Code Snippet
   ${node.code?.substring(0, 1000) || "// No code available"} (truncated)
 
+  ## Documentation
+  ${node.metadata?.has_doc || "No documentation available."}
+
   ## Graph Context
   ### Inbound Dependents (Used By)
   ${inboundStr}
@@ -98,7 +101,7 @@ export const pruneNodesWithAI = async (nodes: any[], apiKey?: string) => {
     apiKey: apiKey || process.env.API_KEY,
   });
 
-  const nodeList = nodes.map(n => `- ${n.name} (Kind: ${n.kind}, ID: ${n.id})`).join('\n');
+  const nodeList = nodes.map(n => `- ${n.name} (Kind: ${n.kind}, ID: ${n.id})\n  Doc: ${n.metadata?.has_doc ? n.metadata.has_doc.substring(0, 100) + '...' : 'N/A'}`).join('\n');
 
   const prompt = `You are a Senior Software Architect. 
     Review the following symbols from a source file:

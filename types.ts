@@ -7,6 +7,7 @@ export interface ASTNode {
   type: string;
   children?: ASTNode[];
   value?: any;
+  metadata?: Record<string, string>;
   [key: string]: any;
 }
 
@@ -26,7 +27,7 @@ export interface SymbolStub {
 export type HydratedNode = ASTNode | SymbolStub;
 
 export interface FlatGraph {
-  nodes: Array<{ id: string; name: string; type: string; [key: string]: any }>;
+  nodes: Array<{ id: string; name: string; type: string;[key: string]: any }>;
   links: Array<{ source: string; target: string; relation?: string; source_type?: 'ast' | 'virtual'; weight?: number }>;
 }
 
@@ -59,6 +60,7 @@ export interface BackboneNode {
   gatewayType?: 'entry' | 'exit' | 'internal';
   isGateway?: boolean;
   code?: string;
+  metadata?: Record<string, string>;
   [key: string]: any;
 }
 

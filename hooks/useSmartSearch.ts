@@ -201,7 +201,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             console.log('Query Results:', results);
 
             if (!results || !results.nodes || results.nodes.length === 0) {
-                setSearchError("No results found for Datalog query.");
+                setSearchError("No result found.");
                 setNodeInsight("Query returned no facts.");
                 setSearchStatus(null);
                 setIsSearching(false);

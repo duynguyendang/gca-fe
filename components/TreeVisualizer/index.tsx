@@ -162,7 +162,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
           {mode === 'discovery' && !shouldRenderFlow && (
             <DiscoveryGraph
               nodes={fileScopedData?.nodes?.length ? fileScopedData.nodes : nodes}
-              links={fileScopedData?.links?.length ? fileScopedData.links : links}
+              links={fileScopedData?.nodes?.length ? (fileScopedData.links || []) : links}
               width={width}
               height={height}
               onNodeSelect={onNodeSelect}

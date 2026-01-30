@@ -93,16 +93,19 @@ export const useApiSync = () => {
 
             // Fetch enriched AST from query endpoint
             try {
+                // Change query to 'imports' to get file-to-file dependencies
                 const queryRes = await fetch(`${cleanBase}/v1/query?project=${encodeURIComponent(projectId)}&hydrate=true`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query: 'triples(?s, "defines", ?o)' })
+                    body: JSON.stringify({ query: 'triples(?s, "imports", ?o)' })
                 });
 
                 if (queryRes.ok) {
                     const ast = await queryRes.json();
                     if (ast && ast.nodes && ast.nodes.length > 0) {
                         setAstData(prev => {
+                            // Only enrich existing file nodes, discard unknown nodes (packages/external)
+                            // This keeps the graph focused on the file list we already fetched
                             const enrichedNodes = prev.nodes.map(node => {
                                 const enrichedNode = ast.nodes.find((n: any) => n.id === node.id || n.id === node._filePath);
                                 return enrichedNode ? { ...node, ...enrichedNode, _project: projectId } : { ...node, _project: projectId };

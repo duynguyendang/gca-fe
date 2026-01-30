@@ -33,13 +33,23 @@ export const useGraphData = (data: ASTNode | FlatGraph) => {
       const target = nodeMap.get(targetId);
 
       if (!source || !target) {
-        console.warn('useGraphData: link dropped', {
-          sourceId,
-          targetId,
-          sourceFound: !!source,
-          targetFound: !!target,
-          availableNodesSample: nodes.slice(0, 5).map(n => n.id) // Show first 5 IDs for context
-        });
+        // Only log the first few failures to avoid console spam
+        if (data.links.indexOf(d) < 3) {
+          console.warn('[useGraphData] Link Dropped due to missing node:', {
+            linkIndex: data.links.indexOf(d),
+            sourceIdInLink: sourceId,
+            targetIdInLink: targetId,
+            sourceFound: !!source,
+            targetFound: !!target,
+            nodeMapHasSource: nodeMap.has(sourceId),
+            nodeMapHasTarget: nodeMap.has(targetId),
+            // types
+            sourceIdType: typeof sourceId,
+            targetIdType: typeof targetId,
+            // Sample of valid keys to help debug format mismatches
+            validNodeIdsSample: Array.from(nodeMap.keys()).slice(0, 3)
+          });
+        }
         return null;
       }
 

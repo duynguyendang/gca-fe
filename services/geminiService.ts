@@ -3,6 +3,9 @@ import { GoogleGenAI } from "@google/genai";
 
 const DEFAULT_MODEL = 'gemini-3-flash-preview';
 
+// Simple cache for pruned manifests
+const manifestCache: Record<string, any> = {};
+
 const PROJECT_DNA = `
 ## 🟢 1. Project DNA (Global Context)
 Mangle is a Datalog engine implemented in Go. It manages a FactStore (triples) and uses Unification for logic programming. Key components include an Interpreter, a Validator, and Built-in Predicates.
@@ -15,15 +18,36 @@ Mangle is a Datalog engine implemented in Go. It manages a FactStore (triples) a
 const extractLocalContext = (fileContent: string) => {
   if (!fileContent) return { functions: [], structs: [], interfaces: [] };
 
-  const functionRegex = /func\s+([A-Z][a-zA-Z0-9]+)/g;
-  const structRegex = /type\s+([A-Z][a-zA-Z0-9]+)\s+struct/g;
-  const interfaceRegex = /type\s+([A-Z][a-zA-Z0-9]+)\s+interface/g;
+  const functions = new Set<string>();
+  const structs = new Set<string>();
+  const interfaces = new Set<string>();
 
-  const functions = [...fileContent.matchAll(functionRegex)].map(m => m[1]);
-  const structs = [...fileContent.matchAll(structRegex)].map(m => m[1]);
-  const interfaces = [...fileContent.matchAll(interfaceRegex)].map(m => m[1]);
+  // 1. Functions & Methods
+  const funcRegex = /(?:func(?:\s+\([^)]+\))?\s+|function\s+|def\s+|const\s+)([a-zA-Z_][a-zA-Z0-9_]*)/g;
+  for (const m of fileContent.matchAll(funcRegex)) {
+    if (m[1] && m[1].length > 2) functions.add(m[1]);
+  }
 
-  return { functions, structs, interfaces };
+  // 2. Types/Classes/Interfaces
+  const typeRegex = /(?:type\s+|class\s+|interface\s+)([a-zA-Z_][a-zA-Z0-9_]*)/g;
+  for (const m of fileContent.matchAll(typeRegex)) {
+    const name = m[1];
+    if (name && name.length > 2) {
+      if (fileContent.includes(`interface ${name}`) || fileContent.includes(`type ${name} interface`)) {
+        interfaces.add(name);
+      } else {
+        structs.add(name);
+      }
+    }
+  }
+
+  const blackList = new Set(['any', 'string', 'number', 'boolean', 'error', 'err', 'ctx', 'void', 'unknown', 'never', 'object', 'symbol', 'bigint', 'import', 'export', 'default', 'return', 'await', 'async']);
+
+  return {
+    functions: Array.from(functions).filter(f => !blackList.has(f)),
+    structs: Array.from(structs).filter(s => !blackList.has(s)),
+    interfaces: Array.from(interfaces).filter(i => !blackList.has(i))
+  };
 };
 
 export const getGeminiInsight = async (node: any, context?: { inbound: any[], outbound: any[] }, customEndpoint?: string, apiKey?: string) => {
@@ -42,6 +66,8 @@ export const getGeminiInsight = async (node: any, context?: { inbound: any[], ou
   ## Component
   ID: ${node.id}
   Kind: ${node.kind}
+  Package: ${node.metadata?.package || "Unknown"}
+  Tags: ${node.metadata?.tags || "None"}
   
   ## Code Snippet
   ${node.code?.substring(0, 1000) || "// No code available"} (truncated)
@@ -224,24 +250,54 @@ export const resolveSymbolFromQuery = async (query: string, candidateSymbols: st
   // If only one candidate, return it immediately
   if (candidateSymbols.length === 1) return candidateSymbols[0];
 
+  // Determine Context (Pre-Filter)
+  const queryLower = query.toLowerCase();
+  const isFEQuery = /frontend|fe|ui|react|component|design/i.test(queryLower);
+  const isBEQuery = /backend|be|go|api|handler|server|service|datalog/i.test(queryLower);
+
+  let filteredCandidates = candidateSymbols;
+
+  // STRICT SIDE-CHECK: If query explicitly asks for one side, REMOVE the other side entirely
+  if (isFEQuery && !isBEQuery) {
+    filteredCandidates = candidateSymbols.filter(c => c.includes('gca-fe/'));
+    console.log('[GeminiService] Strict FE filter applied. Candidates remaining:', filteredCandidates.length);
+  } else if (isBEQuery && !isFEQuery) {
+    filteredCandidates = candidateSymbols.filter(c => c.includes('gca-be/') || c.includes('gca/'));
+    console.log('[GeminiService] Strict BE filter applied. Candidates remaining:', filteredCandidates.length);
+  } else if (isFEQuery && isBEQuery) {
+    // Cross-stack query, don't filter yet, let AI decide or balanced pruning handle it later
+    console.log('[GeminiService] Cross-stack query detected, skipping strict pre-filter');
+  }
+
+  // If filtering left us with nothing, fallback to original candidates but log it
+  if (filteredCandidates.length === 0) {
+    console.warn('[GeminiService] Pre-filter results in 0 candidates. Falling back to full list.');
+    filteredCandidates = candidateSymbols;
+  }
+
+  // If only one candidate after filtering, return it immediately
+  if (filteredCandidates.length === 1) return filteredCandidates[0];
+
   const ai = new GoogleGenAI({
     apiKey: apiKey || process.env.API_KEY,
   });
 
-  // Number the candidates for easier selection
-  const numberedCandidates = candidateSymbols.slice(0, 30).map((s, i) => `${i + 1}. ${s}`).join('\n');
+  // Number the candidates for easier selection (limit to 30 for token efficiency)
+  const numberedCandidates = filteredCandidates.slice(0, 30).map((s, i) => `${i + 1}. ${s}`).join('\n');
 
-  const prompt = `Select the best matching symbol for this query.
+  const prompt = `You are a high-precision ID router for a code search engine. 
 
-Query: "${query}"
+User Query: "${query}"
 
 Candidates:
 ${numberedCandidates}
 
 Rules:
-- Return ONLY the number (1-${Math.min(30, candidateSymbols.length)}) of the best match
-- Prefer definitions (structs, funcs) over usages
-- If no good match, return 0
+1. Return ONLY the number (1-${Math.min(30, filteredCandidates.length)}) of the best match.
+2. **Context Superiority**: If the query implies Frontend (${isFEQuery ? 'YES' : 'NO'}) or Backend (${isBEQuery ? 'YES' : 'NO'}), you are FORBIDDEN from choosing a path that conflicts with this context.
+3. **Symbol Priority**: Prefer definitions (structs, functions) over generic file paths if both exist.
+4. **Partial Matches**: If no exact name match exists, pick the most relevant file or symbol (e.g. 'graphService' matches 'graphService.ts').
+5. If no candidates are remotely relevant, return 0.
 
 Your answer (just the number):`;
 
@@ -257,12 +313,16 @@ Your answer (just the number):`;
     // Parse the number response
     const num = parseInt(text.replace(/[^0-9]/g, ''), 10);
 
-    if (isNaN(num) || num < 1 || num > candidateSymbols.length) {
-      console.log('AI returned invalid selection:', text, '- falling back to first candidate');
-      return candidateSymbols[0];
+    if (isNaN(num) || num < 1 || num > filteredCandidates.length) {
+      console.log('AI returned invalid selection:', text, '- falling back to heuristic matching');
+
+      // Heuristic Fallback: Try a simple string search in the filtered list
+      const queryName = query.toLowerCase().split(' ').pop() || '';
+      const fallback = filteredCandidates.find(c => c.toLowerCase().includes(queryName)) || filteredCandidates[0];
+      return fallback;
     }
 
-    const selected = candidateSymbols[num - 1];
+    const selected = filteredCandidates[num - 1];
     console.log('AI selected symbol:', selected);
     return selected;
   } catch (err) {
@@ -554,48 +614,101 @@ export const translateNLToDatalog = async (
     : ['calls', 'defines', 'reads', 'writes', 'imports'];
 
   const predicateSchema = predicateList.map(p => `- \`${p}\``).join('\n');
+  const queryLower = query.toLowerCase();
 
   // 1. Manifest Pruning (Optimization)
   let manifestToUse = manifest;
+  const manifestCacheKey = `${Object.keys(manifest?.S || {}).length}:${query}`;
+
   if (manifest && manifest.S && Object.keys(manifest.S).length > 50) {
-    const tokens = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
-    // If query is very short/empty, don't prune or maybe don't send anything?
-    if (tokens.length > 0) {
-      const prunedS: Record<string, number> = {};
-      const relevantFileIds = new Set<string>();
+    if (manifestCache[manifestCacheKey]) {
+      console.log(`[GeminiService] Using cached manifest for query: "${query}"`);
+      manifestToUse = manifestCache[manifestCacheKey];
+    } else {
+      const tokens = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+      if (tokens.length > 0) {
+        const prunedS: Record<string, number> = {};
+        const relevantFileIds = new Set<string>();
 
-      // Match Symbols
-      Object.entries(manifest.S).forEach(([symbol, fileId]) => {
-        if (tokens.some(t => symbol.toLowerCase().includes(t))) {
-          prunedS[symbol] = fileId;
-          relevantFileIds.add(fileId.toString());
-        }
-      });
-
-      // Match Files
-      if (manifest.F) {
-        Object.entries(manifest.F).forEach(([fid, path]) => {
-          if (tokens.some(t => path.toLowerCase().includes(t))) {
-            relevantFileIds.add(fid);
+        // Rank-1: Exact matches or very close matches
+        Object.entries(manifest.S).forEach(([symbol, fileId]) => {
+          const lowerSymbol = symbol.toLowerCase();
+          if (tokens.some(t => lowerSymbol === t || lowerSymbol.startsWith(t + ':'))) {
+            prunedS[symbol] = fileId;
+            relevantFileIds.add(fileId.toString());
           }
         });
-      }
 
-      // Reconstruct Pruned Manifest
-      const prunedF: Record<string, string> = {};
-      if (manifest.F) {
-        relevantFileIds.forEach(fid => {
-          if (manifest.F[fid]) prunedF[fid] = manifest.F[fid];
-        });
-      }
+        // BALANCED PRUNING: If both FE and BE keywords are present, ensure a 50/50 split
+        const isCrossStack = queryLower.includes('frontend') || queryLower.includes('fe') && (queryLower.includes('backend') || queryLower.includes('be'));
 
-      // Only prune if we found relevant things. If 0 matches, AI might need full context or standard tools.
-      // But sending 1000s of unrelated symbols is noise.
-      // Let's fallback to a "Light" mode if 0 matches?
-      // For now, if > 0 matches, strict prune.
-      if (Object.keys(prunedS).length > 0 || Object.keys(prunedF).length > 0) {
-        manifestToUse = { S: prunedS, F: prunedF };
-        console.log(`[GeminiService] Pruned manifest: ${Object.keys(prunedS).length} symbols, ${Object.keys(prunedF).length} files.`);
+        // Rank-2: Partial matches (only if we have space, max 60 symbols)
+        if (Object.keys(prunedS).length < 60) {
+          const remainingSlots = 60 - Object.keys(prunedS).length;
+
+          if (isCrossStack) {
+            console.log('[GeminiService] Balanced manifest pruning for cross-stack query');
+            const feCandidates: [string, number][] = [];
+            const beCandidates: [string, number][] = [];
+
+            Object.entries(manifest.S).forEach(([symbol, fileId]) => {
+              if (prunedS[symbol]) return;
+              const path = manifest.F[fileId.toString()] || "";
+              const lowerSymbol = symbol.toLowerCase();
+              if (tokens.some(t => lowerSymbol.includes(t))) {
+                if (path.includes('gca-fe/')) feCandidates.push([symbol, fileId]);
+                else if (path.includes('gca-be/') || path.includes('gca/')) beCandidates.push([symbol, fileId]);
+              }
+            });
+
+            // Take 30 from each side
+            feCandidates.slice(0, 30).forEach(([s, f]) => { prunedS[s] = f; relevantFileIds.add(f.toString()); });
+            beCandidates.slice(0, 30).forEach(([s, f]) => { prunedS[s] = f; relevantFileIds.add(f.toString()); });
+          } else {
+            Object.entries(manifest.S).forEach(([symbol, fileId]) => {
+              if (prunedS[symbol]) return;
+              const lowerSymbol = symbol.toLowerCase();
+              if (tokens.some(t => lowerSymbol.includes(t))) {
+                prunedS[symbol] = fileId;
+                relevantFileIds.add(fileId.toString());
+              }
+            });
+          }
+        }
+
+        // Match Files based on tokens
+        if (manifest.F) {
+          Object.entries(manifest.F).forEach(([fid, path]) => {
+            if (tokens.some(t => path.toLowerCase().includes(t))) {
+              relevantFileIds.add(fid);
+            }
+          });
+        }
+
+        // Reconstruct Pruned Manifest
+        const prunedF: Record<string, string> = {};
+        if (manifest.F) {
+          relevantFileIds.forEach(fid => {
+            if (manifest.F[fid]) prunedF[fid] = manifest.F[fid];
+          });
+
+          // SAFETY NET: Broad context matching
+          const broadTerms = ['backend', 'api', 'server', 'store', 'service', 'handler', 'frontend', 'ui', 'react'];
+          if (broadTerms.some(term => query.toLowerCase().includes(term))) {
+            const contextTerm = query.toLowerCase().includes('frontend') ? 'fe' : 'be';
+            Object.entries(manifest.F).forEach(([fid, path]) => {
+              if (path.toLowerCase().includes(contextTerm)) {
+                prunedF[fid] = manifest.F[fid];
+              }
+            });
+          }
+        }
+
+        if (Object.keys(prunedS).length > 0 || Object.keys(prunedF).length > 0) {
+          manifestToUse = { S: prunedS, F: prunedF };
+          manifestCache[manifestCacheKey] = manifestToUse;
+          console.log(`[GeminiService] Pruned manifest optimized: ${Object.keys(prunedS).length} symbols, ${Object.keys(prunedF).length} files.`);
+        }
       }
     }
   }
@@ -603,6 +716,10 @@ export const translateNLToDatalog = async (
 
   const rolePrompt = `# Role: GCA Datalog Architect
 You are a specialist in source code architecture. Your sole task is to translate user questions into Datalog queries.
+
+## Domain Knowledge: Project-Specific Mappings
+- **"Backend BFS"** (or Pathfinder logic): This is implemented in \`gca-be/pkg/service/pathfinder.go\`.
+- **"Frontend Search"**: This is in \`gca-fe/services/geminiService.ts\`.
 
 ## New Reasoning Protocol
 1. **Discovery Mode**: If the user asks about the relationship, interaction, or flow between two specific entities (e.g., "How does A talk to B?", "Trace from A to B"), **DO NOT** write a multi-hop Datalog query.
@@ -676,9 +793,11 @@ Output the Datalog query:`;
     }
 
     return datalogQuery;
+    return datalogQuery;
   } catch (err) {
     console.error("Gemini Translation Error:", err);
-    return null;
+    // Propagate error to caller for UI display
+    throw new Error(`AI Service Unavailable: ${err instanceof Error ? err.message : 'Connection failed'}`);
   }
 };
 
@@ -722,7 +841,13 @@ export const analyzePathWithCode = async (
     let stepDetails = '';
     nodeCodePairs.forEach((pair, idx) => {
       const { node, code } = pair;
-      stepDetails += `\n### Step ${idx + 1}: \`${node.id}\` (${node.kind})\n\n`;
+      stepDetails += `\n### Step ${idx + 1}: \`${node.id}\` (${node.kind})\n`;
+
+      if (node.metadata) {
+        if (node.metadata.package) stepDetails += `**Package**: \`${node.metadata.package}\`\n`;
+        if (node.metadata.tags) stepDetails += `**Tags**: \`${node.metadata.tags}\`\n`;
+      }
+      stepDetails += `\n`;
 
       // Add call relationship context
       if (idx > 0) {

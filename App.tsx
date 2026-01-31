@@ -108,7 +108,6 @@ const App: React.FC = () => {
     astData, setAstData,
     sandboxFiles, setSandboxFiles,
     dataApiBase, setDataApiBase,
-    geminiApiKey, setGeminiApiKey,
     currentProject, setCurrentProject,
     availableProjects, setAvailableProjects,
     selectedProjectId, setSelectedProjectId,
@@ -268,14 +267,7 @@ const App: React.FC = () => {
     }
   }, [dataApiBase]);
 
-  // Persist Gemini API Key to local storage
-  useEffect(() => {
-    if (geminiApiKey) {
-      localStorage.setItem('gca_gemini_api_key', geminiApiKey);
-    } else {
-      localStorage.removeItem('gca_gemini_api_key');
-    }
-  }, [geminiApiKey]);
+
 
   // Fetch predicates when project changes
   useEffect(() => {
@@ -365,9 +357,7 @@ const App: React.FC = () => {
 
       // Get Architecture Summary from AI (non-blocking, show all nodes immediately)
       // DISABLED: User request to manual trigger only
-      // getArchitectureSummary(fileId, details.nodes, geminiApiKey).then(summary => {
-      //   setNodeInsight(summary);
-      // }).catch(err => {
+
       //   console.warn('[Expand] Architecture Summary failed:', err);
       // });
 
@@ -605,7 +595,7 @@ const App: React.FC = () => {
     } finally {
       setIsFlowLoading(false);
     }
-  }, [dataApiBase, selectedProjectId, geminiApiKey, debugSetViewMode]);
+  }, [dataApiBase, selectedProjectId, debugSetViewMode]);
 
   const handleNodeSelect = useCallback(async (node: any) => {
     console.log('=== SYNC TRINITY: Node Clicked ===');
@@ -773,14 +763,29 @@ const App: React.FC = () => {
     // For Flow mode, prefer AST data which has internal function calls
     const astNodes = astData?.nodes || [];
     const astLinks = astData?.links || [];
-    const fileNodesFromAst = filePath ? astNodes.filter((n: any) => n.id && n.id.startsWith(filePath + ':')) : [];
+
+    // Try to find AST nodes for this file
+    // Node IDs might have project prefix (e.g., "gca-be/gca-fe/App.tsx:symbol")
+    // so we need to check both with and without the prefix
+    let fileNodesFromAst: any[] = [];
+    if (filePath) {
+      // First try exact match
+      fileNodesFromAst = astNodes.filter((n: any) => n.id && n.id.startsWith(filePath + ':'));
+
+      // If no match and filePath doesn't have project prefix, try with gca-be prefix
+      if (fileNodesFromAst.length === 0 && !filePath.startsWith('gca-be/')) {
+        const prefixedPath = 'gca-be/' + filePath;
+        fileNodesFromAst = astNodes.filter((n: any) => n.id && n.id.startsWith(prefixedPath + ':'));
+      }
+    }
 
     console.log('AST data check:', {
       totalAstNodes: astNodes.length,
       fileNodesFromAst: fileNodesFromAst.length,
       hasAstData: !!astData,
       nodeHasCode: !!node.code,
-      filePath: filePath
+      filePath: filePath,
+      triedWithPrefix: !filePath?.startsWith('gca-be/')
     });
 
     // Use AST data if it has nodes for this file
@@ -1455,20 +1460,7 @@ const App: React.FC = () => {
                   </p>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Gemini API Key (Optional)</label>
-                  <input
-                    type="password"
-                    value={geminiApiKey}
-                    onChange={(e) => setGeminiApiKey(e.target.value)}
-                    placeholder="Enter your Gemini API Key..."
-                    className="w-full bg-[#0a1118] border border-white/10 rounded px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#00f2ff]/50 font-mono"
-                  />
-                  <p className="mt-2 text-[9px] text-slate-600 leading-normal">
-                    Leave blank to use the server-configured key (if available).
-                    <br />Get a key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[#00f2ff] hover:underline">Google AI Studio</a>.
-                  </p>
-                </div>
+
 
                 {syncError && (
                   <div className="p-3 bg-red-500/10 border border-red-500/30 rounded text-[10px] text-red-400">

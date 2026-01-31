@@ -20,7 +20,7 @@ import {
 interface UseSmartSearchOptions {
     dataApiBase: string;
     selectedProjectId: string;
-    geminiApiKey: string;
+
     availablePredicates: string[];
     manifest: any;
     onViewModeChange: (mode: 'discovery' | 'flow' | 'architecture') => void;
@@ -41,7 +41,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
     const {
         dataApiBase,
         selectedProjectId,
-        geminiApiKey,
+
         availablePredicates,
         manifest,
         onViewModeChange,
@@ -130,14 +130,14 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             let subjectId: string | null = null;
             if (symbols.length > 0) {
                 setSearchStatus("Resolving subject symbol...");
-                subjectId = await resolveSymbolFromQuery(query, symbols, geminiApiKey);
+                subjectId = await resolveSymbolFromQuery(query, symbols, dataApiBase, selectedProjectId);
                 if (!subjectId && symbols.length === 1) subjectId = symbols[0];
                 console.log('Resolved Subject ID:', subjectId);
             }
 
             // 3. Translate to Datalog
             setSearchStatus("Translating to Datalog...");
-            const datalogQuery = await translateNLToDatalog(query, subjectId, geminiApiKey, availablePredicates, manifest);
+            const datalogQuery = await translateNLToDatalog(query, subjectId, dataApiBase, selectedProjectId);
             console.log('Generated Datalog:', datalogQuery);
 
             if (!datalogQuery) {
@@ -179,7 +179,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
 
                         setSearchStatus("Analyzing interaction path with AI...");
                         try {
-                            const analysis = await analyzePathWithCode(pathGraph, query, dataApiBase, selectedProjectId, geminiApiKey);
+                            const analysis = await analyzePathWithCode(pathGraph, query, dataApiBase, selectedProjectId);
                             setNodeInsight(analysis);
                         } catch (err) {
                             console.error("Path analysis failed:", err);
@@ -222,7 +222,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             setSearchStatus("Generating explanation...");
 
             try {
-                const explanation = await generateReactiveNarrative(query, { nodes: results.nodes, links: results.links || [] }, geminiApiKey);
+                const explanation = await generateReactiveNarrative(query, { nodes: results.nodes, links: results.links || [] }, dataApiBase, selectedProjectId);
                 setNodeInsight(explanation);
             } catch (e) {
                 console.error("Narrative generation failed", e);
@@ -238,7 +238,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
         } finally {
             setIsSearching(false);
         }
-    }, [dataApiBase, selectedProjectId, geminiApiKey, availablePredicates, manifest, onViewModeChange, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setNodeInsight]);
+    }, [dataApiBase, selectedProjectId, availablePredicates, manifest, onViewModeChange, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setNodeInsight]);
 
     return {
         handleSmartSearch,

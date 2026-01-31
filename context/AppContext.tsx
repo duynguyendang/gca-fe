@@ -31,8 +31,7 @@ interface AppState {
     // API configuration
     dataApiBase: string;
     setDataApiBase: React.Dispatch<React.SetStateAction<string>>;
-    geminiApiKey: string;
-    setGeminiApiKey: React.Dispatch<React.SetStateAction<string>>;
+
 
     // Projects
     currentProject: string;
@@ -136,7 +135,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
     // API configuration
     const [dataApiBase, setDataApiBase] = useState<string>(() => sessionStorage.getItem('gca_api_base') || "http://localhost:8080");
-    const [geminiApiKey, setGeminiApiKey] = useState<string>(() => localStorage.getItem('gca_gemini_api_key') || "");
+
 
     // Projects
     const [currentProject, setCurrentProject] = useState<string>("GCA-Sandbox-Default");
@@ -186,7 +185,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         astData, setAstData,
         sandboxFiles, setSandboxFiles,
         dataApiBase, setDataApiBase,
-        geminiApiKey, setGeminiApiKey,
+
         currentProject, setCurrentProject,
         availableProjects, setAvailableProjects,
         selectedProjectId, setSelectedProjectId,

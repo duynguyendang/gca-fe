@@ -32,28 +32,13 @@ export const useGraphData = (data: ASTNode | FlatGraph) => {
       const source = nodeMap.get(sourceId);
       const target = nodeMap.get(targetId);
 
+      // Only create links if both source and target nodes exist
+      // This filters out external dependencies that don't have corresponding nodes
       if (!source || !target) {
-        // Only log the first few failures to avoid console spam
-        if (data.links.indexOf(d) < 3) {
-          console.warn('[useGraphData] Link Dropped due to missing node:', {
-            linkIndex: data.links.indexOf(d),
-            sourceIdInLink: sourceId,
-            targetIdInLink: targetId,
-            sourceFound: !!source,
-            targetFound: !!target,
-            nodeMapHasSource: nodeMap.has(sourceId),
-            nodeMapHasTarget: nodeMap.has(targetId),
-            // types
-            sourceIdType: typeof sourceId,
-            targetIdType: typeof targetId,
-            // Sample of valid keys to help debug format mismatches
-            validNodeIdsSample: Array.from(nodeMap.keys()).slice(0, 3)
-          });
-        }
         return null;
       }
 
-      return source && target ? { source, target } : null;
+      return { source, target };
     }).filter((l): l is { source: any, target: any } => l !== null) : [];
 
     console.log('useGraphData: processed links:', links.length);

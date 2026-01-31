@@ -12,7 +12,6 @@ export const useInsights = () => {
     const {
         dataApiBase,
         selectedProjectId,
-        geminiApiKey,
         selectedNode,
         astData,
         fileScopedNodes,
@@ -55,7 +54,7 @@ export const useInsights = () => {
                 neighbors.callers = Array.from(new Set(neighbors.callers));
                 neighbors.dependencies = Array.from(new Set(neighbors.dependencies));
 
-                return getFileRoleSummary(selectedNode.name, fileContent, neighbors, geminiApiKey);
+                return getFileRoleSummary(selectedNode.name, fileContent, neighbors, dataApiBase, selectedProjectId);
             }).then(summary => {
                 setNodeInsight(summary);
             }).catch(err => {
@@ -96,14 +95,14 @@ export const useInsights = () => {
 
         const context = { inbound, outbound };
 
-        getGeminiInsight(selectedNode, context, undefined, geminiApiKey).then(i => {
+        getGeminiInsight(selectedNode, context, dataApiBase, selectedProjectId).then(i => {
             setNodeInsight(i);
             setIsInsightLoading(false);
         }).catch(() => {
             setIsInsightLoading(false);
             setNodeInsight("Analysis connection failed.");
         });
-    }, [selectedNode, fileScopedNodes, fileScopedLinks, astData, dataApiBase, selectedProjectId, geminiApiKey, setNodeInsight, setIsInsightLoading]);
+    }, [selectedNode, fileScopedNodes, fileScopedLinks, astData, dataApiBase, selectedProjectId, setNodeInsight, setIsInsightLoading]);
 
     const clearInsight = useCallback(() => {
         setNodeInsight(null);

@@ -220,10 +220,11 @@ export const generatePathNarrative = async (query: string, pathNodes: any[], dat
 };
 
 export const generateReactiveNarrative = async (query: string, results: any, dataApiBase: string, projectId: string) => {
-  // Backend Task: "chat" (generic)
+  // Backend's "chat" task handles all context formatting from raw nodes
   return await askAI(dataApiBase, projectId, {
     task: 'chat',
-    query: `Analyze architectural insight for query: "${query}" based on graph results.`,
+    query: `Analyze and explain the code that answers: "${query}". List the specific functions/handlers found and explain their purpose.`,
+    data: results.nodes.slice(0, 10) // Reduced from 20 to 10 for faster processing
   });
 };
 
@@ -237,11 +238,11 @@ export const getFileRoleSummary = async (fileName: string, fileContent: string, 
 };
 
 export const translateNLToDatalog = async (query: string, subjectId: string | null, dataApiBase: string, projectId: string) => {
-  // Fallback to chat for now with custom query
-  const prompt = `Translate to Datalog: "${query}". Subject: ${subjectId || 'None'}. Return only Datalog query.`;
+  // Use specific 'datalog' task for schema-aware generation
   return await askAI(dataApiBase, projectId, {
-    task: 'chat',
-    query: prompt
+    task: 'datalog',
+    query: query,
+    symbol_id: subjectId || ''
   });
 };
 

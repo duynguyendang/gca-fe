@@ -772,10 +772,23 @@ const App: React.FC = () => {
       // First try exact match
       fileNodesFromAst = astNodes.filter((n: any) => n.id && n.id.startsWith(filePath + ':'));
 
-      // If no match and filePath doesn't have project prefix, try with gca-be prefix
-      if (fileNodesFromAst.length === 0 && !filePath.startsWith('gca-be/')) {
-        const prefixedPath = 'gca-be/' + filePath;
-        fileNodesFromAst = astNodes.filter((n: any) => n.id && n.id.startsWith(prefixedPath + ':'));
+      // If no match, try with project prefixes
+      if (fileNodesFromAst.length === 0) {
+        const prefixes = ['gca-be/'];
+        if (selectedProjectId && selectedProjectId !== 'gca-be') {
+          prefixes.push(selectedProjectId + '/');
+        }
+
+        for (const prefix of prefixes) {
+          if (!filePath.startsWith(prefix)) {
+            const prefixedPath = prefix + filePath;
+            const matches = astNodes.filter((n: any) => n.id && n.id.startsWith(prefixedPath + ':'));
+            if (matches.length > 0) {
+              fileNodesFromAst = matches;
+              break;
+            }
+          }
+        }
       }
     }
 
@@ -785,7 +798,7 @@ const App: React.FC = () => {
       hasAstData: !!astData,
       nodeHasCode: !!node.code,
       filePath: filePath,
-      triedWithPrefix: !filePath?.startsWith('gca-be/')
+      triedWithPrefix: !filePath?.startsWith(selectedProjectId + '/')
     });
 
     // Use AST data if it has nodes for this file

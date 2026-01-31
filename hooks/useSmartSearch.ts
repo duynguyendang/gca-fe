@@ -208,7 +208,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                 return;
             }
 
-            // 5. Render Results
+            // 5. Render Results Immediately (no AI explanation)
             setFileScopedNodes(results.nodes.map((n: any) => ({
                 ...n,
                 name: n.name || n.id.split('/').pop(),
@@ -219,23 +219,16 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             console.log('[DEBUG] Transitioning to Discovery view for search results');
             onViewModeChange('discovery');
 
-            setSearchStatus("Generating explanation...");
-
-            try {
-                const explanation = await generateReactiveNarrative(query, { nodes: results.nodes, links: results.links || [] }, dataApiBase, selectedProjectId);
-                setNodeInsight(explanation);
-            } catch (e) {
-                console.error("Narrative generation failed", e);
-                setNodeInsight(`Found ${results.nodes.length} nodes and ${results.links?.length || 0} links, but could not generate explanation.`);
-            }
+            // Show basic summary instead of AI-generated explanation
+            setNodeInsight(`Found ${results.nodes.length} nodes and ${results.links?.length || 0} relationships.`);
             setSearchStatus(null);
+            setIsSearching(false);
 
         } catch (err: any) {
             console.error("Smart Search Error:", err);
             setSearchError(err.message || 'Search failed');
             setNodeInsight("Search failed.");
             setSearchStatus(null);
-        } finally {
             setIsSearching(false);
         }
     }, [dataApiBase, selectedProjectId, availablePredicates, manifest, onViewModeChange, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setNodeInsight]);

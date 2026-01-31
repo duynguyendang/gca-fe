@@ -106,38 +106,13 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                 }
             }
 
-            // 1. Extract Keywords & Search
-            const stopWords = new Set(['what', 'is', 'the', 'how', 'does', 'where', 'are', 'in', 'of', 'for', 'to', 'a', 'an', 'who', 'calls', 'call', 'called', 'by', 'show', 'me', 'find', 'get', 'all']);
-            const tokens = query.toLowerCase().replace(/[?.,!'"]/g, ' ').split(/\s+/).filter(t => !stopWords.has(t) && t.length > 2);
+            // Skip symbol search/resolution - causes 40-50s delays
+            // Most queries are semantic ("which X does Y"), not specific ("what does foo() do")
+            // Datalog generation handles semantic queries better without a pre-selected symbol
 
-            let symbols: string[] = [];
-
-            if (!query.includes(' ') && query.length < 50) {
-                symbols = await fetchSymbols(dataApiBase, selectedProjectId, query);
-            } else if (tokens.length > 0) {
-                const sortedTokens = [...tokens].sort((a, b) => b.length - a.length);
-                for (const token of sortedTokens.slice(0, 3)) {
-                    console.log('Searching keyword:', token);
-                    const found = await fetchSymbols(dataApiBase, selectedProjectId, token);
-                    if (found.length > 0) {
-                        symbols = found;
-                        break;
-                    }
-                }
-            }
-
-            // 2. Resolve Subject ID
-            let subjectId: string | null = null;
-            if (symbols.length > 0) {
-                setSearchStatus("Resolving subject symbol...");
-                subjectId = await resolveSymbolFromQuery(query, symbols, dataApiBase, selectedProjectId);
-                if (!subjectId && symbols.length === 1) subjectId = symbols[0];
-                console.log('Resolved Subject ID:', subjectId);
-            }
-
-            // 3. Translate to Datalog
+            // Translate directly to Datalog
             setSearchStatus("Translating to Datalog...");
-            const datalogQuery = await translateNLToDatalog(query, subjectId, dataApiBase, selectedProjectId);
+            const datalogQuery = await translateNLToDatalog(query, null, dataApiBase, selectedProjectId);
             console.log('Generated Datalog:', datalogQuery);
 
             if (!datalogQuery) {

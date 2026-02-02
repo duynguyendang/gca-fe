@@ -485,3 +485,34 @@ export async function fetchGraphPath(
   console.log('[GraphService] Graph path response:', data);
   return data;
 }
+
+/**
+ * Search for symbols using semantic similarity
+ * GET /v1/semantic-search?project={projectId}&q={query}&k={k}
+ */
+export interface SemanticSearchResult {
+  symbol_id: string;
+  score: number;
+  name: string;
+}
+
+export async function fetchSemanticSearch(
+  dataApiBase: string,
+  projectId: string,
+  query: string,
+  k: number = 10
+): Promise<SemanticSearchResult[]> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/v1/semantic-search?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query)}&k=${k}`;
+
+  console.log('[GraphService] Fetching semantic search:', url);
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch semantic search: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] Semantic search response:', data);
+  return data.results || [];
+}

@@ -71,7 +71,27 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
         }
 
         try {
-            // 0. Fast-Path: Check Manifest for Exact Match
+            // 0. Ultra-Fast-Path: Simple "what is X?" queries
+            const whatIsMatch = query.match(/^what\s+is\s+(\w+)\??$/i);
+            if (whatIsMatch) {
+                const symbolName = whatIsMatch[1];
+                console.log('[Ultra-Fast-Path] Detected simple lookup:', symbolName);
+                setSearchStatus(`Looking up ${symbolName}...`);
+
+                const symbols = await fetchSymbols(dataApiBase, selectedProjectId, symbolName);
+                if (symbols.length > 0) {
+                    // Found it! Just select the symbol and show it
+                    const symbolId = symbols[0];
+                    console.log('[Ultra-Fast-Path] Found symbol:', symbolId);
+                    setSelectedNode({ id: symbolId });
+                    setNodeInsight(`Found symbol: ${symbolName}`);
+                    setSearchStatus(null);
+                    setIsSearching(false);
+                    return;
+                }
+            }
+
+            // 1. Fast-Path: Check Manifest for Exact Match
             if (manifest && manifest.S && manifest.F) {
                 const exactMatchId = manifest.S[query.trim()];
                 if (exactMatchId) {
@@ -110,9 +130,9 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             // Most queries are semantic ("which X does Y"), not specific ("what does foo() do")
             // Datalog generation handles semantic queries better without a pre-selected symbol
 
-            // Translate directly to Datalog
+            // Translate directly to Datalog (with project-specific predicates)
             setSearchStatus("Translating to Datalog...");
-            const datalogQuery = await translateNLToDatalog(query, null, dataApiBase, selectedProjectId);
+            const datalogQuery = await translateNLToDatalog(query, null, dataApiBase, selectedProjectId, availablePredicates);
             console.log('Generated Datalog:', datalogQuery);
 
             if (!datalogQuery) {
@@ -122,15 +142,39 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                 return;
             }
 
-            // Handle Tool Calls (Discovery Mode)
+            // Handle Tool Calls (Path-Finding)
             if (datalogQuery.trim().startsWith('{')) {
                 try {
                     const toolCall = JSON.parse(datalogQuery);
                     if (toolCall.tool === 'find_connection') {
-                        console.log('[App] Executing Tool Call:', toolCall);
-                        setSearchStatus(`Tracing path from ${toolCall.source_id} to ${toolCall.target_id}...`);
+                        console.log('[Path-Finding] Tool call detected:', toolCall);
 
-                        const pathGraph = await fetchGraphPath(dataApiBase, selectedProjectId, toolCall.source_id, toolCall.target_id);
+                        // Resolve symbol names to full IDs
+                        setSearchStatus("Resolving symbols for path...");
+                        const sourceSymbols = await fetchSymbols(dataApiBase, selectedProjectId, toolCall.source_id);
+                        const targetSymbols = await fetchSymbols(dataApiBase, selectedProjectId, toolCall.target_id);
+
+                        if (sourceSymbols.length === 0) {
+                            setSearchError(`Symbol not found: ${toolCall.source_id}`);
+                            setSearchStatus(null);
+                            setIsSearching(false);
+                            return;
+                        }
+
+                        if (targetSymbols.length === 0) {
+                            setSearchError(`Symbol not found: ${toolCall.target_id}`);
+                            setSearchStatus(null);
+                            setIsSearching(false);
+                            return;
+                        }
+
+                        const sourceId = sourceSymbols[0];
+                        const targetId = targetSymbols[0];
+
+                        console.log('[Path-Finding] Resolved:', { sourceId, targetId });
+                        setSearchStatus(`Tracing path from ${sourceId} to ${targetId}...`);
+
+                        const pathGraph = await fetchGraphPath(dataApiBase, selectedProjectId, sourceId, targetId);
 
                         if (!pathGraph || !pathGraph.nodes || pathGraph.nodes.length === 0) {
                             setSearchStatus(null);
@@ -166,7 +210,8 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                         return;
                     }
                 } catch (e) {
-                    console.warn("Failed to parse tool call JSON:", e);
+                    console.warn("Failed to parse tool call JSON:", e, "Query:", datalogQuery);
+                    // Fall through to execute as Datalog
                 }
             }
 
@@ -176,6 +221,55 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             console.log('Query Results:', results);
 
             if (!results || !results.nodes || results.nodes.length === 0) {
+                // Try semantic search as fallback
+                console.log('[Datalog Empty] Trying semantic search fallback...');
+                setSearchStatus("Searching by semantic similarity...");
+
+                try {
+                    const { fetchSemanticSearch } = await import('../services/graphService');
+                    const semanticResults = await fetchSemanticSearch(dataApiBase, selectedProjectId, query, 10);
+
+                    if (semanticResults && semanticResults.length > 0) {
+                        // Convert semantic results to graph nodes
+                        const nodes = semanticResults.map((result: any) => ({
+                            id: result.symbol_id,
+                            name: result.name,
+                            kind: 'symbol',
+                            type: 'semantic_result',
+                            _semanticScore: result.score
+                        }));
+
+                        setFileScopedNodes(nodes);
+                        setFileScopedLinks([]);
+                        onViewModeChange('discovery');
+
+                        // Analyze semantic results with AI
+                        setSearchStatus("Analyzing results with AI...");
+                        try {
+                            const { askAI } = await import('../services/geminiService');
+                            const analysis = await askAI(dataApiBase, selectedProjectId, {
+                                task: 'smart_search_analysis',
+                                query: query,
+                                data: {
+                                    nodes: nodes.map((n: any) => ({ id: n.id, name: n.name, kind: n.kind, type: n.type })),
+                                    links: []
+                                }
+                            });
+                            setNodeInsight(analysis || `Found ${semanticResults.length} symbols by semantic similarity:\n\n${semanticResults.map((r: any, i: number) => `${i + 1}. **${r.name}** (score: ${r.score.toFixed(3)})`).join('\n')}`);
+                        } catch (aiErr) {
+                            console.error("AI analysis failed:", aiErr);
+                            setNodeInsight(`Found ${semanticResults.length} symbols by semantic similarity:\n\n${semanticResults.map((r: any, i: number) => `${i + 1}. **${r.name}** (score: ${r.score.toFixed(3)})`).join('\n')}`);
+                        }
+
+                        setSearchStatus(null);
+                        setIsSearching(false);
+                        return;
+                    }
+                } catch (semanticErr) {
+                    console.error("Semantic search fallback failed:", semanticErr);
+                }
+
+                // If semantic search also failed/empty
                 setSearchError("No result found.");
                 setNodeInsight("Query returned no facts.");
                 setSearchStatus(null);
@@ -183,7 +277,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                 return;
             }
 
-            // 5. Render Results Immediately (no AI explanation)
+            // 5. Render Results and Analyze with AI
             setFileScopedNodes(results.nodes.map((n: any) => ({
                 ...n,
                 name: n.name || n.id.split('/').pop(),
@@ -194,8 +288,24 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             console.log('[DEBUG] Transitioning to Discovery view for search results');
             onViewModeChange('discovery');
 
-            // Show basic summary instead of AI-generated explanation
-            setNodeInsight(`Found ${results.nodes.length} nodes and ${results.links?.length || 0} relationships.`);
+            // Analyze results with AI using actual graph data
+            setSearchStatus("Analyzing results with AI...");
+            try {
+                const { askAI } = await import('../services/geminiService');
+                const analysis = await askAI(dataApiBase, selectedProjectId, {
+                    task: 'smart_search_analysis',
+                    query: query,
+                    data: {
+                        nodes: results.nodes.map((n: any) => ({ id: n.id, name: n.name, kind: n.kind, type: n.type })),
+                        links: results.links || []
+                    }
+                });
+                setNodeInsight(analysis || `Found ${results.nodes.length} nodes and ${results.links?.length || 0} relationships.`);
+            } catch (aiErr) {
+                console.error("AI analysis failed:", aiErr);
+                setNodeInsight(`Found ${results.nodes.length} nodes and ${results.links?.length || 0} relationships.`);
+            }
+
             setSearchStatus(null);
             setIsSearching(false);
 

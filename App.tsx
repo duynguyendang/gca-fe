@@ -267,6 +267,15 @@ const App: React.FC = () => {
     }
   }, [dataApiBase]);
 
+  // Auto-sync on mount if API base URL is configured
+  useEffect(() => {
+    if (dataApiBase && !isDataSyncing && availableProjects.length === 0) {
+      console.log('[Auto-Sync] Connecting to API on mount:', dataApiBase);
+      syncDataFromApi(dataApiBase);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
+
 
 
   // Fetch predicates when project changes

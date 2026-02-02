@@ -237,12 +237,19 @@ export const getFileRoleSummary = async (fileName: string, fileContent: string, 
   });
 };
 
-export const translateNLToDatalog = async (query: string, subjectId: string | null, dataApiBase: string, projectId: string) => {
+export const translateNLToDatalog = async (
+  query: string,
+  subjectId: string | null,
+  dataApiBase: string,
+  projectId: string,
+  predicates?: string[]
+) => {
   // Use specific 'datalog' task for schema-aware generation
   return await askAI(dataApiBase, projectId, {
     task: 'datalog',
     query: query,
-    symbol_id: subjectId || ''
+    symbol_id: subjectId || '',
+    data: predicates || [] // Pass predicates for dynamic prompt
   });
 };
 

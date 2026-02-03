@@ -6,7 +6,7 @@ interface FileTreeItemProps {
     node: any;
     depth?: number;
     fullPath?: string;
-    onNodeSelect: (node: any) => void;
+    onNodeSelect: (node: any, isNavigation?: boolean) => void;
     astData: any;
     selectedNode: any;
     key?: string | number;
@@ -40,9 +40,10 @@ const FileTreeItem = ({ name, node, depth = 0, fullPath = "", onNodeSelect, astD
             const flatNodes = (astData as FlatGraph)?.nodes || [];
             const astNode = flatNodes.find(n => n.id === currentPath);
             if (astNode) {
-                onNodeSelect({ ...astNode, _isFile: true, _filePath: currentPath });
+                // Pass true for isNavigation to trigger graph update/flow view
+                onNodeSelect({ ...astNode, _isFile: true, _filePath: currentPath }, true);
             } else {
-                onNodeSelect({ id: currentPath, _isFile: true, _filePath: currentPath, _isMissingCode: true });
+                onNodeSelect({ id: currentPath, _isFile: true, _filePath: currentPath, _isMissingCode: true }, true);
             }
         }
     };

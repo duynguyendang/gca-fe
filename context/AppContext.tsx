@@ -103,6 +103,10 @@ interface AppState {
     setIsSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
     availablePredicates: string[];
     setAvailablePredicates: React.Dispatch<React.SetStateAction<string[]>>;
+
+    // Preferences
+    enableAutoClustering: boolean;
+    setEnableAutoClustering: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -183,6 +187,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     // Settings
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [availablePredicates, setAvailablePredicates] = useState<string[]>([]);
+    const [enableAutoClustering, setEnableAutoClustering] = useState<boolean>(true);
 
     const value: AppState = {
         astData, setAstData,
@@ -216,6 +221,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         expandingFileId, setExpandingFileId,
         isSettingsOpen, setIsSettingsOpen,
         availablePredicates, setAvailablePredicates,
+        enableAutoClustering, setEnableAutoClustering,
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

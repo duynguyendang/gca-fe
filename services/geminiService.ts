@@ -224,10 +224,26 @@ export const generateReactiveNarrative = async (query: string, results: any, dat
 };
 
 export const getFileRoleSummary = async (fileName: string, fileContent: string, neighbors: any, dataApiBase: string, projectId: string) => {
-  // Backend Task: "insight" (reusing insight for general analysis, or creating new "file_insight")
-  // Let's use "insight" but pass fileName as symbolID (assuming file ID works)
+  // Use "chat" task to force context injection since "insight" might rely only on backend symbol lookup.
+  // We truncate fileContent to avoid blowing up context window (simple safety)
+  const truncatedContent = fileContent.length > 20000 ? fileContent.substring(0, 20000) + "\n...(truncated)" : fileContent;
+
+  const prompt = `Analyze the architectural role of the file "${fileName}".
+  
+  Context:
+  - Callers: ${neighbors.callers.join(', ') || 'None'}
+  - Dependencies: ${neighbors.dependencies.join(', ') || 'None'}
+  
+  Source Code:
+  \`\`\`
+  ${truncatedContent}
+  \`\`\`
+  
+  Provide a technical summary of its role, key interactions, and design patterns used.`;
+
   return await askAI(dataApiBase, projectId, {
-    task: 'insight',
+    task: 'chat',
+    query: prompt,
     symbol_id: fileName
   });
 };

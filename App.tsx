@@ -77,6 +77,7 @@ const App: React.FC = () => {
 
     isSettingsOpen, setIsSettingsOpen,
     availablePredicates, setAvailablePredicates,
+    enableAutoClustering, setEnableAutoClustering,
   } = context;
 
   // 2. Local State
@@ -163,6 +164,9 @@ const App: React.FC = () => {
   const setArchitectureMode = useCallback(() => debugSetViewMode('architecture'), [debugSetViewMode]);
 
   // Auto-resize Synthesis Panel when Insight is loaded
+  // Auto-resize Synthesis Panel when Insight is loaded
+  // DISABLED per user request: "do not expand the GenAI SYNTHESIS and colapse code view. just keep it as is."
+  /*
   useEffect(() => {
     if (nodeInsight) {
       // Expand to ~80% of screen height and expand panel if collapsed
@@ -175,6 +179,7 @@ const App: React.FC = () => {
       setIsCodeCollapsed(false);
     }
   }, [nodeInsight]);
+  */
 
   useEffect(() => {
     try {
@@ -604,7 +609,7 @@ const App: React.FC = () => {
     }
   }, [dataApiBase, selectedProjectId, fileScopedNodes, setFileScopedNodes, setFileScopedLinks, setCtxSearchStatus]);
 
-  const handleNodeSelect = useCallback(async (node: any) => {
+  const handleNodeSelect = useCallback(async (node: any, isNavigation: boolean = false) => {
     // Check for Cluster
     if (node.kind === 'cluster') {
       expandCluster(node);
@@ -612,7 +617,7 @@ const App: React.FC = () => {
     }
 
     console.log('=== SYNC TRINITY: Node Clicked ===');
-    console.log('1. Graph: Highlighting node:', node.id);
+    console.log('1. Graph: Highlighting node:', node.id, 'Navigation:', isNavigation);
 
     // Extract file path early for external node detection
     const projectId = node._project || selectedProjectId;
@@ -627,7 +632,8 @@ const App: React.FC = () => {
       filePath,
       hasCode: !!node.code,
       is_internal: node.is_internal,
-      metadata: node.metadata
+      metadata: node.metadata,
+      isNavigation // Log this
     });
 
     // UNIVERSAL DETECTION: Use backend-provided metadata
@@ -654,7 +660,7 @@ const App: React.FC = () => {
       console.log('External node (per backend metadata), skipping graph reload:', node.id);
       // Only update the selected node for display purposes
       setSelectedNode(node);
-      setNodeInsight(null);
+      // setNodeInsight(null); // DISABLED: Keep synthesis content
       return;
     }
 
@@ -715,7 +721,7 @@ const App: React.FC = () => {
             _isFile: true,
             _project: projectId,
             _filePath: bestFile
-          });
+          }, true); // Force navigation for package resolution? Yes, usually.
           return;
         }
       } catch (e) {
@@ -728,8 +734,9 @@ const App: React.FC = () => {
 
 
     // Always set the selected node so the code panel updates
+    // This is the "User clicked a node" action that effectively works as "Highlight"
     setSelectedNode(node);
-    setNodeInsight(null);
+    // setNodeInsight(null); // DISABLED: Keep synthesis content per user request
 
     // Trigger hydration if node doesn't have code
     if (!node.code && !node._isMissingCode && dataApiBase && selectedProjectId) {
@@ -753,6 +760,14 @@ const App: React.FC = () => {
 
     // Check if we're clicking a node in the same file (in flow mode)
     const isSameFile = currentFlowFileRef.current && currentFlowFileRef.current === filePath;
+
+    // IF NOT NAVIGATING, STOP HERE!
+    // This ensures clicking a node in the graph ONLY highlights it (sets SelectedNode above)
+    // and does NOT change the graph view or reload dependencies.
+    if (!isNavigation) {
+      console.log('Node Clicked (No Navigation) - Highlighting only.');
+      return;
+    }
 
     if (isSameFile && viewMode === 'flow') {
       console.log('Same file - skipping graph rebuild, only updating selected node');
@@ -1272,16 +1287,6 @@ const App: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={setMapMode}
-              className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'map'
-                ? 'bg-[#f59e0b] border-[#f59e0b] text-[#0a1118]'
-                : 'bg-[#16222a] border-white/5 text-[#f59e0b] hover:bg-white/5'
-                }`}
-            >
-              Map
-            </button>
-
-            <button
               onClick={setDiscoveryMode}
               className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'discovery'
                 ? 'bg-[#00f2ff] border-[#00f2ff] text-[#0a1118]'
@@ -1299,6 +1304,16 @@ const App: React.FC = () => {
                 }`}
             >
               Architecture
+            </button>
+
+            <button
+              onClick={setMapMode}
+              className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'map'
+                ? 'bg-[#f59e0b] border-[#f59e0b] text-[#0a1118]'
+                : 'bg-[#16222a] border-white/5 text-[#f59e0b] hover:bg-white/5'
+                }`}
+            >
+              Map
             </button>
 
 
@@ -1518,6 +1533,21 @@ const App: React.FC = () => {
                   <p className="mt-2 text-[9px] text-slate-600 leading-normal">
                     This endpoint will be used to fetch /v1/projects, /v1/files, and /v1/query.
                     <br />After connecting, select a project from the sidebar dropdown.
+                  </p>
+                </div>
+
+                <div className="pt-4 border-t border-white/5">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Auto-Cluster Large Graphs</label>
+                    <div
+                      className={`w-8 h-4 rounded-full cursor-pointer relative transition-colors ${enableAutoClustering ? 'bg-[#10b981]' : 'bg-slate-700'}`}
+                      onClick={() => setEnableAutoClustering(!enableAutoClustering)}
+                    >
+                      <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${enableAutoClustering ? 'left-4.5' : 'left-0.5'}`} style={{ left: enableAutoClustering ? '18px' : '2px' }}></div>
+                    </div>
+                  </div>
+                  <p className="text-[9px] text-slate-600 leading-normal">
+                    Automatically switch to <strong>Map View</strong> (Clustered) when a project has more than 300 nodes to prevent performance issues.
                   </p>
                 </div>
 

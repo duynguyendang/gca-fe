@@ -7,7 +7,7 @@ interface TreeMapGraphProps {
     nodes: any[];
     width: number;
     height: number;
-    onNodeSelect: (node: any) => void;
+    onNodeSelect: (node: any, isNavigation?: boolean) => void;
 }
 
 const TreeMapGraph: React.FC<TreeMapGraphProps> = ({

@@ -20,7 +20,7 @@ interface FlowGraphProps {
     links: any[];
     width: number;
     height: number;
-    onNodeSelect: (node: any) => void;
+    onNodeSelect: (node: any, isNavigation?: boolean) => void;
     skipZoom?: boolean;
 
     expandedFileIds: Set<string>;

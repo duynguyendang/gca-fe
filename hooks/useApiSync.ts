@@ -16,6 +16,8 @@ export const useApiSync = () => {
         setAstData,
         setFileScopedNodes,
         setFileScopedLinks,
+        setViewMode,
+        enableAutoClustering,
     } = useAppContext();
 
     const syncDataFromApi = useCallback(async (
@@ -26,6 +28,10 @@ export const useApiSync = () => {
         if (!baseUrl) return;
         setIsDataSyncing(true);
         setSyncError(null);
+        // Reset View Mode to default (Discovery) initially, UNLESS we are already in a specific mode?
+        // Actually best to leave it, but we might want to ensure we don't get stuck in Flow mode on project switch.
+        // For now, let's just handle the "Explosion" case.
+
         const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 
         try {
@@ -90,6 +96,13 @@ export const useApiSync = () => {
                     });
                 });
 
+                // ENFORCE CLUSTERING FOR LARGE GRAPHS BEFORE SETTING DATA
+                // If we have > 300 nodes, default to "Map" mode to prevent graph explosion
+                if (astNodes.length > 300 && enableAutoClustering) {
+                    console.warn(`[Performance] Node count ${astNodes.length} > 300. Forcing Map View.`);
+                    setViewMode('map');
+                }
+
                 setAstData({ nodes: astNodes, links: astLinks });
             }
 
@@ -111,10 +124,17 @@ export const useApiSync = () => {
 
                         if (isClustered) {
                             console.log('[ApiSync] Received clustered graph. Updating Visualizer only.');
+                            // Clustered graphs usually work best in Map or Architecture mode
+                            setViewMode('map');
                             setFileScopedNodes(ast.nodes.map((n: any) => ({ ...n, _project: projectId })));
                             setFileScopedLinks(ast.links || []);
                             // Do NOT update astData (keep files for navigator)
                         } else {
+                            // ENFORCE CLUSTERING if new enriched data is large
+                            if (ast.nodes.length > 300 && enableAutoClustering) {
+                                setViewMode('map');
+                            }
+
                             // Otherwise, enrich existing file nodes (keep graph focused on file list)
                             setAstData(prev => {
                                 const enrichedNodes = prev.nodes.map(node => {

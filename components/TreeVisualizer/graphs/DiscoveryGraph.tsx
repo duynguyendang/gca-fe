@@ -21,7 +21,7 @@ interface DiscoveryGraphProps {
     links: any[];
     width: number;
     height: number;
-    onNodeSelect: (node: any) => void;
+    onNodeSelect: (node: any, isNavigation?: boolean) => void;
     onNodeHover: (node: any | null) => void;
     selectedId?: string;
     expandedFileIds: Set<string>;

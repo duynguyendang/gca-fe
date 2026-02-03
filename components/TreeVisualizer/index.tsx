@@ -10,7 +10,7 @@ import TreeMapGraph from './graphs/TreeMapGraph';
 
 interface TreeVisualizerProps {
   data: ASTNode | FlatGraph;
-  onNodeSelect: (node: any) => void;
+  onNodeSelect: (node: any, isNavigation?: boolean) => void;
   onNodeHover: (node: any | null) => void;
   mode: 'flow' | 'map' | 'discovery' | 'architecture' | 'backbone';
   layoutStyle?: 'organic' | 'flow';

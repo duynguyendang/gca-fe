@@ -28,6 +28,7 @@ interface UseSmartSearchOptions {
     setFileScopedLinks: (links: any[]) => void;
     setSelectedNode: (node: any) => void;
     setNodeInsight: (insight: string | null) => void;
+    setLastExecutedQuery: (query: string) => void;
 }
 
 interface SearchState {
@@ -49,6 +50,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
         setFileScopedLinks,
         setSelectedNode,
         setNodeInsight,
+        setLastExecutedQuery,
     } = options;
 
     const [isSearching, setIsSearching] = useState(false);
@@ -217,73 +219,27 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
 
             // 4. Execute Query
             setSearchStatus("Executing Datalog query...");
+            setLastExecutedQuery(datalogQuery); // Store for clustering
             const results = await executeQuery(dataApiBase, selectedProjectId, datalogQuery, true);
             console.log('Query Results:', results);
 
             if (!results || !results.nodes || results.nodes.length === 0) {
-                // Try semantic search as fallback
-                console.log('[Datalog Empty] Trying semantic search fallback...');
-                setSearchStatus("Searching by semantic similarity...");
-
-                try {
-                    const { fetchSemanticSearch } = await import('../services/graphService');
-                    const semanticResults = await fetchSemanticSearch(dataApiBase, selectedProjectId, query, 10);
-
-                    if (semanticResults && semanticResults.length > 0) {
-                        // Convert semantic results to graph nodes
-                        const nodes = semanticResults.map((result: any) => ({
-                            id: result.symbol_id,
-                            name: result.name,
-                            kind: 'symbol',
-                            type: 'semantic_result',
-                            _semanticScore: result.score
-                        }));
-
-                        setFileScopedNodes(nodes);
-                        setFileScopedLinks([]);
-                        onViewModeChange('discovery');
-
-                        // Analyze semantic results with AI
-                        setSearchStatus("Analyzing results with AI...");
-                        try {
-                            const { askAI } = await import('../services/geminiService');
-                            const analysis = await askAI(dataApiBase, selectedProjectId, {
-                                task: 'smart_search_analysis',
-                                query: query,
-                                data: {
-                                    nodes: nodes.map((n: any) => ({ id: n.id, name: n.name, kind: n.kind, type: n.type })),
-                                    links: []
-                                }
-                            });
-                            setNodeInsight(analysis || `Found ${semanticResults.length} symbols by semantic similarity:\n\n${semanticResults.map((r: any, i: number) => `${i + 1}. **${r.name}** (score: ${r.score.toFixed(3)})`).join('\n')}`);
-                        } catch (aiErr) {
-                            console.error("AI analysis failed:", aiErr);
-                            setNodeInsight(`Found ${semanticResults.length} symbols by semantic similarity:\n\n${semanticResults.map((r: any, i: number) => `${i + 1}. **${r.name}** (score: ${r.score.toFixed(3)})`).join('\n')}`);
-                        }
-
-                        setSearchStatus(null);
-                        setIsSearching(false);
-                        return;
-                    }
-                } catch (semanticErr) {
-                    console.error("Semantic search fallback failed:", semanticErr);
-                }
-
-                // If semantic search also failed/empty
-                setSearchError("No result found.");
-                setNodeInsight("Query returned no facts.");
+                setSearchError('No results found for this query');
                 setSearchStatus(null);
                 setIsSearching(false);
                 return;
             }
 
-            // 5. Render Results and Analyze with AI
-            setFileScopedNodes(results.nodes.map((n: any) => ({
+            let finalNodes = results.nodes;
+            let finalLinks = results.links || [];
+
+            // Set results directly (Backend auto-clusters if needed)
+            setFileScopedNodes(finalNodes.map((n: any) => ({
                 ...n,
                 name: n.name || n.id.split('/').pop(),
                 kind: n.kind || 'struct'
             })));
-            setFileScopedLinks(results.links || []);
+            setFileScopedLinks(finalLinks);
 
             console.log('[DEBUG] Transitioning to Discovery view for search results');
             onViewModeChange('discovery');
@@ -316,7 +272,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             setSearchStatus(null);
             setIsSearching(false);
         }
-    }, [dataApiBase, selectedProjectId, availablePredicates, manifest, onViewModeChange, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setNodeInsight]);
+    }, [dataApiBase, selectedProjectId, availablePredicates, manifest, onViewModeChange, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setNodeInsight, setLastExecutedQuery]);
 
     return {
         handleSmartSearch,

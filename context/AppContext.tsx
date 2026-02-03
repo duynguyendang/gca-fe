@@ -64,6 +64,8 @@ interface AppState {
     // Search
     searchTerm: string;
     setSearchTerm: React.Dispatch<React.SetStateAction<string>>;
+    lastExecutedQuery: string; // Datalog query for clustering
+    setLastExecutedQuery: React.Dispatch<React.SetStateAction<string>>;
     queryResults: any;
     setQueryResults: React.Dispatch<React.SetStateAction<any>>;
     isSearching: boolean;
@@ -157,6 +159,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
     // Search
     const [searchTerm, setSearchTerm] = useState("");
+    const [lastExecutedQuery, setLastExecutedQuery] = useState("");
     const [queryResults, setQueryResults] = useState<any>(null);
     const [isSearching, setIsSearching] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
@@ -197,6 +200,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         nodeInsight, setNodeInsight,
         isInsightLoading, setIsInsightLoading,
         searchTerm, setSearchTerm,
+        lastExecutedQuery, setLastExecutedQuery,
         queryResults, setQueryResults,
         isSearching, setIsSearching,
         searchError, setSearchError,

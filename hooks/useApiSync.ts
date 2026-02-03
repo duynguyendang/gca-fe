@@ -14,6 +14,8 @@ export const useApiSync = () => {
         setCurrentProject,
         setSandboxFiles,
         setAstData,
+        setFileScopedNodes,
+        setFileScopedLinks,
     } = useAppContext();
 
     const syncDataFromApi = useCallback(async (
@@ -103,15 +105,25 @@ export const useApiSync = () => {
                 if (queryRes.ok) {
                     const ast = await queryRes.json();
                     if (ast && ast.nodes && ast.nodes.length > 0) {
-                        setAstData(prev => {
-                            // Only enrich existing file nodes, discard unknown nodes (packages/external)
-                            // This keeps the graph focused on the file list we already fetched
-                            const enrichedNodes = prev.nodes.map(node => {
-                                const enrichedNode = ast.nodes.find((n: any) => n.id === node.id || n.id === node._filePath);
-                                return enrichedNode ? { ...node, ...enrichedNode, _project: projectId } : { ...node, _project: projectId };
+                        // If the response is clustered, use it for Graph View (fileScopedNodes)
+                        // but KEEP the file list for Navigator (astData)
+                        const isClustered = ast.nodes.some((n: any) => n.kind === 'cluster' || n.id.startsWith('cluster_'));
+
+                        if (isClustered) {
+                            console.log('[ApiSync] Received clustered graph. Updating Visualizer only.');
+                            setFileScopedNodes(ast.nodes.map((n: any) => ({ ...n, _project: projectId })));
+                            setFileScopedLinks(ast.links || []);
+                            // Do NOT update astData (keep files for navigator)
+                        } else {
+                            // Otherwise, enrich existing file nodes (keep graph focused on file list)
+                            setAstData(prev => {
+                                const enrichedNodes = prev.nodes.map(node => {
+                                    const enrichedNode = ast.nodes.find((n: any) => n.id === node.id || n.id === node._filePath);
+                                    return enrichedNode ? { ...node, ...enrichedNode, _project: projectId } : { ...node, _project: projectId };
+                                });
+                                return { nodes: enrichedNodes, links: ast.links || prev.links };
                             });
-                            return { nodes: enrichedNodes, links: ast.links || prev.links };
-                        });
+                        }
                     }
                 }
             } catch (queryErr) {

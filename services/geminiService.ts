@@ -26,33 +26,28 @@ export const askAI = async (
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/v1/ai/ask`;
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        project_id: projectId,
-        task: payload.task || 'chat',
-        query: payload.query || '',
-        symbol_id: payload.symbol_id || '',
-        data: payload.data || null
-      })
-    });
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      project_id: projectId,
+      task: payload.task || 'chat',
+      query: payload.query || '',
+      symbol_id: payload.symbol_id || '',
+      data: payload.data || null
+    })
+  });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('[GeminiService] Backend Error:', response.status, errText);
-      throw new Error(`AI Service Error: ${response.statusText}`);
-    }
-
-    const data: AIResponse = await response.json();
-    return data.answer || "No response from AI.";
-  } catch (err) {
-    console.error('[GeminiService] Fetch Error:', err);
-    return "AI Service Unavailable.";
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error('[GeminiService] Backend Error:', response.status, errText);
+    throw new Error(`AI Service Error: ${response.statusText}`);
   }
+
+  const data: AIResponse = await response.json();
+  return data.answer || "No response from AI.";
 };
 
 // --- Legacy Function Mappers ---

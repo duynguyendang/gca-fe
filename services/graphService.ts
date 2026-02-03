@@ -516,3 +516,52 @@ export async function fetchSemanticSearch(
   console.log('[GraphService] Semantic search response:', data);
   return data.results || [];
 }
+
+/**
+ * Get clustered graph for large result sets using Leiden algorithm
+ * GET /v1/graph/cluster?project={projectId}&query={query}
+ */
+export async function getClusteredGraph(
+  apiBase: string,
+  projectId: string,
+  query: string
+): Promise<GraphMapResponse> {
+  const cleanBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
+  const url = `${cleanBase}/v1/graph/cluster?project=${encodeURIComponent(projectId)}&query=${encodeURIComponent(query)}`;
+
+  console.log('[GraphService] Fetching clustered graph:', url);
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch clustered graph: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] Cluster response:', data);
+  return data;
+}
+
+/**
+ * Fetch subgraph for specific IDs (used for cluster expansion)
+ * POST /v1/graph/subgraph
+ */
+export async function fetchSubgraph(
+  dataApiBase: string,
+  projectId: string,
+  ids: string[]
+): Promise<GraphMapResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/v1/graph/subgraph?project=${encodeURIComponent(projectId)}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch subgraph: ${response.statusText}`);
+  }
+
+  return await response.json();
+}

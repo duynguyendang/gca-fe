@@ -8,7 +8,7 @@ import { findShortestPath, PathResult } from './utils/pathfinding';
 import { useAppContext } from './context/AppContext';
 import { useApiSync, useResizePanels, useSmartSearch, useInsights, useManifest, useNodeHydration } from './hooks';
 import { CodePanel, SynthesisPanel } from './components/Layout';
-// import MarkdownRenderer from './components/Synthesis/MarkdownRenderer'; // Removed in favor of SynthesisPanel
+import { stratifyPaths } from './utils/graphUtils';
 import {
   fetchGraphMap,
   fetchFileDetails,
@@ -25,6 +25,7 @@ import {
   fetchFlowPath,
   fetchFileBackbone,
   fetchPredicates,
+  fetchSubgraph,
 
   GraphMapResponse,
   FileDetailsResponse
@@ -32,72 +33,6 @@ import {
 
 // Ensure Prism is available for highlighting
 declare var Prism: any;
-
-const SAMPLE_DATA: FlatGraph = {
-  nodes: [
-    { id: "src/main.go:main", name: "main", type: "func", kind: "func", start_line: 1, end_line: 5, code: "func main() {\n\tfmt.Println(\"Hello GCA\")\n\t// Analyzer Entry Point\n\tinitialize()\n}" },
-  ],
-  links: []
-};
-
-const stratifyPaths = (nodes: any[], filePaths: string[] = []) => {
-  const root: any = { _isFolder: true, children: {} };
-
-  if (Array.isArray(filePaths)) {
-    filePaths.forEach(path => {
-      if (typeof path !== 'string') return;
-      const parts = path.split('/');
-      let current = root;
-      parts.forEach((part, i) => {
-        const isLastPart = i === parts.length - 1;
-        if (!current.children[part]) {
-          current.children[part] = {
-            _isFolder: !isLastPart,
-            _isFile: isLastPart,
-            children: {},
-            _symbols: []
-          };
-        }
-        current = current.children[part];
-      });
-    });
-  }
-
-  if (Array.isArray(nodes)) {
-    nodes.forEach(node => {
-      if (!node || !node.id) return;
-      const [filePath, symbol] = node.id.split(':');
-      if (!filePath) return;
-
-      const parts = filePath.split('/');
-      let current = root;
-
-      parts.forEach((part, i) => {
-        const isLastPart = i === parts.length - 1;
-        if (!current.children[part]) {
-          current.children[part] = {
-            _isFolder: !isLastPart,
-            _isFile: isLastPart,
-            children: {},
-            _symbols: []
-          };
-        }
-        if (isLastPart && symbol) {
-          if (!current.children[part]._symbols.find((s: any) => s.node.id === node.id)) {
-            current.children[part]._symbols.push({ name: symbol, node });
-          }
-        }
-        current = current.children[part];
-      });
-    });
-  }
-
-  return root.children;
-};
-
-// HighlightedCode moved to components/HighlightedCode.tsx
-
-// FileTreeItem moved to components/FileTreeItem.tsx
 
 
 
@@ -122,6 +57,7 @@ const App: React.FC = () => {
     isInsightLoading, setIsInsightLoading,
 
     searchTerm, setSearchTerm,
+    lastExecutedQuery, setLastExecutedQuery,
     queryResults, setQueryResults,
     // vars below shadowed by useSmartSearch hook
     isSearching: ctxIsSearching, setIsSearching: setCtxIsSearching,
@@ -147,6 +83,7 @@ const App: React.FC = () => {
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showArchitecturePanel, setShowArchitecturePanel] = useState(false);
+  const [isClustered, setIsClustered] = useState(false);
 
   // 3. Hooks initialization
   const { manifest } = useManifest(dataApiBase, selectedProjectId);
@@ -606,7 +543,74 @@ const App: React.FC = () => {
     }
   }, [dataApiBase, selectedProjectId, debugSetViewMode]);
 
+  const expandCluster = useCallback(async (clusterNode: any) => {
+    if (!clusterNode.metadata || !clusterNode.metadata.members) return;
+    const memberIds = clusterNode.metadata.members.split(',').filter(Boolean);
+    if (memberIds.length === 0) return;
+
+    try {
+      setCtxSearchStatus(`Expanding ${clusterNode.name}...`);
+      const subgraph = await fetchSubgraph(dataApiBase, selectedProjectId, memberIds);
+      setCtxSearchStatus(null);
+
+      if (!subgraph || !subgraph.nodes || subgraph.nodes.length === 0) return;
+
+      console.log("Expanding Cluster - New Nodes:", subgraph.nodes.length);
+
+      // 1. Update Links First (Requires OLD nodes + New Subgraph)
+      setFileScopedLinks(prev => {
+        const nodeToCluster = new Map<string, string>();
+        // Using fileScopedNodes from closure (current state before update)
+        fileScopedNodes.forEach(n => {
+          if (n.kind === 'cluster' && n.metadata?.members) {
+            const members = n.metadata.members.split(',');
+            members.forEach((m: string) => nodeToCluster.set(m, n.id));
+          }
+        });
+
+        // Filter output links from removed cluster
+        const keptLinks = prev.filter(l => l.source !== clusterNode.id && l.target !== clusterNode.id);
+
+        const newSubgraphLinks = (subgraph.links || []).map(l => {
+          let source = l.source;
+          let target = l.target;
+          const newIds = new Set(subgraph.nodes.map(n => n.id));
+
+          if (!newIds.has(source)) {
+            const cid = nodeToCluster.get(source);
+            if (cid && cid !== clusterNode.id) source = cid;
+          }
+          if (!newIds.has(target)) {
+            const cid = nodeToCluster.get(target);
+            if (cid && cid !== clusterNode.id) target = cid;
+          }
+          return { ...l, source, target };
+        });
+
+        return [...keptLinks, ...newSubgraphLinks];
+      });
+
+      // 2. Update Nodes
+      setFileScopedNodes(prev => {
+        const newNodes = prev.filter(n => n.id !== clusterNode.id);
+        const added = subgraph.nodes.map(n => ({ ...n, _project: selectedProjectId }));
+        return [...newNodes, ...added];
+      });
+
+    } catch (e) {
+      console.error("Expand failed", e);
+      setCtxSearchStatus("Expansion failed");
+      setTimeout(() => setCtxSearchStatus(null), 2000);
+    }
+  }, [dataApiBase, selectedProjectId, fileScopedNodes, setFileScopedNodes, setFileScopedLinks, setCtxSearchStatus]);
+
   const handleNodeSelect = useCallback(async (node: any) => {
+    // Check for Cluster
+    if (node.kind === 'cluster') {
+      expandCluster(node);
+      return;
+    }
+
     console.log('=== SYNC TRINITY: Node Clicked ===');
     console.log('1. Graph: Highlighting node:', node.id);
 
@@ -1322,16 +1326,20 @@ const App: React.FC = () => {
         <div className="flex-1 flex min-h-0">
           <div className="flex-1 relative dot-grid overflow-hidden bg-[#0a1118]">
             {(() => {
-              const nodeCount = (astData as FlatGraph)?.nodes?.length || 0;
-              const linkCount = (astData as FlatGraph)?.links?.length || 0;
-              const tooManyNodes = nodeCount > 1000;
+              // Use fileScopedNodes for visualization count (includes clustered nodes)
+              const visualizationNodeCount = fileScopedNodes.length;
+              const nodeCount = (astData as any).nodes?.length || 0;
+              const linkCount = (astData as any).links?.length || 0;
+              const tooManyNodes = visualizationNodeCount > 1000 && !isClustered;
 
               console.log('[DEBUG] AppIIFE Render:', {
                 viewMode,
                 nodeCount,
+                visualizationNodeCount,
                 tooManyNodes,
                 hasData: !!astData,
-                fileScopedDataHeight: fileScopedData?.nodes?.length
+                fileScopedDataHeight: fileScopedNodes.length,
+                isClustered
               });
 
               if (tooManyNodes) {
@@ -1348,12 +1356,43 @@ const App: React.FC = () => {
                       <p className="text-xs text-slate-500 leading-relaxed mb-6">
                         Rendering graphs with more than 1,000 nodes can cause significant performance issues and browser slowdowns.
                         <br /><br />
-                        Please use a more specific query to reduce the result size, or use the search functionality to find specific nodes.
+                        Use clustering to group related nodes into communities, or refine your query to reduce the result size.
                       </p>
-                      <div className="flex items-center justify-center gap-3 text-xs">
-                        <div className="px-4 py-2 bg-[#16222a] border border-white/10 rounded text-slate-400">
+                      <div className="flex flex-col gap-3">
+                        <button
+                          onClick={async () => {
+                            try {
+                              // Fallback to a default query if lastExecutedQuery is empty
+                              const queryToUse = lastExecutedQuery || 'query(?x) :- triples(?x, "defines", ?y)';
+                              console.log('[Clustering] Using query:', queryToUse);
+
+                              setCtxIsSearching(true);
+                              setCtxSearchStatus('Applying Leiden clustering...');
+                              const { getClusteredGraph } = await import('./services/graphService');
+                              const clusteredData = await getClusteredGraph(dataApiBase, selectedProjectId, queryToUse);
+                              console.log('[Clustering] Received data:', clusteredData);
+
+                              // Only update visualization data, keep astData intact for SOURCE NAVIGATOR
+                              setFileScopedNodes(clusteredData.nodes);
+                              setFileScopedLinks(clusteredData.links);
+                              setIsClustered(true);
+                              setCtxSearchStatus(null);
+                              setCtxIsSearching(false);
+                            } catch (err: any) {
+                              console.error('[Clustering] Error:', err);
+                              setCtxSearchError(err.message || 'Clustering failed');
+                              setCtxSearchStatus(null);
+                              setCtxIsSearching(false);
+                            }
+                          }}
+                          className="px-6 py-3 bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white font-medium rounded-lg hover:shadow-lg hover:shadow-[#f59e0b]/20 transition-all duration-200"
+                        >
+                          <i className="fas fa-project-diagram mr-2"></i>
+                          Use Clustering ({Math.ceil(nodeCount / 50)}-{Math.ceil(nodeCount / 20)} clusters)
+                        </button>
+                        <div className="px-4 py-2 bg-[#16222a] border border-white/10 rounded text-slate-400 text-xs text-center">
                           <i className="fas fa-lightbulb text-[#f59e0b] mr-2"></i>
-                          Try filtering with specific predicates or entity names
+                          Or try filtering with specific predicates or entity names
                         </div>
                       </div>
                     </div>

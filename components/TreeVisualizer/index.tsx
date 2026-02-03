@@ -12,7 +12,7 @@ interface TreeVisualizerProps {
   data: ASTNode | FlatGraph;
   onNodeSelect: (node: any) => void;
   onNodeHover: (node: any | null) => void;
-  mode: 'flow' | 'map' | 'discovery' | 'architecture';
+  mode: 'flow' | 'map' | 'discovery' | 'architecture' | 'backbone';
   layoutStyle?: 'organic' | 'flow';
   selectedId?: string;
   fileScopedData?: { nodes: any[]; links: any[] };

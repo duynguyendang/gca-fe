@@ -48,8 +48,7 @@ The GCA Frontend is a modern React application that visualizes code as an intera
 # Install dependencies
 npm install
 
-# Set Gemini API key (optional, for AI features)
-echo "VITE_GEMINI_API_KEY=your_api_key_here" > .env.local
+
 
 # Start development server
 npm run dev
@@ -134,11 +133,10 @@ Global state via `AppContext`:
 
 Create `.env.local`:
 ```bash
-# Optional: Gemini API key for client-side AI features
-VITE_GEMINI_API_KEY=your_api_key_here
+
 
 # Optional: Custom backend URL (default: http://localhost:8080)
-VITE_API_BASE_URL=http://localhost:8080
+GCA_API_BASE_URL=http://localhost:8080
 ```
 
 ### API URL

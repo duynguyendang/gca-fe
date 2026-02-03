@@ -134,7 +134,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     });
 
     // API configuration
-    const [dataApiBase, setDataApiBase] = useState<string>(() => sessionStorage.getItem('gca_api_base') || "http://localhost:8080");
+    const [dataApiBase, setDataApiBase] = useState<string>(() => sessionStorage.getItem('gca_api_base') || import.meta.env.GCA_API_BASE_URL || "http://localhost:8080");
 
 
     // Projects

@@ -86,12 +86,35 @@ export const needsHydration = (node: any): boolean => {
     return !node.code && node.kind !== 'file' && node.kind !== 'package' && node.kind !== 'folder';
 };
 
-export const getAccent = (kind: string) => {
+export const getFileAccent = (filename: string): string => {
+    if (!filename) return '#0ea5e9';
+    const ext = filename.split('.').pop()?.toLowerCase();
+    switch (ext) {
+        case 'go': return '#00f2ff'; // Cyan
+        case 'ts':
+        case 'tsx': return '#3b82f6'; // Blue
+        case 'js':
+        case 'jsx': return '#f59e0b'; // Yellow (JS)
+        case 'py': return '#10b981'; // Green
+        case 'css':
+        case 'scss': return '#ec4899'; // Pink
+        case 'html': return '#f97316'; // Orange
+        case 'json':
+        case 'yaml':
+        case 'yml':
+        case 'toml': return '#8b5cf6'; // Purple (Data)
+        case 'md': return '#94a3b8'; // Slate (Docs)
+        case 'sql': return '#eab308'; // Gold
+        default: return '#0ea5e9';
+    }
+};
+
+export const getAccent = (kind: string, name?: string) => {
     switch (kind?.toLowerCase()) {
         case 'func': return '#00f2ff';
         case 'struct': return '#10b981';
         case 'interface': return '#f59e0b';
-        case 'file': return '#0ea5e9';
+        case 'file': return getFileAccent(name || '');
         case 'package': return '#8b5cf6';
         default: return '#94a3b8';
     }

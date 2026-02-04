@@ -25,6 +25,33 @@ export const useInsights = () => {
 
         setIsInsightLoading(true);
 
+        // Multi-file analysis: If we have multiple files in view
+        const uniqueFiles = new Set<string>();
+        fileScopedNodes.forEach(n => {
+            const path = n._filePath || n.filePath || (n.kind === 'file' ? n.id : null);
+            if (path) uniqueFiles.add(path);
+        });
+
+        // Ensure the selected node's file is included
+        const selectedFile = selectedNode._filePath || selectedNode.filePath || (selectedNode._isFile ? selectedNode.id : null);
+        if (selectedFile) uniqueFiles.add(selectedFile);
+
+        if (uniqueFiles.size > 1) {
+            console.log("Generating Multi-File Insight for:", Array.from(uniqueFiles));
+            const fileList = Array.from(uniqueFiles);
+            // Use the new multi-file service
+            import('../services/geminiService').then(({ getMultiFileInsight }) => {
+                getMultiFileInsight(fileList, `Analyze the architectural relationship between ${selectedNode.name} and the other visible files.`, dataApiBase, selectedProjectId)
+                    .then(summary => setNodeInsight(summary))
+                    .catch(err => {
+                        console.error("Multi-file insight failed:", err);
+                        setNodeInsight("Analysis failed.");
+                    })
+                    .finally(() => setIsInsightLoading(false));
+            });
+            return;
+        }
+
         // If it's a file with scoped nodes (backbone), use architectural summary
         if (selectedNode?._isFile && fileScopedNodes.length > 0) {
             fetchSource(dataApiBase, selectedProjectId, selectedNode.id).then(fileContent => {

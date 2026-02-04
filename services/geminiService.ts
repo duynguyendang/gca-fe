@@ -248,6 +248,19 @@ export const getFileRoleSummary = async (fileName: string, fileContent: string, 
   });
 };
 
+export const getMultiFileInsight = async (
+  fileIds: string[],
+  query: string,
+  dataApiBase: string,
+  projectId: string
+) => {
+  return await askAI(dataApiBase, projectId, {
+    task: 'multi_file_summary',
+    query: query || "Analyze the relationships and collective architecture of these files.",
+    data: fileIds
+  });
+};
+
 export const translateNLToDatalog = async (
   query: string,
   subjectId: string | null,

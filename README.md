@@ -12,6 +12,7 @@ The GCA Frontend is a modern React application that visualizes code as an intera
 - **Natural Language Queries**: Ask questions like "who calls handlers?" or "functions that handle user input"
 - **Automatic Datalog Translation**: AI converts your questions to graph queries
 - **Semantic Fallback**: If Datalog finds nothing, automatically searches by semantic similarity
+- **Search History**: Quickly access and manage your recent queries
 - **AI Synthesis**: Results are analyzed and explained in natural language
 
 ### 🧠 **Semantic Search**
@@ -23,6 +24,8 @@ The GCA Frontend is a modern React application that visualizes code as an intera
 - **Multiple View Modes**:
   - **Discovery**: Force-directed graph for exploration
   - **Architecture**: Hierarchical backbone view showing cross-file dependencies
+  - **Map View**: High-level clustered view (Leiden algorithm) for navigating large codebases (>300 nodes)
+- **Cluster Expansion**: Click on cluster nodes in Map View to expand and view constituent files
 - **Interactive Navigation**: Click nodes, expand files, trace relationships
 - **Real-time Updates**: Graph updates as you search and explore
 
@@ -33,6 +36,7 @@ The GCA Frontend is a modern React application that visualizes code as an intera
 
 ### ⚡ **Auto-Connect**
 - **Zero-Click Setup**: Automatically connects to backend on page load
+- **Source Navigator**: File explorer sidebar to easily browse and locate files in the graph
 - **Session Persistence**: Remembers your API URL and selected project
 - **Hot Reload**: Changes reflect instantly during development
 
@@ -75,8 +79,10 @@ Enter natural language queries in the search bar:
 
 ### 4. **View Modes**
 Switch between visualization modes:
-- **Discovery**: Explore relationships freely
-- **Architecture**: See high-level system structure
+- **Discovery**: Explore relationships freely with force-directed layout
+- **Architecture**: See high-level system structure and dependencies
+- **Map**: Visualizes code clusters. Useful for large projects.
+    - **Auto-Clustering**: Automatically enables Map mode when graph exceeds 300 nodes to preserve performance.
 
 ## Architecture
 

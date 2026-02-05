@@ -49,7 +49,12 @@ const DiscoveryGraph: React.FC<DiscoveryGraphProps> = ({
         g.selectAll('*').remove(); // Clear previous
 
         const validNodes = nodes || [];
-        const validLinks = links || [];
+        const nodeSet = new Set(validNodes.map(n => n.id));
+
+        // Filter links to ensure both ends exist in the current nodes set
+        // This prevents "node not found" errors in D3 force simulations
+        const validLinks = (links || []).filter(l => nodeSet.has(l.source) && nodeSet.has(l.target));
+
         // Clone links to avoid mutation issues with d3 force
         const simulationLinks = validLinks.map((l: any) => ({ ...l }));
 

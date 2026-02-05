@@ -8,13 +8,16 @@ import {
     executeQuery,
     fetchSymbols,
     fetchSource,
-    fetchGraphPath
+    fetchGraphPath,
+    fetchSemanticSearch,
+    fetchSubgraph
 } from '../services/graphService';
 import {
     resolveSymbolFromQuery,
     translateNLToDatalog,
     generateReactiveNarrative,
-    analyzePathWithCode
+    analyzePathWithCode,
+    askAI
 } from '../services/geminiService';
 
 interface UseSmartSearchOptions {
@@ -224,6 +227,44 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             console.log('Query Results:', results);
 
             if (!results || !results.nodes || results.nodes.length === 0) {
+                console.log('[useSmartSearch] No Datalog results. Falling back to semantic search...');
+                setSearchStatus("Falling back to semantic search...");
+
+                try {
+                    const semanticResults = await fetchSemanticSearch(dataApiBase, selectedProjectId, query, 10);
+
+                    if (semanticResults && semanticResults.length > 0) {
+                        const ids = semanticResults.map(r => r.symbol_id);
+                        setSearchStatus("Resolving semantic context...");
+                        const subgraph = await fetchSubgraph(dataApiBase, selectedProjectId, ids);
+
+                        if (subgraph && subgraph.nodes.length > 0) {
+                            // Success! Proceed with semantic subgraph
+                            setFileScopedNodes(subgraph.nodes.map((n: any) => ({
+                                ...n,
+                                name: n.name || n.id.split('/').pop(),
+                                kind: n.kind || 'struct'
+                            })));
+                            setFileScopedLinks(subgraph.links || []);
+                            onViewModeChange('discovery');
+
+                            // Analyze with AI using multi-file context to ensure code is read
+                            setSearchStatus("Analyzing results with AI...");
+                            const analysis = await askAI(dataApiBase, selectedProjectId, {
+                                task: 'multi_file_summary',
+                                query: query,
+                                data: subgraph.nodes.map(n => n.id).slice(0, 15)
+                            });
+                            setNodeInsight(analysis);
+                            setSearchStatus(null);
+                            setIsSearching(false);
+                            return;
+                        }
+                    }
+                } catch (fallbackErr) {
+                    console.error("Semantic fallback failed:", fallbackErr);
+                }
+
                 setSearchError('No results found for this query');
                 setSearchStatus(null);
                 setIsSearching(false);
@@ -244,17 +285,13 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             console.log('[DEBUG] Transitioning to Discovery view for search results');
             onViewModeChange('discovery');
 
-            // Analyze results with AI using actual graph data
+            // Analyze results with AI using multi-file context to pull in actual code
             setSearchStatus("Analyzing results with AI...");
             try {
-                const { askAI } = await import('../services/geminiService');
                 const analysis = await askAI(dataApiBase, selectedProjectId, {
-                    task: 'smart_search_analysis',
+                    task: 'multi_file_summary',
                     query: query,
-                    data: {
-                        nodes: results.nodes.map((n: any) => ({ id: n.id, name: n.name, kind: n.kind, type: n.type })),
-                        links: results.links || []
-                    }
+                    data: results.nodes.map((n: any) => n.id).slice(0, 15)
                 });
                 setNodeInsight(analysis || `Found ${results.nodes.length} nodes and ${results.links?.length || 0} relationships.`);
             } catch (aiErr) {

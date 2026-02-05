@@ -147,6 +147,59 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                 return;
             }
 
+            // Robust Fallback: Check if it LOOKS like Datalog or a valid JSON tool call
+            // Common failure mode: AI returns conversational text ("I cannot...") or just explaining itself
+            const isDatalog = datalogQuery.trim().startsWith("triples(") || datalogQuery.includes(":-");
+            const isToolCall = datalogQuery.trim().startsWith("{");
+
+            // If it's NOT a valid structural query, treat it as a broad semantic query
+            if (!isDatalog && !isToolCall) {
+                console.log('[useSmartSearch] Response is not valid Datalog. Falling back to semantic search...', datalogQuery);
+                // Force a fallback by simulating an empty result flow
+                // We do this by jumping to the fallback logic block below
+                // Refactoring to a unified fallback function would be cleaner, but for now:
+
+                setSearchStatus("Falling back to semantic search...");
+                try {
+                    const semanticResults = await fetchSemanticSearch(dataApiBase, selectedProjectId, query, 10);
+
+                    if (semanticResults && semanticResults.length > 0) {
+                        const ids = semanticResults.map(r => r.symbol_id);
+                        setSearchStatus("Resolving semantic context...");
+                        const subgraph = await fetchSubgraph(dataApiBase, selectedProjectId, ids);
+
+                        if (subgraph && subgraph.nodes.length > 0) {
+                            setFileScopedNodes(subgraph.nodes.map((n: any) => ({
+                                ...n,
+                                name: n.name || n.id.split('/').pop(),
+                                kind: n.kind || 'struct'
+                            })));
+                            setFileScopedLinks(subgraph.links || []);
+                            onViewModeChange('discovery');
+
+                            setSearchStatus("Analyzing results with AI...");
+                            const analysis = await askAI(dataApiBase, selectedProjectId, {
+                                task: 'multi_file_summary',
+                                query: query,
+                                data: subgraph.nodes.map(n => n.id).slice(0, 15)
+                            });
+                            setNodeInsight(analysis);
+                            setSearchStatus(null);
+                            setIsSearching(false);
+                            return;
+                        }
+                    }
+                } catch (fallbackErr) {
+                    console.error("Semantic fallback failed:", fallbackErr);
+                }
+
+                // If semantic search ALSO fails, then show error
+                setSearchError("Could not answer query (Semantics failed).");
+                setSearchStatus(null);
+                setIsSearching(false);
+                return;
+            }
+
             // Handle Tool Calls (Path-Finding)
             if (datalogQuery.trim().startsWith('{')) {
                 try {

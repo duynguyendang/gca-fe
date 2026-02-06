@@ -205,7 +205,7 @@ const App: React.FC = () => {
   // Initialize from session storage if available
   useEffect(() => {
     if (dataApiBase) {
-      sessionStorage.setItem('gca_api_base', dataApiBase);
+      sessionStorage.setItem('gca_api_base_v2', dataApiBase);
     }
   }, [dataApiBase]);
 

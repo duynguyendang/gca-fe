@@ -175,7 +175,9 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                                 kind: n.kind || 'struct'
                             })));
                             setFileScopedLinks(subgraph.links || []);
-                            onViewModeChange('discovery');
+                            setFileScopedLinks(subgraph.links || []);
+                            // onViewModeChange('discovery');
+
 
                             setSearchStatus("Analyzing results with AI...");
                             const analysis = await askAI(dataApiBase, selectedProjectId, {
@@ -252,7 +254,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                             _isPath: true
                         })));
 
-                        onViewModeChange('discovery');
+                        // onViewModeChange('discovery');
 
                         setSearchStatus("Analyzing interaction path with AI...");
                         try {
@@ -299,7 +301,8 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                                 kind: n.kind || 'struct'
                             })));
                             setFileScopedLinks(subgraph.links || []);
-                            onViewModeChange('discovery');
+                            setFileScopedLinks(subgraph.links || []);
+                            // onViewModeChange('discovery');
 
                             // Analyze with AI using multi-file context to ensure code is read
                             setSearchStatus("Analyzing results with AI...");
@@ -336,7 +339,8 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             setFileScopedLinks(finalLinks);
 
             console.log('[DEBUG] Transitioning to Discovery view for search results');
-            onViewModeChange('discovery');
+            console.log('[DEBUG] Transitioning to Discovery view for search results');
+            // onViewModeChange('discovery');
 
             // Analyze results with AI using multi-file context to pull in actual code
             setSearchStatus("Analyzing results with AI...");

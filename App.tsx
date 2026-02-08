@@ -385,7 +385,7 @@ const App: React.FC = () => {
 
     if (existingNode) {
       setSelectedNode(existingNode);
-      debugSetViewMode('discovery'); // Switch to see it?
+      // debugSetViewMode('discovery'); // Switch to see it?
     } else {
       // Fallback to search
       setSearchTerm(cleanSymbol);
@@ -670,11 +670,12 @@ const App: React.FC = () => {
     const fileExtensions = /\.(go|ts|tsx|js|jsx|py|rs|java|cpp|c|h|md|json|yaml|yml|toml)$/i;
     const isFileNode = node.kind === 'file' || node.type === 'file' || node._isFile || (node.id && fileExtensions.test(node.id) && !node.id.includes(':'));
 
-    // Check if this is a package node (Go import path without file extension)
-    // Examples: "github.com/google/mangle/ast", "analysis", "engine"
+    // Check if this is a package node or a Python module (no file extension)
+    // Examples: "github.com/google/mangle/ast", "analysis", "langgraph.checkpoint.serde.base"
     const isPackageNode = !isFileNode && (
       node.kind === 'package' ||
-      (filePath && !filePath.includes(':') && !/\.\w+$/.test(filePath))
+      node.kind === 'module' ||
+      (filePath && !filePath.includes(':') && !fileExtensions.test(filePath))
     );
 
     // Handle package navigation - find a specific file and load its neighbors
@@ -726,6 +727,41 @@ const App: React.FC = () => {
         }
       } catch (e) {
         console.warn('Failed to resolve package files', e);
+      }
+    } else if (isPackageNode && node.id.includes('.')) {
+      // Fallback for Python dotted paths if not caught above (or if above failed to find files)
+      // This is a retry or specific handler for things that look like java/python packages
+      try {
+        const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+        const resp = await fetch(`${cleanBase}/v1/files?project=${projectId}`);
+        const allFiles = await resp.json();
+
+        const slashPath = node.id.replace(/\./g, '/');
+        const suffixMatches = allFiles.filter((f: string) =>
+          f.endsWith(slashPath + '.py') ||
+          f.endsWith(slashPath + '/__init__.py')
+        );
+
+        if (suffixMatches.length > 0) {
+          // Sort to prefer __init__.py if it's the package itself, or the direct file
+          suffixMatches.sort((a: string, b: string) => a.length - b.length);
+          const bestFile = suffixMatches[0];
+          console.log('Resolved dotted module', node.id, 'to file', bestFile);
+
+          handleNodeSelect({
+            id: bestFile,
+            kind: 'file',
+            type: 'file',
+            _isFile: true,
+            _project: projectId,
+            _filePath: bestFile,
+            start_line: node.start_line, // Preserve line number if mapped
+            _scrollToLine: node.start_line
+          }, true);
+          return;
+        }
+      } catch (e) {
+        console.warn('Failed to resolve dotted path', e);
       }
     }
 

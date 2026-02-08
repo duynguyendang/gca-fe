@@ -23,7 +23,7 @@ const TreeMapGraph: React.FC<TreeMapGraphProps> = ({
         const g = d3.select(gRef.current);
         g.selectAll('*').remove();
 
-        const validNodes = nodes || [];
+        const validNodes = (nodes || []).filter((n: any) => n.kind !== 'cluster');
         if (validNodes.length === 0) return;
 
         const hierarchy = d3.hierarchy(buildHierarchy(validNodes, true))

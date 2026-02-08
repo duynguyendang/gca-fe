@@ -16,7 +16,7 @@ The GCA Frontend is a modern React application that visualizes code as an intera
 - **AI Synthesis**: Results are analyzed and explained in natural language
 
 ### 🧠 **Semantic Search**
-- **Documentation Embeddings**: Every symbol's documentation is embedded using Gemini `text-embedding-004`
+- **Documentation Embeddings**: Every symbol's documentation is embedded using Gemini `gemini-embedding-001`
 - **Vector Similarity**: Find relevant code based on meaning, not just keywords
 - **10 Results in <300ms**: Lightning fast with MRL-compressed vectors (768d → 64d int8)
 

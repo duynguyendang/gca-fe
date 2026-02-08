@@ -50,9 +50,34 @@ export const useNodeHydration = () => {
         console.log('[Hydrate] Fetching node from API:', nodeId);
         setHydratingNodeId(nodeId);
 
+        let targetId = nodeId;
+        // Optimization: Check for Python dotted paths that need resolution
+        if (nodeId && !nodeId.includes('/') && nodeId.includes('.')) {
+            try {
+                const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+                // Fetch file list to resolve path - minimal overhead for single click
+                const filesResp = await fetch(`${cleanBase}/v1/files?project=${encodeURIComponent(selectedProjectId)}`);
+                if (filesResp.ok) {
+                    const allFiles = await filesResp.json();
+                    const slashPath = nodeId.replace(/\./g, '/');
+                    const suffixMatches = allFiles.filter((f: string) =>
+                        f.endsWith(slashPath + '.py') ||
+                        f.endsWith(slashPath + '/__init__.py')
+                    );
+                    if (suffixMatches.length > 0) {
+                        suffixMatches.sort((a: string, b: string) => a.length - b.length);
+                        targetId = suffixMatches[0];
+                        console.log('[Hydrate] Resolved dotted ID', nodeId, 'to file', targetId);
+                    }
+                }
+            } catch (e) {
+                console.warn('[Hydrate] Path resolution failed', e);
+            }
+        }
+
         try {
             const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-            const response = await fetch(`${cleanBase}/v1/hydrate?id=${encodeURIComponent(nodeId)}&project=${encodeURIComponent(selectedProjectId)}`);
+            const response = await fetch(`${cleanBase}/v1/hydrate?id=${encodeURIComponent(targetId)}&project=${encodeURIComponent(selectedProjectId)}`);
 
             if (!response.ok) {
                 console.error('[Hydrate] Failed to hydrate node:', response.status, response.statusText);

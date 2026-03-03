@@ -18,6 +18,8 @@ export const useApiSync = () => {
         setFileScopedLinks,
         setViewMode,
         enableAutoClustering,
+        setSelectedNode,
+        setExpandedFileIds,
     } = useAppContext();
 
     const syncDataFromApi = useCallback(async (
@@ -35,6 +37,16 @@ export const useApiSync = () => {
         const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 
         try {
+            // Clear existing project data before fetching new ones
+            if (projectId) {
+                setAstData({ nodes: [], links: [] });
+                setSandboxFiles({});
+                setFileScopedNodes([]);
+                setFileScopedLinks([]);
+                setSelectedNode(null);
+                setExpandedFileIds(new Set());
+            }
+
             // Fetch all projects
             const projectsRes = await fetch(`${cleanBase}/v1/projects`);
             if (!projectsRes.ok) {

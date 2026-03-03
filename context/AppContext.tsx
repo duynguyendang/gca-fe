@@ -19,7 +19,21 @@ interface ProjectInfo {
     description?: string;
 }
 
-export type ViewMode = 'flow' | 'map' | 'discovery' | 'backbone' | 'architecture';
+export interface NarrativeSection {
+    type: 'summary' | 'inconsistency' | 'gravity' | 'info';
+    title: string;
+    content: string;
+    actionLabel?: string;
+}
+
+export interface NarrativeMessage {
+    role: 'user' | 'ai';
+    content: string;
+    sections?: NarrativeSection[];
+    timestamp: number;
+}
+
+export type ViewMode = 'flow' | 'map' | 'discovery' | 'backbone' | 'architecture' | 'narrative';
 
 interface AppState {
     // Core data
@@ -107,6 +121,12 @@ interface AppState {
     // Preferences
     enableAutoClustering: boolean;
     setEnableAutoClustering: React.Dispatch<React.SetStateAction<boolean>>;
+
+    // Narrative AI
+    narrativeMessages: NarrativeMessage[];
+    setNarrativeMessages: React.Dispatch<React.SetStateAction<NarrativeMessage[]>>;
+    isNarrativeLoading: boolean;
+    setIsNarrativeLoading: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -187,6 +207,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     // Settings
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [availablePredicates, setAvailablePredicates] = useState<string[]>([]);
+
+    // Narrative AI
+    const [narrativeMessages, setNarrativeMessages] = useState<NarrativeMessage[]>([]);
+    const [isNarrativeLoading, setIsNarrativeLoading] = useState(false);
     const [enableAutoClustering, setEnableAutoClustering] = useState<boolean>(true);
 
     const value: AppState = {
@@ -222,6 +246,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         isSettingsOpen, setIsSettingsOpen,
         availablePredicates, setAvailablePredicates,
         enableAutoClustering, setEnableAutoClustering,
+        narrativeMessages, setNarrativeMessages,
+        isNarrativeLoading, setIsNarrativeLoading,
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

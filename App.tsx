@@ -8,6 +8,7 @@ import { findShortestPath, PathResult } from './utils/pathfinding';
 import { useAppContext } from './context/AppContext';
 import { useApiSync, useResizePanels, useSmartSearch, useInsights, useManifest, useNodeHydration } from './hooks';
 import { CodePanel, SynthesisPanel } from './components/Layout';
+import { NarrativeScreen } from './components/NarrativeScreen';
 import { stratifyPaths } from './utils/graphUtils';
 import {
   fetchGraphMap,
@@ -162,6 +163,7 @@ const App: React.FC = () => {
   const setMapMode = useCallback(() => debugSetViewMode('map'), [debugSetViewMode]);
   const setDiscoveryMode = useCallback(() => debugSetViewMode('discovery'), [debugSetViewMode]);
   const setArchitectureMode = useCallback(() => debugSetViewMode('architecture'), [debugSetViewMode]);
+  const setNarrativeMode = useCallback(() => debugSetViewMode('narrative'), [debugSetViewMode]);
 
   // Auto-resize Synthesis Panel when Insight is loaded
   // Auto-resize Synthesis Panel when Insight is loaded
@@ -1206,10 +1208,13 @@ const App: React.FC = () => {
         <header className="h-14 border-b border-white/5 flex items-center px-6 gap-6 bg-[#0a1118]/90 backdrop-blur-md z-20 shrink-0">
           <div className="flex-1 flex items-center justify-center">
             <div className={`flex items-center bg-[#16222a] border ${isSearching ? 'border-[#00f2ff] shadow-[0_0_15px_-3px_rgba(0,242,255,0.3)]' : 'border-white/10 hover:border-white/20'} rounded-full px-1.5 py-1.5 w-full max-w-2xl shadow-xl transition-all relative group`}>
-              <div className="px-3 py-1.5 rounded-full text-[10px] font-black bg-[#00f2ff]/10 text-[#00f2ff] border border-[#00f2ff]/20 mr-2 uppercase tracking-wide flex items-center gap-1.5">
+              <button
+                onClick={setNarrativeMode}
+                className="px-3 py-1.5 rounded-full text-[10px] font-black bg-[#00f2ff]/10 text-[#00f2ff] border border-[#00f2ff]/20 mr-2 uppercase tracking-wide flex items-center gap-1.5 hover:bg-[#00f2ff]/20 transition-all cursor-pointer"
+              >
                 <i className="fas fa-sparkles"></i>
                 Ask AI
-              </div>
+              </button>
               <input
                 type="text"
                 placeholder='Ask a question (e.g. "How does Auth work?") or search symbols...'
@@ -1352,8 +1357,16 @@ const App: React.FC = () => {
               Map
             </button>
 
-
-
+            <button
+              onClick={setNarrativeMode}
+              className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'narrative'
+                ? 'bg-[#10b981] border-[#10b981] text-[#0a1118]'
+                : 'bg-[#16222a] border-white/5 text-[#10b981] hover:bg-white/5'
+                }`}
+            >
+              <i className="fas fa-brain mr-1"></i>
+              Narrative
+            </button>
 
           </div>
 
@@ -1374,135 +1387,143 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        <div className="flex-1 flex min-h-0">
-          <div className="flex-1 relative dot-grid overflow-hidden bg-[#0a1118]">
-            {(() => {
-              // Use fileScopedNodes for visualization count (includes clustered nodes)
-              const visualizationNodeCount = fileScopedNodes.length;
-              const nodeCount = (astData as any).nodes?.length || 0;
-              const linkCount = (astData as any).links?.length || 0;
-              const tooManyNodes = visualizationNodeCount > 1000 && !isClustered;
+        {viewMode === 'narrative' ? (
+          <NarrativeScreen
+            onNodeSelect={handleNodeSelect}
+            onLinkClick={handleMarkdownLinkClick}
+            onSymbolClick={handleMarkdownSymbolClick}
+          />
+        ) : (
+          <div className="flex-1 flex min-h-0">
+            <div className="flex-1 relative dot-grid overflow-hidden bg-[#0a1118]">
+              {(() => {
+                // Use fileScopedNodes for visualization count (includes clustered nodes)
+                const visualizationNodeCount = fileScopedNodes.length;
+                const nodeCount = (astData as any).nodes?.length || 0;
+                const linkCount = (astData as any).links?.length || 0;
+                const tooManyNodes = visualizationNodeCount > 1000 && !isClustered;
 
-              console.log('[DEBUG] AppIIFE Render:', {
-                viewMode,
-                nodeCount,
-                visualizationNodeCount,
-                tooManyNodes,
-                hasData: !!astData,
-                fileScopedDataHeight: fileScopedNodes.length,
-                isClustered
-              });
+                console.log('[DEBUG] AppIIFE Render:', {
+                  viewMode,
+                  nodeCount,
+                  visualizationNodeCount,
+                  tooManyNodes,
+                  hasData: !!astData,
+                  fileScopedDataHeight: fileScopedNodes.length,
+                  isClustered
+                });
 
-              if (tooManyNodes) {
-                return (
-                  <div className="absolute inset-0 flex items-center justify-center p-8">
-                    <div className="text-center max-w-lg">
-                      <div className="w-20 h-20 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mx-auto mb-6">
-                        <i className="fas fa-exclamation-triangle text-3xl text-red-400"></i>
-                      </div>
-                      <h2 className="text-lg font-bold text-white mb-3">Graph Too Large</h2>
-                      <p className="text-sm text-slate-400 mb-4">
-                        The visualization contains <span className="text-[#f59e0b] font-bold">{nodeCount.toLocaleString()} nodes</span> and <span className="text-[#f59e0b] font-bold">{linkCount.toLocaleString()} links</span>.
-                      </p>
-                      <p className="text-xs text-slate-500 leading-relaxed mb-6">
-                        Rendering graphs with more than 1,000 nodes can cause significant performance issues and browser slowdowns.
-                        <br /><br />
-                        Use clustering to group related nodes into communities, or refine your query to reduce the result size.
-                      </p>
-                      <div className="flex flex-col gap-3">
-                        <button
-                          onClick={async () => {
-                            try {
-                              // Fallback to a default query if lastExecutedQuery is empty
-                              const queryToUse = lastExecutedQuery || 'query(?x) :- triples(?x, "defines", ?y)';
-                              console.log('[Clustering] Using query:', queryToUse);
+                if (tooManyNodes) {
+                  return (
+                    <div className="absolute inset-0 flex items-center justify-center p-8">
+                      <div className="text-center max-w-lg">
+                        <div className="w-20 h-20 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mx-auto mb-6">
+                          <i className="fas fa-exclamation-triangle text-3xl text-red-400"></i>
+                        </div>
+                        <h2 className="text-lg font-bold text-white mb-3">Graph Too Large</h2>
+                        <p className="text-sm text-slate-400 mb-4">
+                          The visualization contains <span className="text-[#f59e0b] font-bold">{nodeCount.toLocaleString()} nodes</span> and <span className="text-[#f59e0b] font-bold">{linkCount.toLocaleString()} links</span>.
+                        </p>
+                        <p className="text-xs text-slate-500 leading-relaxed mb-6">
+                          Rendering graphs with more than 1,000 nodes can cause significant performance issues and browser slowdowns.
+                          <br /><br />
+                          Use clustering to group related nodes into communities, or refine your query to reduce the result size.
+                        </p>
+                        <div className="flex flex-col gap-3">
+                          <button
+                            onClick={async () => {
+                              try {
+                                // Fallback to a default query if lastExecutedQuery is empty
+                                const queryToUse = lastExecutedQuery || 'query(?x) :- triples(?x, "defines", ?y)';
+                                console.log('[Clustering] Using query:', queryToUse);
 
-                              setCtxIsSearching(true);
-                              setCtxSearchStatus('Applying Leiden clustering...');
-                              const { getClusteredGraph } = await import('./services/graphService');
-                              const clusteredData = await getClusteredGraph(dataApiBase, selectedProjectId, queryToUse);
-                              console.log('[Clustering] Received data:', clusteredData);
+                                setCtxIsSearching(true);
+                                setCtxSearchStatus('Applying Leiden clustering...');
+                                const { getClusteredGraph } = await import('./services/graphService');
+                                const clusteredData = await getClusteredGraph(dataApiBase, selectedProjectId, queryToUse);
+                                console.log('[Clustering] Received data:', clusteredData);
 
-                              // Only update visualization data, keep astData intact for SOURCE NAVIGATOR
-                              setFileScopedNodes(clusteredData.nodes);
-                              setFileScopedLinks(clusteredData.links);
-                              setIsClustered(true);
-                              setCtxSearchStatus(null);
-                              setCtxIsSearching(false);
-                            } catch (err: any) {
-                              console.error('[Clustering] Error:', err);
-                              setCtxSearchError(err.message || 'Clustering failed');
-                              setCtxSearchStatus(null);
-                              setCtxIsSearching(false);
-                            }
-                          }}
-                          className="px-6 py-3 bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white font-medium rounded-lg hover:shadow-lg hover:shadow-[#f59e0b]/20 transition-all duration-200"
-                        >
-                          <i className="fas fa-project-diagram mr-2"></i>
-                          Use Clustering ({Math.ceil(nodeCount / 50)}-{Math.ceil(nodeCount / 20)} clusters)
-                        </button>
-                        <div className="px-4 py-2 bg-[#16222a] border border-white/10 rounded text-slate-400 text-xs text-center">
-                          <i className="fas fa-lightbulb text-[#f59e0b] mr-2"></i>
-                          Or try filtering with specific predicates or entity names
+                                // Only update visualization data, keep astData intact for SOURCE NAVIGATOR
+                                setFileScopedNodes(clusteredData.nodes);
+                                setFileScopedLinks(clusteredData.links);
+                                setIsClustered(true);
+                                setCtxSearchStatus(null);
+                                setCtxIsSearching(false);
+                              } catch (err: any) {
+                                console.error('[Clustering] Error:', err);
+                                setCtxSearchError(err.message || 'Clustering failed');
+                                setCtxSearchStatus(null);
+                                setCtxIsSearching(false);
+                              }
+                            }}
+                            className="px-6 py-3 bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white font-medium rounded-lg hover:shadow-lg hover:shadow-[#f59e0b]/20 transition-all duration-200"
+                          >
+                            <i className="fas fa-project-diagram mr-2"></i>
+                            Use Clustering ({Math.ceil(nodeCount / 50)}-{Math.ceil(nodeCount / 20)} clusters)
+                          </button>
+                          <div className="px-4 py-2 bg-[#16222a] border border-white/10 rounded text-slate-400 text-xs text-center">
+                            <i className="fas fa-lightbulb text-[#f59e0b] mr-2"></i>
+                            Or try filtering with specific predicates or entity names
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                );
-              }
+                  );
+                }
 
-              return (
-                <>
-
+                return (
+                  <>
 
 
-                  {viewMode === 'architecture' ? (
-                    <div className="w-full h-full bg-[#0d171d] relative z-0">
-                      <ClassDiagramCanvas
-                        nodes={fileScopedNodes}
-                        links={fileScopedLinks}
-                        onNodeClick={handleClassDiagramNodeClick}
-                        width={window.innerWidth - sidebarWidth - codePanelWidth}
-                        height={window.innerHeight - 56}
+
+                    {viewMode === 'architecture' ? (
+                      <div className="w-full h-full bg-[#0d171d] relative z-0">
+                        <ClassDiagramCanvas
+                          nodes={fileScopedNodes}
+                          links={fileScopedLinks}
+                          onNodeClick={handleClassDiagramNodeClick}
+                          width={window.innerWidth - sidebarWidth - codePanelWidth}
+                          height={window.innerHeight - 56}
+                        />
+                      </div>
+                    ) : (
+                      <TreeVisualizer
+                        data={filteredAstData}
+                        onNodeSelect={handleNodeSelect}
+                        onNodeHover={() => { }}
+                        mode={viewMode}
+                        selectedId={selectedNode?.id}
+                        fileScopedData={filteredFileScopedData}
+                        skipFlowZoom={skipFlowZoom}
+                        expandedFileIds={expandedFileIds}
+                        onToggleFileExpansion={toggleFileExpansion}
+                        expandingFileId={expandingFileId}
                       />
-                    </div>
-                  ) : (
-                    <TreeVisualizer
-                      data={filteredAstData}
-                      onNodeSelect={handleNodeSelect}
-                      onNodeHover={() => { }}
-                      mode={viewMode}
-                      selectedId={selectedNode?.id}
-                      fileScopedData={filteredFileScopedData}
-                      skipFlowZoom={skipFlowZoom}
-                      expandedFileIds={expandedFileIds}
-                      onToggleFileExpansion={toggleFileExpansion}
-                      expandingFileId={expandingFileId}
-                    />
-                  )}
-                </>
-              );
-            })()}
-          </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
 
-          <CodePanel
-            width={codePanelWidth}
-            isCollapsed={isCodeCollapsed}
-            onToggleCollapse={() => setIsCodeCollapsed(!isCodeCollapsed)}
-            onStartResize={startResizeCodePanel}
-          >
-            <SynthesisPanel
-              height={synthesisHeight}
-              isCollapsed={isSynthesisCollapsed}
-              onToggleCollapse={() => setIsSynthesisCollapsed(!isSynthesisCollapsed)}
-              onStartResize={startResizeSynthesis}
-              onAnalyze={generateInsights}
-              onClearInsight={() => setNodeInsight(null)}
-              onLinkClick={handleMarkdownLinkClick}
-              onSymbolClick={handleMarkdownSymbolClick}
-            />
-          </CodePanel>
-        </div>
+            <CodePanel
+              width={codePanelWidth}
+              isCollapsed={isCodeCollapsed}
+              onToggleCollapse={() => setIsCodeCollapsed(!isCodeCollapsed)}
+              onStartResize={startResizeCodePanel}
+            >
+              <SynthesisPanel
+                height={synthesisHeight}
+                isCollapsed={isSynthesisCollapsed}
+                onToggleCollapse={() => setIsSynthesisCollapsed(!isSynthesisCollapsed)}
+                onStartResize={startResizeSynthesis}
+                onAnalyze={generateInsights}
+                onClearInsight={() => setNodeInsight(null)}
+                onLinkClick={handleMarkdownLinkClick}
+                onSymbolClick={handleMarkdownSymbolClick}
+              />
+            </CodePanel>
+          </div>
+        )}
 
 
         <footer className="h-10 border-t border-white/5 flex items-center px-6 gap-8 bg-[#0a1118] text-[9px] shrink-0 font-mono tracking-widest">

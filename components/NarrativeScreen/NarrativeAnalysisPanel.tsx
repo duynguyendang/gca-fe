@@ -35,7 +35,7 @@ const NarrativeAnalysisPanel: React.FC<NarrativeAnalysisPanelProps> = ({
             case 'summary': return { icon: '●', color: 'text-[#10b981]' };
             case 'inconsistency': return { icon: '⚠', color: 'text-[#f59e0b]' };
             case 'gravity': return { icon: '●', color: 'text-slate-500' };
-            default: return { icon: '●', color: 'text-[#00f2ff]' };
+            default: return { icon: '●', color: 'text-[var(--accent-blue)]' };
         }
     };
 
@@ -47,7 +47,7 @@ const NarrativeAnalysisPanel: React.FC<NarrativeAnalysisPanelProps> = ({
             <div
                 key={idx}
                 className={`mb-6 section-slide-in ${isBgCard
-                    ? 'bg-[#16222a]/80 border border-white/5 rounded-lg p-5 relative overflow-hidden'
+                    ? 'bg-[#1e293b] border border-red-500/20 rounded-lg p-5 relative overflow-hidden font-mono shadow-[0_0_15px_rgba(245,158,11,0.1)]'
                     : ''
                     }`}
                 style={{ animationDelay: `${idx * 120}ms` }}
@@ -73,7 +73,7 @@ const NarrativeAnalysisPanel: React.FC<NarrativeAnalysisPanelProps> = ({
                 </div>
 
                 {section.actionLabel && (
-                    <button className="mt-4 text-[10px] font-black uppercase tracking-[0.2em] text-[#00f2ff] hover:text-[#00f2ff]/80 transition-colors flex items-center gap-2 group">
+                    <button className="mt-4 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--accent-blue)] hover:text-[var(--accent-blue)]/80 transition-colors flex items-center gap-2 group">
                         {section.actionLabel}
                         <i className="fas fa-wand-magic-sparkles text-[8px] group-hover:rotate-12 transition-transform"></i>
                     </button>
@@ -85,13 +85,13 @@ const NarrativeAnalysisPanel: React.FC<NarrativeAnalysisPanelProps> = ({
     const aiMessages = narrativeMessages.filter(m => m.role === 'ai');
 
     return (
-        <div className="h-full flex flex-col bg-[#0d171d] border-l border-white/10">
+        <div className="h-full flex flex-col bg-[var(--bg-surface)] border-l border-[var(--border)]">
             {/* Header */}
             <div className="p-5 pb-4 shrink-0">
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
-                        <div className="w-5 h-5 rounded bg-[#00f2ff]/20 flex items-center justify-center">
-                            <i className="fas fa-cog text-[#00f2ff] text-[10px] animate-spin" style={{ animationDuration: '4s' }}></i>
+                        <div className="w-5 h-5 rounded bg-[var(--accent-blue)]/20 flex items-center justify-center">
+                            <i className="fas fa-cog text-[var(--accent-blue)] text-[10px] animate-spin" style={{ animationDuration: '4s' }}></i>
                         </div>
                         <h2 className="text-sm font-bold text-white tracking-tight">AI Narrative Analysis</h2>
                     </div>
@@ -107,7 +107,7 @@ const NarrativeAnalysisPanel: React.FC<NarrativeAnalysisPanelProps> = ({
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
                             className={`px-4 py-2 text-[9px] font-black uppercase tracking-[0.2em] border rounded transition-all ${activeTab === tab.id
-                                ? 'bg-[#00f2ff]/10 border-[#00f2ff]/40 text-[#00f2ff]'
+                                ? 'bg-[var(--accent-blue)]/10 border-[var(--accent-blue)]/40 text-[var(--accent-blue)]'
                                 : 'bg-transparent border-white/10 text-slate-500 hover:text-slate-300 hover:border-white/20'
                                 }`}
                         >
@@ -156,15 +156,15 @@ const NarrativeAnalysisPanel: React.FC<NarrativeAnalysisPanelProps> = ({
                         {/* Loading State */}
                         {isNarrativeLoading && (
                             <div className="mb-6 section-slide-in">
-                                <div className="text-[9px] font-black uppercase tracking-[0.25em] text-[#00f2ff] mb-3 flex items-center gap-2">
+                                <div className="text-[9px] font-black uppercase tracking-[0.25em] text-[var(--accent-blue)] mb-3 flex items-center gap-2">
                                     <i className="fas fa-circle-notch animate-spin text-[8px]"></i>
                                     REASONING...
                                 </div>
                                 <div className="space-y-3">
-                                    <div className="h-3 bg-[#16222a] rounded animate-pulse" style={{ width: '80%' }}></div>
-                                    <div className="h-3 bg-[#16222a] rounded animate-pulse" style={{ width: '60%' }}></div>
-                                    <div className="h-3 bg-[#16222a] rounded animate-pulse" style={{ width: '70%' }}></div>
-                                    <div className="h-3 bg-[#16222a] rounded animate-pulse" style={{ width: '45%' }}></div>
+                                    <div className="h-3 bg-[#1e293b] rounded animate-pulse" style={{ width: '80%' }}></div>
+                                    <div className="h-3 bg-[#1e293b] rounded animate-pulse" style={{ width: '60%' }}></div>
+                                    <div className="h-3 bg-[#1e293b] rounded animate-pulse" style={{ width: '70%' }}></div>
+                                    <div className="h-3 bg-[#1e293b] rounded animate-pulse" style={{ width: '45%' }}></div>
                                 </div>
                             </div>
                         )}

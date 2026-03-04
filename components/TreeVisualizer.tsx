@@ -20,7 +20,7 @@ const getShortName = (d: any): string => {
 
 const getNodeStyle = (node: any) => {
   const kind = node.kind?.toLowerCase();
-  switch(kind) {
+  switch (kind) {
     case 'func':
     case 'function': return { color: '#6366f1', glow: 'rgba(99, 102, 241, 0.4)' };
     case 'struct': return { color: '#10b981', glow: 'rgba(16, 185, 129, 0.4)' };
@@ -57,7 +57,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
 
   const processedData = useMemo(() => {
     if (!data || !('nodes' in data)) return null;
-    
+
     const nodes = data.nodes.map(d => ({ ...d }));
     const links = data.links.map(d => {
       const sourceId = typeof d.source === 'object' ? (d.source as any).id : d.source;
@@ -83,7 +83,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
     if (!processedData || !containerRef.current) return;
     const width = containerRef.current.clientWidth;
     const height = containerRef.current.clientHeight;
-    
+
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
     const g = svg.append("g");
@@ -107,7 +107,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
       .on("zoom", (e) => g.attr("transform", e.transform));
     svg.call(zoom);
 
-    switch(mode) {
+    switch (mode) {
       case 'force': renderNetwork(g, width, height, zoom); break;
       case 'radial': renderRadial(g, width, height); break;
       case 'circlePacking': renderPacking(g, width, height); break;
@@ -226,8 +226,8 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
     } else {
       nodeGroup.transition().duration(800).ease(d3.easeCubicOut)
         .attrTween("transform", (d: any) => {
-          const ix = d3.interpolate(d.x || width/2, d.fx);
-          const iy = d3.interpolate(d.y || height/2, d.fy);
+          const ix = d3.interpolate(d.x || width / 2, d.fx);
+          const iy = d3.interpolate(d.y || height / 2, d.fy);
           return (t) => {
             d.x = ix(t); d.y = iy(t);
             updatePositions();
@@ -241,7 +241,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
       if (selected) {
         d3.select(svgRef.current).transition().duration(750).call(
           zoom.transform,
-          d3.zoomIdentity.translate(width / 2, height / 2).scale(1.5).translate(-(selected as any).x || -width/2, -(selected as any).y || -height/2)
+          d3.zoomIdentity.translate(width / 2, height / 2).scale(1.5).translate(-(selected as any).x || -width / 2, -(selected as any).y || -height / 2)
         );
       }
     }
@@ -278,7 +278,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
     depthGroups.forEach((group, depth) => { const step = (height - 200) / (group.length + 1); group.forEach((n, i) => (n.y = (i + 1) * step + 100)); });
     const linksSankey = links.map(d => ({ source: nodesSankey.find(n => n.id === (d.source as any).id), target: nodesSankey.find(n => n.id === (d.target as any).id) })).filter(l => l.source && l.target);
     g.append("g").attr("fill", "none").attr("stroke", "#4f46e5").attr("stroke-opacity", 0.15).selectAll("path").data(linksSankey).join("path")
-      .attr("d", (d: any) => { const x0 = d.source.x, y0 = d.source.y, x1 = d.target.x, y1 = d.target.y; return `M${x0},${y0}C${(x0+x1)/2},${y0} ${(x0+x1)/2},${y1} ${x1},${y1}`; }).attr("stroke-width", 2);
+      .attr("d", (d: any) => { const x0 = d.source.x, y0 = d.source.y, x1 = d.target.x, y1 = d.target.y; return `M${x0},${y0}C${(x0 + x1) / 2},${y0} ${(x0 + x1) / 2},${y1} ${x1},${y1}`; }).attr("stroke-width", 2);
     const node = g.selectAll("g.sn").data(nodesSankey).join("g").attr("class", "sn").attr("transform", (d: any) => `translate(${d.x},${d.y})`).on("click", (e, d) => onNodeSelect(d));
     node.append("rect").attr("x", -5).attr("y", -15).attr("width", 10).attr("height", 30).attr("rx", 3).attr("fill", d => getNodeStyle(d).color).attr("stroke", d => d.id === selectedId ? "#fff" : "none");
     node.append("text").attr("x", 12).attr("dy", "0.35em").attr("font-size", "10px").attr("fill", "#f1f5f9").text(d => getShortName(d));
@@ -288,9 +288,9 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
     <div ref={containerRef} className="w-full h-full relative bg-[#020617] cursor-crosshair">
       <svg ref={svgRef} className="w-full h-full absolute inset-0" />
       <div className="absolute bottom-6 right-6 w-32 h-32 bg-slate-900/40 backdrop-blur-md border border-slate-800 rounded-xl overflow-hidden pointer-events-none opacity-50 border-dashed">
-         <div className="w-full h-full flex items-center justify-center">
-            <i className="fas fa-map text-slate-800 text-3xl"></i>
-         </div>
+        <div className="w-full h-full flex items-center justify-center">
+          <i className="fas fa-map text-slate-800 text-3xl"></i>
+        </div>
       </div>
     </div>
   );

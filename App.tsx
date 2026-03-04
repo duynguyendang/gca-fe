@@ -1114,24 +1114,16 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen w-screen bg-[#0a1118] text-slate-400 overflow-hidden font-sans">
+    <div className="flex h-screen w-screen bg-[var(--bg-main)] text-slate-400 overflow-hidden font-sans">
       <aside
         style={{ width: sidebarWidth }}
         className="glass-sidebar flex flex-col z-30 shrink-0 shadow-2xl relative"
       >
-        <div className="p-6 border-b border-white/5 flex items-center gap-3 shrink-0">
-          <div className="w-8 h-8 rounded bg-[#00f2ff] flex items-center justify-center text-[#0a1118] font-black shadow-[0_0_15px_rgba(0,242,255,0.4)]">G</div>
-          <div>
-            <h1 className="text-sm font-bold text-white tracking-tight uppercase italic">GCA EXPLORER</h1>
-            <p className="text-[10px] text-slate-500 font-mono tracking-tighter">PROJECT ANALYZER</p>
-          </div>
-        </div>
-
         <div className="p-4 space-y-6 flex-1 overflow-y-auto custom-scrollbar">
           <div>
             <h2 className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600 mb-3 px-2 flex justify-between">
               <span>ACTIVE PROJECT</span>
-              {dataApiBase && <i className={`fas fa-plug text-[8px] ${isDataSyncing ? 'text-[#00f2ff] animate-pulse' : 'text-[#10b981]'}`}></i>}
+              {dataApiBase && <i className={`fas fa-plug text-[8px] ${isDataSyncing ? 'text-[var(--accent-teal)] animate-pulse' : 'text-[#10b981]'}`}></i>}
             </h2>
 
             {availableProjects.length > 0 ? (
@@ -1147,7 +1139,7 @@ const App: React.FC = () => {
                     syncDataFromApi(dataApiBase, newProjectId);
                   }
                 }}
-                className="w-full bg-[#16222a] border border-white/5 rounded px-3 py-2 text-[11px] text-white focus:outline-none focus:border-[#00f2ff]/50 font-mono"
+                className="w-full bg-[#16222a] border border-white/5 rounded px-3 py-2 text-[11px] text-white focus:outline-none focus:border-[var(--accent-teal)]/50 font-mono"
               >
                 <option value="">-- Select a project --</option>
                 {availableProjects.map((project: { id: string; name: string; description?: string }) => (
@@ -1158,7 +1150,7 @@ const App: React.FC = () => {
               </select>
             ) : (
               <div className="w-full bg-[#16222a] border border-white/5 rounded px-3 py-2 text-[11px] text-white truncate font-medium flex items-center gap-2">
-                <i className="fas fa-cube text-[#00f2ff] text-[10px]"></i> {currentProject}
+                <i className="fas fa-cube text-[var(--accent-teal)] text-[10px]"></i> {currentProject}
               </div>
             )}
           </div>
@@ -1186,7 +1178,7 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-4 border-t border-white/5 shrink-0 bg-[#0d171d] space-y-2">
+        <div className="p-4 border-t border-white/5 shrink-0 bg-[var(--bg-surface)] space-y-2">
 
           {dataApiBase && (
             <button
@@ -1200,24 +1192,32 @@ const App: React.FC = () => {
 
         <div
           onMouseDown={startResizeSidebar}
-          className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[#00f2ff]/20 active:bg-[#00f2ff]/50 transition-colors z-40"
+          className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[var(--accent-teal)]/20 active:bg-[var(--accent-teal)]/50 transition-colors z-40"
         />
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-14 border-b border-white/5 flex items-center px-6 gap-6 bg-[#0a1118]/90 backdrop-blur-md z-20 shrink-0">
+        <header className="h-14 border-b border-white/5 flex items-center px-6 gap-6 bg-[var(--bg-main)]/90 backdrop-blur-md z-20 shrink-0">
+
+          {/* Logo & Project Section (Top-Left) */}
+          <div className="flex flex-col shrink-0 min-w-[180px]">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded bg-[var(--accent-teal)] flex items-center justify-center text-[var(--bg-main)] font-black shadow-[0_0_15px_rgba(45,212,191,0.4)]">G</div>
+              <div>
+                <h1 className="text-sm font-bold text-white tracking-tight uppercase italic line-clamp-1">GCA EXPLORER</h1>
+                <p className="text-[9px] text-[var(--accent-teal)] font-mono tracking-widest uppercase line-clamp-1 opacity-80">{currentProject || "NO PROJECT"}</p>
+              </div>
+            </div>
+          </div>
+
           <div className="flex-1 flex items-center justify-center">
-            <div className={`flex items-center bg-[#16222a] border ${isSearching ? 'border-[#00f2ff] shadow-[0_0_15px_-3px_rgba(0,242,255,0.3)]' : 'border-white/10 hover:border-white/20'} rounded-full px-1.5 py-1.5 w-full max-w-2xl shadow-xl transition-all relative group`}>
-              <button
-                onClick={setNarrativeMode}
-                className="px-3 py-1.5 rounded-full text-[10px] font-black bg-[#00f2ff]/10 text-[#00f2ff] border border-[#00f2ff]/20 mr-2 uppercase tracking-wide flex items-center gap-1.5 hover:bg-[#00f2ff]/20 transition-all cursor-pointer"
-              >
-                <i className="fas fa-sparkles"></i>
-                Ask AI
-              </button>
+            <div className={`flex items-center bg-[#16222a] border ${isSearching ? 'border-[var(--accent-teal)] shadow-[0_0_15px_-3px_rgba(45,212,191,0.3)]' : 'border-white/10 hover:border-white/20'} rounded-full px-1.5 py-1.5 w-full max-w-2xl shadow-xl transition-all relative group`}>
+              <div className="flex items-center justify-center w-10 h-8 text-slate-500">
+                <i className={`fas ${viewMode === 'narrative' ? 'fa-bolt text-[var(--accent-blue)]' : 'fa-magnifying-glass'} text-xs`}></i>
+              </div>
               <input
                 type="text"
-                placeholder='Ask a question (e.g. "How does Auth work?") or search symbols...'
+                placeholder={viewMode === 'narrative' ? 'Ask me to explain a logic flow or predict a bottleneck...' : 'Ask a question (e.g. "How does Auth work?") or search symbols...'}
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
@@ -1246,7 +1246,7 @@ const App: React.FC = () => {
 
               {/* Search Status Indicator */}
               {searchStatus && (
-                <div className="absolute top-[80%] right-4 text-[10px] text-[#00f2ff] font-mono animate-pulse bg-[#0a1118]/80 px-2 py-1 rounded">
+                <div className="absolute top-[80%] right-4 text-[10px] text-[var(--accent-teal)] font-mono animate-pulse bg-[var(--bg-main)]/80 px-2 py-1 rounded">
                   <i className="fas fa-circle-notch animate-spin mr-2"></i>
                   {searchStatus}
                 </div>
@@ -1262,7 +1262,7 @@ const App: React.FC = () => {
                     {searchHistory.map((q, i) => (
                       <div
                         key={i}
-                        className="px-4 py-2.5 text-[11px] text-slate-300 hover:bg-[#00f2ff]/10 hover:text-[#00f2ff] cursor-pointer transition-colors border-b border-white/5 last:border-0 flex items-center gap-3"
+                        className="px-4 py-2.5 text-[11px] text-slate-300 hover:bg-[var(--accent-teal)]/10 hover:text-[var(--accent-teal)] cursor-pointer transition-colors border-b border-white/5 last:border-0 flex items-center gap-3"
                         onClick={() => {
                           setSearchTerm(q);
                           handleSmartSearch(q);
@@ -1277,11 +1277,11 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              {isSearching && <i className="fas fa-circle-notch fa-spin text-[#00f2ff] text-xs absolute right-12"></i>}
+              {isSearching && <i className="fas fa-circle-notch fa-spin text-[var(--accent-teal)] text-xs absolute right-12"></i>}
 
               {/* Query results summary */}
               {(queryResults || searchError) && !isSearching && (
-                <div className="absolute top-full left-0 right-0 mt-3 bg-[#0d171d]/95 backdrop-blur-xl border border-[#00f2ff]/30 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="absolute top-full left-0 right-0 mt-3 bg-[var(--bg-surface)]/95 backdrop-blur-xl border border-[var(--accent-teal)]/30 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="flex items-start justify-between">
                     {searchError ? (
                       <div className="text-[11px] text-red-400 font-bold flex items-start gap-2">
@@ -1289,7 +1289,7 @@ const App: React.FC = () => {
                         <span>{searchError}</span>
                       </div>
                     ) : (
-                      <div className="text-[11px] text-[#00f2ff] font-bold flex items-center gap-2">
+                      <div className="text-[11px] text-[var(--accent-teal)] font-bold flex items-center gap-2">
                         <i className="fas fa-check-circle"></i>
                         Found {queryResults.nodes?.length || 0} symbols.
                         <span className="text-slate-500 font-normal ml-1">AI Context Loaded.</span>
@@ -1318,217 +1318,195 @@ const App: React.FC = () => {
               <button
                 onClick={runSearch}
                 disabled={!searchTerm || isSearching}
-                className="w-8 h-8 rounded-full bg-[#00f2ff] flex items-center justify-center text-[#0a1118] text-[10px] disabled:opacity-50 hover:scale-105 active:scale-95 transition-all shadow-[0_0_10px_rgba(0,242,255,0.4)] ml-1"
+                className="w-8 h-8 rounded-full bg-[var(--accent-teal)] flex items-center justify-center text-[#0a1118] text-[10px] disabled:opacity-50 hover:scale-105 active:scale-95 transition-all shadow-[0_0_10px_rgba(45,212,191,0.4)] ml-1"
               >
                 <i className="fas fa-arrow-right"></i>
               </button>
             </div>
           </div>
 
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={setDiscoveryMode}
-              className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'discovery'
-                ? 'bg-[#00f2ff] border-[#00f2ff] text-[#0a1118]'
-                : 'bg-[#16222a] border-white/5 text-[#00f2ff] hover:bg-white/5'
-                }`}
-            >
-              Discovery
-            </button>
-
-            <button
-              onClick={setArchitectureMode}
-              className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'architecture'
-                ? 'bg-[#a855f7] border-[#a855f7] text-[#0a1118]'
-                : 'bg-[#16222a] border-white/5 text-[#a855f7] hover:bg-white/5'
-                }`}
-            >
-              Architecture
-            </button>
-
-            <button
-              onClick={setMapMode}
-              className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'map'
-                ? 'bg-[#f59e0b] border-[#f59e0b] text-[#0a1118]'
-                : 'bg-[#16222a] border-white/5 text-[#f59e0b] hover:bg-white/5'
-                }`}
-            >
-              Map
-            </button>
-
-            <button
-              onClick={setNarrativeMode}
-              className={`px-3 py-1.5 text-[8px] font-black uppercase tracking-widest border rounded transition-all ${viewMode === 'narrative'
-                ? 'bg-[#10b981] border-[#10b981] text-[#0a1118]'
-                : 'bg-[#16222a] border-white/5 text-[#10b981] hover:bg-white/5'
-                }`}
-            >
-              <i className="fas fa-brain mr-1"></i>
-              Narrative
-            </button>
-
-          </div>
-
-          <div className="ml-auto flex gap-5 items-center">
-            <div className="flex flex-col items-end">
-              <span className="text-[10px] text-white font-bold leading-none">View Mode</span>
-              <span className={`text-[8px] font-black uppercase tracking-widest ${viewMode === 'map' ? 'text-[#f59e0b]' :
-                viewMode === 'backbone' ? 'text-[#a855f7]' : 'text-[#00f2ff]'
-                }`}>
-                {viewMode === 'map' ? 'MAP' : viewMode === 'backbone' ? 'BACKBONE' : 'DISCOVERY'}
-              </span>
+          {/* View Mode Switcher (Top-Right) */}
+          <div className="ml-auto flex items-center">
+            <div className="view-switcher" style={{ '--glow-color': viewMode === 'narrative' ? 'var(--accent-blue)' : viewMode === 'architecture' ? 'var(--accent-purple)' : viewMode === 'map' ? '#f59e0b' : 'var(--accent-teal)' } as any}>
+              <button
+                className={viewMode === 'discovery' ? 'active' : ''}
+                onClick={setDiscoveryMode}
+              >
+                DISCOVERY
+              </button>
+              <button
+                className={viewMode === 'architecture' ? 'active' : ''}
+                onClick={setArchitectureMode}
+              >
+                ARCHITECTURE
+              </button>
+              <button
+                className={viewMode === 'map' ? 'active' : ''}
+                onClick={setMapMode}
+              >
+                MAP
+              </button>
+              <button
+                className={viewMode === 'narrative' ? 'active' : ''}
+                onClick={setNarrativeMode}
+              >
+                <i className="fas fa-brain mr-1.5 opacity-80"></i>
+                NARRATIVE
+              </button>
             </div>
-            <div className="h-8 w-px bg-white/5"></div>
+
+            <div className="h-8 w-px bg-white/10 mx-5 rounded"></div>
             <i
-              className="fas fa-cog text-slate-600 hover:text-white cursor-pointer transition-colors text-xs"
+              className="fas fa-cog text-slate-500 hover:text-white cursor-pointer transition-colors text-sm"
               onClick={openSettings}
             ></i>
           </div>
         </header>
 
-        {viewMode === 'narrative' ? (
-          <NarrativeScreen
-            onNodeSelect={handleNodeSelect}
-            onLinkClick={handleMarkdownLinkClick}
-            onSymbolClick={handleMarkdownSymbolClick}
-          />
-        ) : (
-          <div className="flex-1 flex min-h-0">
-            <div className="flex-1 relative dot-grid overflow-hidden bg-[#0a1118]">
-              {(() => {
-                // Use fileScopedNodes for visualization count (includes clustered nodes)
-                const visualizationNodeCount = fileScopedNodes.length;
-                const nodeCount = (astData as any).nodes?.length || 0;
-                const linkCount = (astData as any).links?.length || 0;
-                const tooManyNodes = visualizationNodeCount > 1000 && !isClustered;
+        <div className="relative flex-1 flex flex-col min-h-0 view-crossfade-enter" key={viewMode}>
+          {viewMode === 'narrative' ? (
+            <NarrativeScreen
+              onNodeSelect={handleNodeSelect}
+              onLinkClick={handleMarkdownLinkClick}
+              onSymbolClick={handleMarkdownSymbolClick}
+            />
+          ) : (
+            <div className="flex-1 flex min-h-0">
+              <div className="flex-1 relative dot-grid overflow-hidden bg-[var(--bg-main)]">
+                {(() => {
+                  // Use fileScopedNodes for visualization count (includes clustered nodes)
+                  const visualizationNodeCount = fileScopedNodes.length;
+                  const nodeCount = (astData as any).nodes?.length || 0;
+                  const linkCount = (astData as any).links?.length || 0;
+                  const tooManyNodes = visualizationNodeCount > 1000 && !isClustered;
 
-                console.log('[DEBUG] AppIIFE Render:', {
-                  viewMode,
-                  nodeCount,
-                  visualizationNodeCount,
-                  tooManyNodes,
-                  hasData: !!astData,
-                  fileScopedDataHeight: fileScopedNodes.length,
-                  isClustered
-                });
+                  console.log('[DEBUG] AppIIFE Render:', {
+                    viewMode,
+                    nodeCount,
+                    visualizationNodeCount,
+                    tooManyNodes,
+                    hasData: !!astData,
+                    fileScopedDataHeight: fileScopedNodes.length,
+                    isClustered
+                  });
 
-                if (tooManyNodes) {
-                  return (
-                    <div className="absolute inset-0 flex items-center justify-center p-8">
-                      <div className="text-center max-w-lg">
-                        <div className="w-20 h-20 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mx-auto mb-6">
-                          <i className="fas fa-exclamation-triangle text-3xl text-red-400"></i>
-                        </div>
-                        <h2 className="text-lg font-bold text-white mb-3">Graph Too Large</h2>
-                        <p className="text-sm text-slate-400 mb-4">
-                          The visualization contains <span className="text-[#f59e0b] font-bold">{nodeCount.toLocaleString()} nodes</span> and <span className="text-[#f59e0b] font-bold">{linkCount.toLocaleString()} links</span>.
-                        </p>
-                        <p className="text-xs text-slate-500 leading-relaxed mb-6">
-                          Rendering graphs with more than 1,000 nodes can cause significant performance issues and browser slowdowns.
-                          <br /><br />
-                          Use clustering to group related nodes into communities, or refine your query to reduce the result size.
-                        </p>
-                        <div className="flex flex-col gap-3">
-                          <button
-                            onClick={async () => {
-                              try {
-                                // Fallback to a default query if lastExecutedQuery is empty
-                                const queryToUse = lastExecutedQuery || 'query(?x) :- triples(?x, "defines", ?y)';
-                                console.log('[Clustering] Using query:', queryToUse);
+                  if (tooManyNodes) {
+                    return (
+                      <div className="absolute inset-0 flex items-center justify-center p-8">
+                        <div className="text-center max-w-lg">
+                          <div className="w-20 h-20 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mx-auto mb-6">
+                            <i className="fas fa-exclamation-triangle text-3xl text-red-400"></i>
+                          </div>
+                          <h2 className="text-lg font-bold text-white mb-3">Graph Too Large</h2>
+                          <p className="text-sm text-slate-400 mb-4">
+                            The visualization contains <span className="text-[#f59e0b] font-bold">{nodeCount.toLocaleString()} nodes</span> and <span className="text-[#f59e0b] font-bold">{linkCount.toLocaleString()} links</span>.
+                          </p>
+                          <p className="text-xs text-slate-500 leading-relaxed mb-6">
+                            Rendering graphs with more than 1,000 nodes can cause significant performance issues and browser slowdowns.
+                            <br /><br />
+                            Use clustering to group related nodes into communities, or refine your query to reduce the result size.
+                          </p>
+                          <div className="flex flex-col gap-3">
+                            <button
+                              onClick={async () => {
+                                try {
+                                  // Fallback to a default query if lastExecutedQuery is empty
+                                  const queryToUse = lastExecutedQuery || 'query(?x) :- triples(?x, "defines", ?y)';
+                                  console.log('[Clustering] Using query:', queryToUse);
 
-                                setCtxIsSearching(true);
-                                setCtxSearchStatus('Applying Leiden clustering...');
-                                const { getClusteredGraph } = await import('./services/graphService');
-                                const clusteredData = await getClusteredGraph(dataApiBase, selectedProjectId, queryToUse);
-                                console.log('[Clustering] Received data:', clusteredData);
+                                  setCtxIsSearching(true);
+                                  setCtxSearchStatus('Applying Leiden clustering...');
+                                  const { getClusteredGraph } = await import('./services/graphService');
+                                  const clusteredData = await getClusteredGraph(dataApiBase, selectedProjectId, queryToUse);
+                                  console.log('[Clustering] Received data:', clusteredData);
 
-                                // Only update visualization data, keep astData intact for SOURCE NAVIGATOR
-                                setFileScopedNodes(clusteredData.nodes);
-                                setFileScopedLinks(clusteredData.links);
-                                setIsClustered(true);
-                                setCtxSearchStatus(null);
-                                setCtxIsSearching(false);
-                              } catch (err: any) {
-                                console.error('[Clustering] Error:', err);
-                                setCtxSearchError(err.message || 'Clustering failed');
-                                setCtxSearchStatus(null);
-                                setCtxIsSearching(false);
-                              }
-                            }}
-                            className="px-6 py-3 bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white font-medium rounded-lg hover:shadow-lg hover:shadow-[#f59e0b]/20 transition-all duration-200"
-                          >
-                            <i className="fas fa-project-diagram mr-2"></i>
-                            Use Clustering ({Math.ceil(nodeCount / 50)}-{Math.ceil(nodeCount / 20)} clusters)
-                          </button>
-                          <div className="px-4 py-2 bg-[#16222a] border border-white/10 rounded text-slate-400 text-xs text-center">
-                            <i className="fas fa-lightbulb text-[#f59e0b] mr-2"></i>
-                            Or try filtering with specific predicates or entity names
+                                  // Only update visualization data, keep astData intact for SOURCE NAVIGATOR
+                                  setFileScopedNodes(clusteredData.nodes);
+                                  setFileScopedLinks(clusteredData.links);
+                                  setIsClustered(true);
+                                  setCtxSearchStatus(null);
+                                  setCtxIsSearching(false);
+                                } catch (err: any) {
+                                  console.error('[Clustering] Error:', err);
+                                  setCtxSearchError(err.message || 'Clustering failed');
+                                  setCtxSearchStatus(null);
+                                  setCtxIsSearching(false);
+                                }
+                              }}
+                              className="px-6 py-3 bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white font-medium rounded-lg hover:shadow-lg hover:shadow-[#f59e0b]/20 transition-all duration-200"
+                            >
+                              <i className="fas fa-project-diagram mr-2"></i>
+                              Use Clustering ({Math.ceil(nodeCount / 50)}-{Math.ceil(nodeCount / 20)} clusters)
+                            </button>
+                            <div className="px-4 py-2 bg-[#16222a] border border-white/10 rounded text-slate-400 text-xs text-center">
+                              <i className="fas fa-lightbulb text-[#f59e0b] mr-2"></i>
+                              Or try filtering with specific predicates or entity names
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                }
+                    );
+                  }
 
-                return (
-                  <>
-
+                  return (
+                    <>
 
 
-                    {viewMode === 'architecture' ? (
-                      <div className="w-full h-full bg-[#0d171d] relative z-0">
-                        <ClassDiagramCanvas
-                          nodes={fileScopedNodes}
-                          links={fileScopedLinks}
-                          onNodeClick={handleClassDiagramNodeClick}
-                          width={window.innerWidth - sidebarWidth - codePanelWidth}
-                          height={window.innerHeight - 56}
+
+                      {viewMode === 'architecture' ? (
+                        <div className="w-full h-full bg-[var(--bg-surface)] relative z-0">
+                          <ClassDiagramCanvas
+                            nodes={fileScopedNodes}
+                            links={fileScopedLinks}
+                            onNodeClick={handleClassDiagramNodeClick}
+                            width={window.innerWidth - sidebarWidth - codePanelWidth}
+                            height={window.innerHeight - 56}
+                          />
+                        </div>
+                      ) : (
+                        <TreeVisualizer
+                          data={filteredAstData}
+                          onNodeSelect={handleNodeSelect}
+                          onNodeHover={() => { }}
+                          mode={viewMode}
+                          selectedId={selectedNode?.id}
+                          fileScopedData={filteredFileScopedData}
+                          skipFlowZoom={skipFlowZoom}
+                          expandedFileIds={expandedFileIds}
+                          onToggleFileExpansion={toggleFileExpansion}
+                          expandingFileId={expandingFileId}
                         />
-                      </div>
-                    ) : (
-                      <TreeVisualizer
-                        data={filteredAstData}
-                        onNodeSelect={handleNodeSelect}
-                        onNodeHover={() => { }}
-                        mode={viewMode}
-                        selectedId={selectedNode?.id}
-                        fileScopedData={filteredFileScopedData}
-                        skipFlowZoom={skipFlowZoom}
-                        expandedFileIds={expandedFileIds}
-                        onToggleFileExpansion={toggleFileExpansion}
-                        expandingFileId={expandingFileId}
-                      />
-                    )}
-                  </>
-                );
-              })()}
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+
+              <CodePanel
+                width={codePanelWidth}
+                isCollapsed={isCodeCollapsed}
+                onToggleCollapse={() => setIsCodeCollapsed(!isCodeCollapsed)}
+                onStartResize={startResizeCodePanel}
+                onStartVerticalResize={startResizeSynthesis}
+                codeHeight={synthesisHeight}
+              >
+                <SynthesisPanel
+                  isCollapsed={isSynthesisCollapsed}
+                  onToggleCollapse={() => setIsSynthesisCollapsed(!isSynthesisCollapsed)}
+                  onAnalyze={generateInsights}
+                  onClearInsight={() => setNodeInsight(null)}
+                  onLinkClick={handleMarkdownLinkClick}
+                  onSymbolClick={handleMarkdownSymbolClick}
+                />
+              </CodePanel>
             </div>
-
-            <CodePanel
-              width={codePanelWidth}
-              isCollapsed={isCodeCollapsed}
-              onToggleCollapse={() => setIsCodeCollapsed(!isCodeCollapsed)}
-              onStartResize={startResizeCodePanel}
-            >
-              <SynthesisPanel
-                height={synthesisHeight}
-                isCollapsed={isSynthesisCollapsed}
-                onToggleCollapse={() => setIsSynthesisCollapsed(!isSynthesisCollapsed)}
-                onStartResize={startResizeSynthesis}
-                onAnalyze={generateInsights}
-                onClearInsight={() => setNodeInsight(null)}
-                onLinkClick={handleMarkdownLinkClick}
-                onSymbolClick={handleMarkdownSymbolClick}
-              />
-            </CodePanel>
-          </div>
-        )}
+          )}
+        </div>
 
 
-        <footer className="h-10 border-t border-white/5 flex items-center px-6 gap-8 bg-[#0a1118] text-[9px] shrink-0 font-mono tracking-widest">
-          <div className="text-slate-600">ARTIFACTS: <span className="text-[#00f2ff] font-bold">{(astData as FlatGraph)?.nodes?.length || 0}</span></div>
-          <div className="text-slate-600">RELATIONS: <span className="text-[#00f2ff] font-bold">{(astData as FlatGraph)?.links?.length || 0}</span></div>
+        <footer className="h-10 border-t border-white/5 flex items-center px-6 gap-8 bg-[var(--bg-main)] text-[9px] shrink-0 font-mono tracking-widest">
+          <div className="text-slate-600">ARTIFACTS: <span className="text-[var(--accent-teal)] font-bold">{(astData as FlatGraph)?.nodes?.length || 0}</span></div>
+          <div className="text-slate-600">RELATIONS: <span className="text-[var(--accent-teal)] font-bold">{(astData as FlatGraph)?.links?.length || 0}</span></div>
           <div className="text-slate-600">ENDPOINT: <span className="text-[#10b981] font-bold uppercase truncate max-w-[100px]">{dataApiBase ? (() => {
             try {
               return new URL(dataApiBase).hostname;
@@ -1541,115 +1519,112 @@ const App: React.FC = () => {
             <div className="w-1.5 h-1.5 rounded-full bg-slate-800"></div>
           </div>
         </footer>
-      </div >
-
-      {/* Settings Modal */}
-      {
-        isSettingsOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#000]/80 backdrop-blur-sm p-4" onClick={() => console.log('Settings modal opened')}>
-            <div className="bg-[#0d171d] border border-white/10 rounded-lg shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
-              <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                <h3 className="text-sm font-black uppercase tracking-widest text-white">System Configuration</h3>
-                <button onClick={closeSettings} className="text-slate-500 hover:text-white transition-colors"><i className="fas fa-times"></i></button>
-              </div>
-              <div className="p-6 space-y-4">
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Data API Base URL</label>
-                  <input
-                    type="text"
-                    value={dataApiBase}
-                    onChange={(e) => {
-                      setDataApiBase(e.target.value);
-                      setAvailableProjects([]);
-                      setSelectedProjectId('');
-                    }}
-                    placeholder="http://localhost:8080"
-                    className={`w-full bg-[#0a1118] border rounded px-4 py-2.5 text-xs text-white focus:outline-none font-mono ${dataApiBase && (() => {
-                      try {
-                        new URL(dataApiBase);
-                        return 'border-white/10 focus:border-[#00f2ff]/50';
-                      } catch {
-                        return 'border-red-500/50 focus:border-red-500';
-                      }
-                    })()
-                      }`}
-                  />
-                  {dataApiBase && (() => {
+      </div>
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#000]/80 backdrop-blur-sm p-4" onClick={() => console.log('Settings modal opened')}>
+          <div className="bg-[var(--bg-surface)] border border-white/10 rounded-lg shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-white/5 flex items-center justify-between">
+              <h3 className="text-sm font-black uppercase tracking-widest text-white">System Configuration</h3>
+              <button onClick={closeSettings} className="text-slate-500 hover:text-white transition-colors"><i className="fas fa-times"></i></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Data API Base URL</label>
+                <input
+                  type="text"
+                  value={dataApiBase}
+                  onChange={(e) => {
+                    setDataApiBase(e.target.value);
+                    setAvailableProjects([]);
+                    setSelectedProjectId('');
+                  }}
+                  placeholder="http://localhost:8080"
+                  className={`w-full bg-[var(--bg-main)] border rounded px-4 py-2.5 text-xs text-white focus:outline-none font-mono ${dataApiBase && (() => {
                     try {
                       new URL(dataApiBase);
-                      return null;
+                      return 'border-white/10 focus:border-[var(--accent-teal)]/50';
                     } catch {
-                      return (
-                        <p className="mt-2 text-[9px] text-red-400">
-                          <i className="fas fa-exclamation-circle mr-1"></i>
-                          Invalid URL format. Include protocol (e.g., http://localhost:8080)
-                        </p>
-                      );
+                      return 'border-red-500/50 focus:border-red-500';
                     }
-                  })()}
-                  <p className="mt-2 text-[9px] text-slate-600 leading-normal">
-                    This endpoint will be used to fetch /v1/projects, /v1/files, and /v1/query.
-                    <br />After connecting, select a project from the sidebar dropdown.
-                  </p>
-                </div>
-
-                <div className="pt-4 border-t border-white/5">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Auto-Cluster Large Graphs</label>
-                    <div
-                      className={`w-8 h-4 rounded-full cursor-pointer relative transition-colors ${enableAutoClustering ? 'bg-[#10b981]' : 'bg-slate-700'}`}
-                      onClick={() => setEnableAutoClustering(!enableAutoClustering)}
-                    >
-                      <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${enableAutoClustering ? 'left-4.5' : 'left-0.5'}`} style={{ left: enableAutoClustering ? '18px' : '2px' }}></div>
-                    </div>
-                  </div>
-                  <p className="text-[9px] text-slate-600 leading-normal">
-                    Automatically switch to <strong>Map View</strong> (Clustered) when a project has more than 300 nodes to prevent performance issues.
-                  </p>
-                </div>
-
-
-
-                {syncError && (
-                  <div className="p-3 bg-red-500/10 border border-red-500/30 rounded text-[10px] text-red-400">
-                    <i className="fas fa-exclamation-circle mr-2"></i>
-                    {syncError}
-                  </div>
-                )}
-
-                {isDataSyncing && (
-                  <div className="p-3 bg-[#00f2ff]/10 border border-[#00f2ff]/30 rounded flex items-center gap-2 text-[10px] text-[#00f2ff]">
-                    <i className="fas fa-sync fa-spin"></i>
-                    Connecting to API...
-                  </div>
-                )}
-
-                {!isDataSyncing && availableProjects.length > 0 && (
-                  <div className="p-3 bg-[#10b981]/10 border border-[#10b981]/30 rounded text-[10px] text-[#10b981]">
-                    <i className="fas fa-check-circle mr-2"></i>
-                    Connected! Found {availableProjects.length} project(s). Select one from the sidebar.
-                  </div>
-                )}
+                  })()
+                    }`}
+                />
+                {dataApiBase && (() => {
+                  try {
+                    new URL(dataApiBase);
+                    return null;
+                  } catch {
+                    return (
+                      <p className="mt-2 text-[9px] text-red-400">
+                        <i className="fas fa-exclamation-circle mr-1"></i>
+                        Invalid URL format. Include protocol (e.g., http://localhost:8080)
+                      </p>
+                    );
+                  }
+                })()}
+                <p className="mt-2 text-[9px] text-slate-600 leading-normal">
+                  This endpoint will be used to fetch /v1/projects, /v1/files, and /v1/query.
+                  <br />After connecting, select a project from the sidebar dropdown.
+                </p>
               </div>
-              <div className="p-6 bg-[#0a1118]/50 flex justify-end gap-3">
-                <button
-                  onClick={() => syncDataFromApi(dataApiBase)}
-                  className="px-6 py-2 bg-[#10b981] text-[#0a1118] rounded-sm text-[9px] font-black uppercase tracking-widest hover:brightness-110 transition-all"
-                >
-                  Connect & Fetch Projects
-                </button>
-                {/* Focus Mode Toggle */}
 
-                <button
-                  onClick={closeSettings}
-                  className="px-6 py-2 bg-slate-800 text-white rounded-sm text-[9px] font-black uppercase tracking-widest hover:bg-slate-700 transition-all"
-                >
-                  Close
-                </button>
+              <div className="pt-4 border-t border-white/5">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Auto-Cluster Large Graphs</label>
+                  <div
+                    className={`w-8 h-4 rounded-full cursor-pointer relative transition-colors ${enableAutoClustering ? 'bg-[#10b981]' : 'bg-slate-700'}`}
+                    onClick={() => setEnableAutoClustering(!enableAutoClustering)}
+                  >
+                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${enableAutoClustering ? 'left-4.5' : 'left-0.5'}`} style={{ left: enableAutoClustering ? '18px' : '2px' }}></div>
+                  </div>
+                </div>
+                <p className="text-[9px] text-slate-600 leading-normal">
+                  Automatically switch to <strong>Map View</strong> (Clustered) when a project has more than 300 nodes to prevent performance issues.
+                </p>
               </div>
+
+
+
+              {syncError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded text-[10px] text-red-400">
+                  <i className="fas fa-exclamation-circle mr-2"></i>
+                  {syncError}
+                </div>
+              )}
+
+              {isDataSyncing && (
+                <div className="p-3 bg-[var(--accent-teal)]/10 border border-[var(--accent-teal)]/30 rounded flex items-center gap-2 text-[10px] text-[var(--accent-teal)]">
+                  <i className="fas fa-sync fa-spin"></i>
+                  Connecting to API...
+                </div>
+              )}
+
+              {!isDataSyncing && availableProjects.length > 0 && (
+                <div className="p-3 bg-[#10b981]/10 border border-[#10b981]/30 rounded text-[10px] text-[#10b981]">
+                  <i className="fas fa-check-circle mr-2"></i>
+                  Connected! Found {availableProjects.length} project(s). Select one from the sidebar.
+                </div>
+              )}
+            </div>
+            <div className="p-6 bg-[var(--bg-main)]/50 flex justify-end gap-3">
+              <button
+                onClick={() => syncDataFromApi(dataApiBase)}
+                className="px-6 py-2 bg-[#10b981] text-[var(--bg-main)] rounded-sm text-[9px] font-black uppercase tracking-widest hover:brightness-110 transition-all"
+              >
+                Connect & Fetch Projects
+              </button>
+              {/* Focus Mode Toggle */}
+
+              <button
+                onClick={closeSettings}
+                className="px-6 py-2 bg-slate-800 text-white rounded-sm text-[9px] font-black uppercase tracking-widest hover:bg-slate-700 transition-all"
+              >
+                Close
+              </button>
             </div>
           </div>
-        )
+        </div>
+      )
       }
     </div >
   );

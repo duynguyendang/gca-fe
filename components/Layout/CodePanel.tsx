@@ -11,6 +11,8 @@ interface CodePanelProps {
     isCollapsed: boolean;
     onToggleCollapse: () => void;
     onStartResize: () => void;
+    onStartVerticalResize?: () => void;
+    codeHeight?: number;
     children?: React.ReactNode;
 }
 
@@ -19,6 +21,8 @@ const CodePanel: React.FC<CodePanelProps> = ({
     isCollapsed,
     onToggleCollapse,
     onStartResize,
+    onStartVerticalResize,
+    codeHeight = 300,
     children
 }) => {
     const { selectedNode, hydratingNodeId } = useAppContext();
@@ -81,43 +85,51 @@ const CodePanel: React.FC<CodePanelProps> = ({
     return (
         <aside
             style={{ width }}
-            className="code-panel flex flex-col shrink-0 border-l border-white/10 shadow-2xl z-10 relative bg-[#0d171d]"
+            className="insight-panel flex flex-col shrink-0 border-l border-[var(--border)] shadow-2xl z-10 relative bg-[var(--bg-surface)]"
         >
             {/* Resize Handle */}
             <div
                 onMouseDown={onStartResize}
-                className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[#00f2ff]/20 active:bg-[#00f2ff]/50 transition-colors z-40"
+                className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[var(--accent-teal)]/20 active:bg-[var(--accent-teal)]/50 transition-colors z-40"
             />
 
-            {/* Header */}
-            <header className="h-12 px-5 border-b border-white/5 flex items-center justify-between bg-[#0a1118] shrink-0">
-                <div className="flex items-center gap-3 overflow-hidden mr-4">
-                    <button
-                        onClick={onToggleCollapse}
-                        className="text-slate-500 hover:text-white transition-colors"
-                    >
-                        <i className={`fas fa-chevron-${isCollapsed ? 'down' : 'up'}`}></i>
-                    </button>
-                    <i className="fas fa-terminal text-[#00f2ff] text-[12px]"></i>
-                    <span className="text-[10px] font-mono text-slate-300 truncate uppercase tracking-tighter">
-                        {selectedNode?.id || "IDLE"}
-                    </span>
-                </div>
-                <div className="flex items-center gap-2 text-[9px] text-slate-600 uppercase tracking-widest shrink-0">
-                    {selectedNode?.kind && (
-                        <span className="bg-[#16222a] px-2 py-1 rounded text-slate-400">{selectedNode.kind}</span>
-                    )}
-                    {selectedNode?.type && selectedNode.type !== selectedNode.kind && (
-                        <span className="bg-[#16222a] px-2 py-1 rounded text-slate-400">{selectedNode.type}</span>
-                    )}
-                </div>
-            </header>
-
-            {/* Code Content */}
-            <div className={`flex-1 overflow-auto custom-scrollbar ${isCollapsed ? 'hidden' : ''}`}>
-                {renderCode()}
+            {/* Insight/Synthesis (Priority Content) */}
+            <div className={`flex-1 flex flex-col min-h-0 bg-[var(--bg-surface)]`}>
+                {children}
             </div>
-            {children}
+
+            {/* Secondary Code Section (Collapsible) */}
+            <div className="flex flex-col shrink-0 bg-[var(--bg-main)] relative">
+                {/* Vertical Resize Handle */}
+                {onStartVerticalResize && !isCollapsed && (
+                    <div
+                        onMouseDown={onStartVerticalResize}
+                        className="absolute left-0 top-0 right-0 h-1.5 cursor-row-resize hover:bg-[var(--accent-teal)]/20 active:bg-[var(--accent-teal)]/50 transition-colors z-40"
+                    />
+                )}
+                {/* Header */}
+                <header
+                    className="h-10 px-5 border-t border-[var(--border)] flex items-center justify-between shrink-0 cursor-pointer hover:bg-white/5 transition-colors"
+                    onClick={onToggleCollapse}
+                >
+                    <div className="flex items-center gap-3 overflow-hidden mr-4">
+                        <button
+                            className="text-slate-500 transition-colors"
+                        >
+                            <i className={`fas fa-chevron-${isCollapsed ? 'up' : 'down'}`}></i>
+                        </button>
+                        <i className="fas fa-terminal text-[var(--accent-teal)] text-[10px]"></i>
+                        <span className="text-[10px] font-mono text-slate-300 truncate uppercase tracking-tighter">
+                            RAW SOURCE <span className="text-slate-500 lowercase ml-2">{selectedNode?.id || "idle"}</span>
+                        </span>
+                    </div>
+                </header>
+
+                {/* Code Content */}
+                <div className={`overflow-auto custom-scrollbar border-t border-[var(--border)] bg-[var(--bg-surface)] ${isCollapsed ? 'hidden' : ''}`} style={{ height: isCollapsed ? '0' : `${codeHeight}px` }}>
+                    {renderCode()}
+                </div>
+            </div>
         </aside>
     );
 };

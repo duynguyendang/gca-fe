@@ -3,11 +3,9 @@ import { useAppContext, NarrativeMessage, NarrativeSection } from '../../context
 import { askAI } from '../../services/geminiService';
 
 const SUGGESTION_CHIPS = [
-    'NARRATE THE BOOT SEQUENCE',
-    'IDENTIFY CIRCULAR LOGIC',
-    'SHOW ARCHITECTURE MAP',
-    'EXPLAIN DATA FLOW',
+    'NARRATE BOOT SEQUENCE',
     'FIND DEAD CODE',
+    'EXPLAIN DATA FLOW',
 ];
 
 const NarrativeQueryBar: React.FC = () => {
@@ -19,8 +17,9 @@ const NarrativeQueryBar: React.FC = () => {
         isNarrativeLoading,
         setIsNarrativeLoading,
         fileScopedNodes,
+        searchTerm,
+        setSearchTerm,
     } = useAppContext();
-    const [query, setQuery] = useState('');
 
     const parseAIResponse = (raw: string): NarrativeSection[] => {
         const sections: NarrativeSection[] = [];
@@ -87,7 +86,6 @@ const NarrativeQueryBar: React.FC = () => {
         };
 
         setNarrativeMessages(prev => [...prev, userMsg]);
-        setQuery('');
         setIsNarrativeLoading(true);
 
         try {
@@ -131,7 +129,7 @@ const NarrativeQueryBar: React.FC = () => {
         }
     }, [dataApiBase, selectedProjectId, isNarrativeLoading, fileScopedNodes, setNarrativeMessages, setIsNarrativeLoading]);
 
-    const handleSubmit = () => submitQuery(query);
+    const handleSubmit = () => submitQuery(searchTerm);
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -141,61 +139,42 @@ const NarrativeQueryBar: React.FC = () => {
     };
 
     return (
-        <div className="shrink-0 bg-[#0a1118]/95 backdrop-blur-xl border-t border-white/5 px-6 py-4">
-            {/* Query Input Bar */}
-            <div className="flex items-center gap-3 bg-[#16222a] border border-white/10 rounded-xl px-4 py-3 mb-3 focus-within:border-[#00f2ff]/30 transition-all narrative-glow">
-                {/* Icon */}
-                <div className="shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-[#00f2ff]/20 to-[#a855f7]/20 flex items-center justify-center border border-white/10">
-                    <i className="fas fa-bolt text-[#00f2ff] text-sm"></i>
-                </div>
-
-                <div className="flex-1 min-w-0">
-                    <div className="text-[8px] font-black uppercase tracking-[0.25em] text-slate-600 mb-0.5">
-                        QUERYING NARRATIVE ENGINE
-                    </div>
-                    <input
-                        type="text"
-                        value={query}
-                        onChange={e => setQuery(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder="Ask me to explain a logic flow or predict a bottleneck..."
-                        className="w-full bg-transparent border-none text-sm text-white placeholder-slate-600 focus:outline-none font-medium"
-                        disabled={isNarrativeLoading}
-                    />
-                </div>
-
-                {/* Mic (decorative) */}
-                <button className="shrink-0 text-slate-600 hover:text-slate-400 transition-colors p-2">
-                    <i className="fas fa-microphone"></i>
-                </button>
-
-                {/* Submit */}
-                <button
-                    onClick={handleSubmit}
-                    disabled={!query.trim() || isNarrativeLoading || !dataApiBase || !selectedProjectId}
-                    className="shrink-0 px-6 py-2.5 bg-[#00f2ff] text-[#0a1118] rounded-lg text-[10px] font-black uppercase tracking-[0.2em] hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-[0_0_15px_rgba(0,242,255,0.3)] active:scale-95"
-                >
-                    {isNarrativeLoading ? (
-                        <i className="fas fa-circle-notch animate-spin"></i>
-                    ) : (
-                        'CONSULT'
-                    )}
-                </button>
-            </div>
-
-            {/* Suggestion Chips */}
-            <div className="flex flex-wrap gap-2">
+        <div className="shrink-0 bg-[var(--bg-main)]/95 backdrop-blur-xl border-t border-[var(--border)] px-6 py-4 flex items-center justify-between gap-6">
+            {/* Suggestion Chips - Centered */}
+            <div className="flex flex-wrap gap-2 flex-1 justify-center">
                 {SUGGESTION_CHIPS.map((chip, i) => (
                     <button
                         key={i}
-                        onClick={() => submitQuery(chip.toLowerCase())}
+                        onClick={() => {
+                            setSearchTerm(chip.toLowerCase());
+                            submitQuery(chip.toLowerCase());
+                        }}
                         disabled={isNarrativeLoading}
-                        className="px-4 py-2 bg-[#16222a] border border-white/10 rounded-lg text-[9px] font-bold uppercase tracking-[0.15em] text-slate-400 hover:text-white hover:border-[#00f2ff]/30 hover:bg-[#00f2ff]/5 disabled:opacity-30 transition-all"
+                        className="px-4 py-2 bg-[#16222a] border border-white/10 rounded-lg text-[9px] font-bold uppercase tracking-[0.15em] text-slate-400 hover:text-white hover:border-[var(--accent-blue)]/30 hover:bg-[var(--accent-blue)]/5 disabled:opacity-30 transition-all font-mono"
                     >
                         "{chip}"
                     </button>
                 ))}
             </div>
+
+            {/* Consult Button - Right Aligned */}
+            <button
+                onClick={handleSubmit}
+                disabled={!searchTerm.trim() || isNarrativeLoading || !dataApiBase || !selectedProjectId}
+                className="shrink-0 px-8 py-3 bg-[var(--accent-blue)] text-white rounded-lg text-[10px] font-black uppercase tracking-[0.2em] hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-[0_0_20px_rgba(59,130,246,0.3)] active:scale-95 flex items-center gap-2"
+            >
+                {isNarrativeLoading ? (
+                    <>
+                        <i className="fas fa-circle-notch animate-spin"></i>
+                        THINKING...
+                    </>
+                ) : (
+                    <>
+                        <i className="fas fa-bolt text-xs opacity-80"></i>
+                        CONSULT
+                    </>
+                )}
+            </button>
         </div>
     );
 };

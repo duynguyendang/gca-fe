@@ -11,9 +11,11 @@
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap');
 
         :root {
-            --bg-main: #0a1118;
-            --bg-sidebar: #0d171d;
-            --accent: #00f2ff;
+            --bg-main: #0A0E14;
+            --bg-surface: #111827;
+            --accent-teal: #2DD4BF;
+            --accent-blue: #3B82F6;
+            --accent-purple: #A855F7;
             --border: rgba(255, 255, 255, 0.08);
         }
 
@@ -35,7 +37,7 @@
         }
 
         .glass-sidebar {
-            background: var(--bg-sidebar);
+            background: var(--bg-surface);
             border-right: 1px solid var(--border);
         }
 
@@ -54,7 +56,7 @@
         }
 
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: rgba(0, 242, 255, 0.2);
+            background: rgba(45, 212, 191, 0.2);
         }
 
         /* Override Prism styles for ultra-compact look */
@@ -72,46 +74,30 @@
 
         /* Glowing path animations */
         @keyframes pulse-glow {
-
-            0%,
-            100% {
-                filter: drop-shadow(0 0 8px #00f2ff) drop-shadow(0 0 15px #00f2ff);
+            0%, 100% {
+                filter: drop-shadow(0 0 8px #2DD4BF) drop-shadow(0 0 15px #2DD4BF);
             }
-
             50% {
-                filter: drop-shadow(0 0 15px #00f2ff) drop-shadow(0 0 30px #00f2ff);
+                filter: drop-shadow(0 0 15px #2DD4BF) drop-shadow(0 0 30px #2DD4BF);
             }
         }
 
         @keyframes path-pulse {
-
-            0%,
-            100% {
-                filter: drop-shadow(0 0 6px #00f2ff);
+            0%, 100% {
+                filter: drop-shadow(0 0 6px #2DD4BF);
                 opacity: 1;
             }
-
             50% {
-                filter: drop-shadow(0 0 12px #00f2ff) drop-shadow(0 0 20px #00f2ff);
+                filter: drop-shadow(0 0 12px #2DD4BF) drop-shadow(0 0 20px #2DD4BF);
                 opacity: 0.8;
             }
         }
 
         /* Enrich button scanning animation */
         @keyframes scan-line {
-            0% {
-                transform: translateY(-100%);
-                opacity: 0;
-            }
-
-            50% {
-                opacity: 1;
-            }
-
-            100% {
-                transform: translateY(100%);
-                opacity: 0;
-            }
+            0% { transform: translateY(-100%); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translateY(100%); opacity: 0; }
         }
 
         .scanning::after {
@@ -127,31 +113,14 @@
 
         /* Node expand/collapse animations */
         @keyframes node-pop-in {
-            0% {
-                transform: scale(0);
-                opacity: 0;
-            }
-
-            70% {
-                transform: scale(1.1);
-            }
-
-            100% {
-                transform: scale(1);
-                opacity: 1;
-            }
+            0% { transform: scale(0); opacity: 0; }
+            70% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
         }
 
         @keyframes node-fade-out {
-            0% {
-                transform: scale(1);
-                opacity: 1;
-            }
-
-            100% {
-                transform: scale(0.8);
-                opacity: 0;
-            }
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0.8); opacity: 0; }
         }
 
         .node-expanding {
@@ -164,15 +133,8 @@
 
         /* Expand button pulse animation */
         @keyframes button-pulse {
-
-            0%,
-            100% {
-                transform: scale(1);
-            }
-
-            50% {
-                transform: scale(1.1);
-            }
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
         }
 
         .expand-button-pulse {
@@ -199,7 +161,72 @@
         }
 
         .narrative-glow:focus-within {
-            box-shadow: 0 0 20px -5px rgba(0, 242, 255, 0.2);
+            box-shadow: 0 0 20px -5px rgba(45, 212, 191, 0.2);
+        }
+
+        /* View mode cross-fade transition */
+        .view-crossfade-enter {
+            animation: crossfade-in 200ms ease-out forwards;
+        }
+
+        @keyframes crossfade-in {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        /* Segmented control for view mode switcher */
+        .view-switcher {
+            display: flex;
+            background: #111827;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 3px;
+            gap: 2px;
+        }
+
+        .view-switcher button {
+            position: relative;
+            padding: 6px 14px;
+            font-size: 9px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: transparent;
+            color: #64748b;
+        }
+
+        .view-switcher button:hover {
+            color: #94a3b8;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .view-switcher button.active {
+            color: #0A0E14;
+            box-shadow: 0 0 12px -2px var(--glow-color, #2DD4BF);
+        }
+
+        .view-switcher button.active::after {
+            content: '';
+            position: absolute;
+            bottom: -3px;
+            left: 25%;
+            right: 25%;
+            height: 2px;
+            background: var(--glow-color, #2DD4BF);
+            border-radius: 1px;
+            box-shadow: 0 0 8px var(--glow-color, #2DD4BF);
+        }
+
+        /* Glassmorphism effect for synthesis panel */
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
         }
     </style>
     <script type="importmap">

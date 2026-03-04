@@ -40,9 +40,9 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
     ];
 
     return (
-        <div className="flex-1 flex flex-col min-h-0 bg-[#0a1118]">
+        <div className="flex-1 flex flex-col min-h-0 bg-[var(--bg-main)]">
             {/* Top Progress Bar */}
-            <div className="h-12 border-b border-white/5 flex items-center px-6 gap-1 bg-[#0a1118]/90 backdrop-blur-md shrink-0">
+            <div className="h-12 border-b border-[var(--border)] flex items-center px-6 gap-1 bg-[var(--bg-main)]/90 backdrop-blur-md shrink-0">
                 <div className="flex items-center gap-2 mr-6">
                     <div className="w-2 h-2 rounded-full bg-[#10b981] narrative-pulse shadow-[0_0_8px_#10b981]"></div>
                     <span className="text-sm font-bold text-white tracking-tight uppercase">
@@ -55,7 +55,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                         <React.Fragment key={step.num}>
                             <div className="flex items-center gap-2">
                                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold border ${step.active
-                                    ? 'bg-[#00f2ff]/20 border-[#00f2ff]/50 text-[#00f2ff]'
+                                    ? 'bg-[var(--accent-blue)]/20 border-[var(--accent-blue)]/50 text-[var(--accent-blue)]'
                                     : 'border-white/10 text-slate-600'
                                     }`}>
                                     {step.num}
@@ -66,7 +66,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                                 </span>
                             </div>
                             {i < steps.length - 1 && (
-                                <div className={`w-16 h-px mx-3 ${i < 2 ? 'bg-[#00f2ff]/30' : 'bg-white/5'}`}></div>
+                                <div className={`w-16 h-px mx-3 ${i < 2 ? 'bg-[var(--accent-blue)]/30' : 'bg-white/5'}`}></div>
                             )}
                         </React.Fragment>
                     ))}
@@ -76,15 +76,15 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                 <div className="flex items-center gap-3 ml-auto">
                     <div className="text-right">
                         <div className="text-[8px] font-bold uppercase tracking-[0.2em] text-slate-600">MODEL_STATUS</div>
-                        <div className={`text-[10px] font-black uppercase tracking-wider ${isNarrativeLoading ? 'text-[#00f2ff] animate-pulse' : 'text-[#10b981]'}`}>
+                        <div className={`text-[10px] font-black uppercase tracking-wider ${isNarrativeLoading ? 'text-[var(--accent-blue)] animate-pulse' : 'text-[#10b981]'}`}>
                             {isNarrativeLoading ? 'REASONING...' : 'READY'}
                         </div>
                     </div>
                     <div className={`w-8 h-8 rounded-full border flex items-center justify-center ${isNarrativeLoading
-                        ? 'border-[#00f2ff]/50 bg-[#00f2ff]/10'
+                        ? 'border-[var(--accent-blue)]/50 bg-[var(--accent-blue)]/10'
                         : 'border-[#10b981]/30 bg-[#10b981]/10'
                         }`}>
-                        <i className={`fas fa-atom text-xs ${isNarrativeLoading ? 'text-[#00f2ff] animate-spin' : 'text-[#10b981]'}`}
+                        <i className={`fas fa-atom text-xs ${isNarrativeLoading ? 'text-[var(--accent-blue)] animate-spin' : 'text-[#10b981]'}`}
                             style={{ animationDuration: '3s' }}></i>
                     </div>
                 </div>
@@ -112,13 +112,13 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                         </div>
                     </div>
 
-                    {/* Actual Graph */}
+                    {/* Actual Graph - note TreeVisualizer mode triggers blue/purple styling internally */}
                     <div className="relative z-10 w-full h-full">
                         <TreeVisualizer
                             data={astData}
                             onNodeSelect={onNodeSelect}
                             onNodeHover={() => { }}
-                            mode={'discovery'}
+                            mode={'discovery'} // Revert back to discovery mode as narrative mode type wasn't accepted
                             selectedId={selectedNode?.id}
                             fileScopedData={fileScopedData}
                             skipFlowZoom={false}

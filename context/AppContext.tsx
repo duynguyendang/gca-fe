@@ -34,6 +34,7 @@ export interface NarrativeMessage {
 }
 
 export type ViewMode = 'flow' | 'map' | 'discovery' | 'backbone' | 'architecture' | 'narrative';
+export type SubMode = 'NARRATIVE' | 'ARCHITECTURE' | 'ENTROPY';
 
 interface AppState {
     // Core data
@@ -127,6 +128,18 @@ interface AppState {
     setNarrativeMessages: React.Dispatch<React.SetStateAction<NarrativeMessage[]>>;
     isNarrativeLoading: boolean;
     setIsNarrativeLoading: React.Dispatch<React.SetStateAction<boolean>>;
+
+    // Panel states
+    isCodeCollapsed: boolean;
+    setIsCodeCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+    isSynthesisCollapsed: boolean;
+    setIsSynthesisCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+
+    // Intelligence Hub Sub-modes
+    activeSubMode: SubMode;
+    setActiveSubMode: React.Dispatch<React.SetStateAction<SubMode>>;
+    highlightedNodeId: string | null;
+    setHighlightedNodeId: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -211,7 +224,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     // Narrative AI
     const [narrativeMessages, setNarrativeMessages] = useState<NarrativeMessage[]>([]);
     const [isNarrativeLoading, setIsNarrativeLoading] = useState(false);
+    const [isCodeCollapsed, setIsCodeCollapsed] = useState(false);
+    const [isSynthesisCollapsed, setIsSynthesisCollapsed] = useState(false);
     const [enableAutoClustering, setEnableAutoClustering] = useState<boolean>(true);
+    const [activeSubMode, setActiveSubMode] = useState<SubMode>('NARRATIVE');
+    const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
 
     const value: AppState = {
         astData, setAstData,
@@ -248,6 +265,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         enableAutoClustering, setEnableAutoClustering,
         narrativeMessages, setNarrativeMessages,
         isNarrativeLoading, setIsNarrativeLoading,
+        activeSubMode, setActiveSubMode,
+        highlightedNodeId, setHighlightedNodeId,
+        isCodeCollapsed, setIsCodeCollapsed,
+        isSynthesisCollapsed, setIsSynthesisCollapsed,
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

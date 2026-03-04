@@ -32,6 +32,7 @@ interface UseSmartSearchOptions {
     setSelectedNode: (node: any) => void;
     setNodeInsight: (insight: string | null) => void;
     setLastExecutedQuery: (query: string) => void;
+    activeSubMode?: string;
 }
 
 interface SearchState {
@@ -54,6 +55,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
         setSelectedNode,
         setNodeInsight,
         setLastExecutedQuery,
+        activeSubMode = 'NARRATIVE',
     } = options;
 
     const [isSearching, setIsSearching] = useState(false);
@@ -183,6 +185,12 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                             const analysis = await askAI(dataApiBase, selectedProjectId, {
                                 task: 'multi_file_summary',
                                 query: query,
+                                context_mode: activeSubMode,
+                                query_instruction: activeSubMode === 'ENTROPY'
+                                    ? "Focus on code complexity, technical debt, and potential bottlenecks."
+                                    : activeSubMode === 'ARCHITECTURE'
+                                        ? "Focus on design patterns, component hierarchy, and dependency structure."
+                                        : "Analyze the logical flow and step-by-step execution.",
                                 data: subgraph.nodes.map(n => n.id).slice(0, 15)
                             });
                             setNodeInsight(analysis);
@@ -309,6 +317,12 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                             const analysis = await askAI(dataApiBase, selectedProjectId, {
                                 task: 'multi_file_summary',
                                 query: query,
+                                context_mode: activeSubMode,
+                                query_instruction: activeSubMode === 'ENTROPY'
+                                    ? "Analyze these files for technical debt and cyclomatic complexity."
+                                    : activeSubMode === 'ARCHITECTURE'
+                                        ? "Focus on the architectural relationships and modularity."
+                                        : "Explain the logical story and flow of these components.",
                                 data: subgraph.nodes.map(n => n.id).slice(0, 15)
                             });
                             setNodeInsight(analysis);
@@ -348,6 +362,12 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                 const analysis = await askAI(dataApiBase, selectedProjectId, {
                     task: 'multi_file_summary',
                     query: query,
+                    context_mode: activeSubMode,
+                    query_instruction: activeSubMode === 'ENTROPY'
+                        ? "Prioritize explaining complexity hotspots and optimization opportunities."
+                        : activeSubMode === 'ARCHITECTURE'
+                            ? "Highlight design patterns and structural soundness."
+                            : "Narrate the logical flow and sequence of operations.",
                     data: results.nodes.map((n: any) => n.id).slice(0, 15)
                 });
                 setNodeInsight(analysis || `Found ${results.nodes.length} nodes and ${results.links?.length || 0} relationships.`);

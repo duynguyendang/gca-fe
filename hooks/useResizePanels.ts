@@ -8,6 +8,10 @@ interface ResizePanelsConfig {
     initialSidebarWidth?: number;
     initialCodePanelWidth?: number;
     initialSynthesisHeight?: number;
+    isCodeCollapsed?: boolean;
+    setIsCodeCollapsed?: React.Dispatch<React.SetStateAction<boolean>>;
+    isSynthesisCollapsed?: boolean;
+    setIsSynthesisCollapsed?: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export const useResizePanels = (config: ResizePanelsConfig = {}) => {
@@ -29,8 +33,13 @@ export const useResizePanels = (config: ResizePanelsConfig = {}) => {
     const [codePanelWidth, setCodePanelWidth] = useState(initialCodePanelWidth ?? defaultCodePanelWidth);
     const [synthesisHeight, setSynthesisHeight] = useState(initialSynthesisHeight ?? defaultSynthesisHeight);
 
-    const [isCodeCollapsed, setIsCodeCollapsed] = useState(false);
-    const [isSynthesisCollapsed, setIsSynthesisCollapsed] = useState(false);
+    // Get collapse states from config (passed from AppContext in App.tsx)
+    const {
+        isCodeCollapsed,
+        setIsCodeCollapsed,
+        isSynthesisCollapsed,
+        setIsSynthesisCollapsed
+    } = config as any;
 
     const isResizingSidebar = useRef(false);
     const isResizingCode = useRef(false);

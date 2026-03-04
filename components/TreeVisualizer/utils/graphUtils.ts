@@ -130,6 +130,14 @@ export const getSymbol = (kind: string) => {
     }
 };
 
+export const getEntropyColor = (node: any): string => {
+    const complexity = node.metadata?.complexity || node.complexity || 10;
+    // Scale 1 to 100: green (30) to red (100)
+    if (complexity < 30) return '#10b981'; // Green
+    if (complexity < 60) return '#f59e0b'; // Amber
+    return '#ef4444'; // Red
+};
+
 export const getNodeFill = (node: any, accentColor: string, isInPath: boolean = false): string => {
     if (needsHydration(node)) return 'rgba(168, 85, 247, 0.08)';
     return `rgba(${hexToRgb(accentColor)}, 0.15)`;
@@ -184,7 +192,13 @@ export const getNodeOpacity = (node: any, expandedFileIds: Set<string>, defaultO
     return 0.2;
 };
 
-export const calculateNodeRadius = (node: any, lineCount?: number) => {
-    const lineCountVal = lineCount || node.metadata?.line_count || node.value || node.end_line - node.start_line + 1 || 20;
+export const calculateNodeRadius = (node: any, lineCount?: number, activeSubMode?: string) => {
+    let lineCountVal = lineCount || node.metadata?.line_count || node.value || node.end_line - node.start_line + 1 || 20;
+
+    if (activeSubMode === 'ENTROPY') {
+        const complexity = node.metadata?.complexity || node.complexity || 10;
+        lineCountVal = lineCountVal * (1 + complexity / 100);
+    }
+
     return Math.sqrt(lineCountVal) * 3 + 8;
 };

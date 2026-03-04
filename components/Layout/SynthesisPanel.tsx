@@ -5,6 +5,9 @@
 import React from 'react';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
 import { useAppContext } from '../../context/AppContext';
+import { LogicSequenceCard } from './subcomponents/LogicSequenceCard';
+import { ArchitectureOverview } from './subcomponents/ArchitectureOverview';
+import { EntropyMetricsPanel } from './subcomponents/EntropyMetricsPanel';
 
 interface SynthesisPanelProps {
     isCollapsed: boolean;
@@ -23,12 +26,38 @@ const SynthesisPanel: React.FC<SynthesisPanelProps> = ({
     onLinkClick,
     onSymbolClick,
 }) => {
-    const { selectedNode, nodeInsight, isInsightLoading } = useAppContext();
+    const {
+        selectedNode,
+        nodeInsight,
+        isInsightLoading,
+        activeSubMode,
+        setActiveSubMode
+    } = useAppContext();
+
+    const TABS = ['NARRATIVE', 'ARCHITECTURE', 'ENTROPY'] as const;
 
     return (
         <div
             className={`flex-1 ${isCollapsed ? 'p-2 bg-[var(--bg-main)]' : 'p-5 bg-[var(--bg-main)]'} flex flex-col min-h-0 relative transition-none`}
         >
+            {/* Tab Navigation */}
+            {!isCollapsed && (
+                <div className="flex border-b border-white/5 mb-4">
+                    {TABS.map(tab => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveSubMode(tab as any)}
+                            className={`px-4 py-2 text-[9px] font-black tracking-widest transition-all relative ${activeSubMode === tab ? 'text-[var(--accent-teal)]' : 'text-slate-500 hover:text-slate-400'}`}
+                        >
+                            {tab}
+                            {activeSubMode === tab && (
+                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--accent-teal)] shadow-[0_0_8px_var(--accent-teal)]"></div>
+                            )}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2.5">
@@ -39,16 +68,18 @@ const SynthesisPanel: React.FC<SynthesisPanelProps> = ({
                         <i className={`fas fa-chevron-${isCollapsed ? 'up' : 'down'}`}></i>
                     </button>
                     <div className={`w-2 h-2 rounded-full ${nodeInsight ? 'bg-[var(--accent-teal)] animate-pulse shadow-[0_0_8px_var(--accent-teal)]' : 'bg-slate-700'}`}></div>
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/90 italic">GenAI SYNTHESIS</h3>
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/90 italic">
+                        {activeSubMode} ANALYSIS
+                    </h3>
                 </div>
                 <div className="flex items-center gap-2">
                     <button
                         onClick={onAnalyze}
                         disabled={isInsightLoading || !selectedNode}
-                        className="px-3 py-1.5 bg-[var(--accent-teal)]/10 hover:bg-[var(--accent-teal)]/20 border border-[var(--accent-teal)]/30 text-[var(--accent-teal)] rounded-sm text-[9px] font-black uppercase tracking-widest disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                        className={`px-3 py-1.5 bg-[var(--accent-teal)]/10 hover:bg-[var(--accent-teal)]/20 border border-[var(--accent-teal)]/30 text-[var(--accent-teal)] rounded-sm text-[9px] font-black uppercase tracking-widest disabled:opacity-30 disabled:cursor-not-allowed transition-all ${activeSubMode === 'ENTROPY' && 'border-red-500/30 text-red-500 bg-red-500/10'}`}
                         title="Generate AI analysis for selected node"
                     >
-                        {isInsightLoading ? <i className="fas fa-circle-notch animate-spin"></i> : <><i className="fas fa-sparkles mr-1.5"></i>ANALYZE</>}
+                        {isInsightLoading ? <i className="fas fa-circle-notch animate-spin"></i> : <><i className={`fas ${activeSubMode === 'ENTROPY' ? 'fa-triangle-exclamation' : 'fa-sparkles'} mr-1.5`}></i>ANALYZE</>}
                     </button>
                     {nodeInsight && (
                         <button
@@ -64,18 +95,9 @@ const SynthesisPanel: React.FC<SynthesisPanelProps> = ({
 
             {/* Content  - with glassmorphism spec*/}
             <div className={`flex-1 glass-panel p-4 rounded border border-[var(--border)] text-[11px] text-slate-300 leading-relaxed overflow-y-auto custom-scrollbar font-sans ${isCollapsed ? 'hidden' : ''}`}>
-                {nodeInsight ? (
-                    <MarkdownRenderer
-                        content={nodeInsight}
-                        onLinkClick={onLinkClick}
-                        onSymbolClick={onSymbolClick}
-                    />
-                ) : (
-                    <div className="flex flex-col items-center justify-center h-full opacity-10 gap-3 grayscale">
-                        <i className="fas fa-brain text-4xl"></i>
-                        <p className="text-[10px] uppercase font-black tracking-[0.4em]">Inference Engine Standby</p>
-                    </div>
-                )}
+                {activeSubMode === 'NARRATIVE' && <LogicSequenceCard onLinkClick={onLinkClick} onSymbolClick={onSymbolClick} />}
+                {activeSubMode === 'ARCHITECTURE' && <ArchitectureOverview onLinkClick={onLinkClick} onSymbolClick={onSymbolClick} />}
+                {activeSubMode === 'ENTROPY' && <EntropyMetricsPanel onLinkClick={onLinkClick} onSymbolClick={onSymbolClick} />}
             </div>
         </div>
     );

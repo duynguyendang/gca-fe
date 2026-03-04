@@ -79,10 +79,22 @@ const App: React.FC = () => {
     isSettingsOpen, setIsSettingsOpen,
     availablePredicates, setAvailablePredicates,
     enableAutoClustering, setEnableAutoClustering,
+    activeSubMode, setActiveSubMode,
+    highlightedNodeId, setHighlightedNodeId,
+    isCodeCollapsed, setIsCodeCollapsed,
+    isSynthesisCollapsed, setIsSynthesisCollapsed,
   } = context;
 
   // 2. Local State
+  const [isSubModeSwitching, setIsSubModeSwitching] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
+
+  useEffect(() => {
+    setIsSubModeSwitching(true);
+    const timer = setTimeout(() => setIsSubModeSwitching(false), 800);
+    return () => clearTimeout(timer);
+  }, [activeSubMode]);
+
   const [showHistory, setShowHistory] = useState(false);
   const [showArchitecturePanel, setShowArchitecturePanel] = useState(false);
   const [isClustered, setIsClustered] = useState(false);
@@ -100,11 +112,16 @@ const App: React.FC = () => {
     codePanelWidth,
     synthesisHeight,
     setSynthesisHeight,
+    isCodeCollapsed: isCodeCollapsedLocal,
+    setIsCodeCollapsed: setIsCodeCollapsedLocal,
+    isSynthesisCollapsed: isSynthesisCollapsedLocal,
+    setIsSynthesisCollapsed: setIsSynthesisCollapsedLocal
+  } = useResizePanels({
     isCodeCollapsed,
     setIsCodeCollapsed,
     isSynthesisCollapsed,
     setIsSynthesisCollapsed
-  } = useResizePanels();
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1325,6 +1342,14 @@ const App: React.FC = () => {
             </div>
           </div>
 
+          {/* Model Status Pill */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/50 border border-white/5 rounded-full">
+            <div className={`w-1.5 h-1.5 rounded-full ${isSubModeSwitching || isSearching ? 'bg-amber-500 animate-pulse shadow-[0_0_8px_#f59e0b]' : 'bg-[#10b981]'}`}></div>
+            <span className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-500">
+              {isSubModeSwitching || isSearching ? 'PROCESSING...' : 'MODEL: READY'}
+            </span>
+          </div>
+
           {/* View Mode Switcher (Top-Right) */}
           <div className="ml-auto flex items-center">
             <div className="view-switcher" style={{ '--glow-color': viewMode === 'narrative' ? 'var(--accent-blue)' : viewMode === 'architecture' ? 'var(--accent-purple)' : viewMode === 'map' ? '#f59e0b' : 'var(--accent-teal)' } as any}>
@@ -1371,7 +1396,7 @@ const App: React.FC = () => {
               onSymbolClick={handleMarkdownSymbolClick}
             />
           ) : (
-            <div className="flex-1 flex min-h-0">
+            <div className={`flex-1 flex min-h-0 ${isSubModeSwitching ? 'animate-pulse opacity-80' : 'transition-opacity duration-500'}`}>
               <div className="flex-1 relative dot-grid overflow-hidden bg-[var(--bg-main)]">
                 {(() => {
                   // Use fileScopedNodes for visualization count (includes clustered nodes)
@@ -1475,6 +1500,8 @@ const App: React.FC = () => {
                           expandedFileIds={expandedFileIds}
                           onToggleFileExpansion={toggleFileExpansion}
                           expandingFileId={expandingFileId}
+                          activeSubMode={activeSubMode}
+                          highlightedNodeId={highlightedNodeId}
                         />
                       )}
                     </>

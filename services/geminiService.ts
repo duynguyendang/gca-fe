@@ -21,6 +21,8 @@ export const askAI = async (
     query?: string;
     symbol_id?: string;
     data?: any;
+    context_mode?: string;
+    query_instruction?: string;
   }
 ): Promise<string> => {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
@@ -36,7 +38,9 @@ export const askAI = async (
       task: payload.task || 'chat',
       query: payload.query || '',
       symbol_id: payload.symbol_id || '',
-      data: payload.data || null
+      data: payload.data || null,
+      context_mode: payload.context_mode || '',
+      query_instruction: payload.query_instruction || ''
     })
   });
 
@@ -195,11 +199,26 @@ export const generateAnswerForSymbol = async (
   dataApiBase: string,
   projectId: string,
 ): Promise<string> => {
-  // Backend Task: "chat" (default), with symbol_id focus
+  const instruction = `
+  If the query asks to explain or narrate a logic flow, your response MUST include a structured JSON block for the "Execution Sequence" at the VERY END.
+  
+  JSON Format:
+  \`\`\`json
+  {
+    "steps": [
+      { "id": 1, "title": "Step Name", "icon": "LogIn|ShieldCheck|Key|Zap|Database|Brain", "description": "Short description", "nodeId": "exact:symbol:id" }
+    ]
+  }
+  \`\`\`
+  
+  Ensure the nodeId matches the real symbol IDs from the context.
+  `;
+
   return await askAI(dataApiBase, projectId, {
     task: 'chat',
     query: query,
-    symbol_id: symbolId
+    symbol_id: symbolId,
+    query_instruction: instruction
   });
 };
 

@@ -3,6 +3,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import * as d3 from 'd3';
 import { ASTNode, FlatGraph, BackboneGraph as BackboneGraphType } from '../../types';
 import { useGraphData } from '../../hooks/useGraphData';
+import { SubMode } from '../../context/AppContext';
 import FlowGraph from './graphs/FlowGraph';
 import DiscoveryGraph from './graphs/DiscoveryGraph';
 import TreeMapGraph from './graphs/TreeMapGraph';
@@ -24,6 +25,8 @@ interface TreeVisualizerProps {
   isLoading?: boolean;
   focusModeEnabled?: boolean;
   criticalPathNodeIds?: Set<string>;
+  activeSubMode?: SubMode;
+  highlightedNodeId?: string | null;
 }
 
 const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
@@ -40,7 +43,9 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
   expandingFileId = null,
   isLoading = false,
   focusModeEnabled = false,
-  criticalPathNodeIds = new Set()
+  criticalPathNodeIds = new Set(),
+  activeSubMode = 'NARRATIVE',
+  highlightedNodeId
 }) => {
   console.log('=== TreeVisualizer Render (Start) ===', {
     mode,
@@ -171,6 +176,8 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
               expandedFileIds={expandedFileIds}
               onToggleFileExpansion={onToggleFileExpansion}
               expandingFileId={expandingFileId}
+              activeSubMode={activeSubMode}
+              highlightedNodeId={highlightedNodeId}
             />
           )}
           {mode === 'map' && (

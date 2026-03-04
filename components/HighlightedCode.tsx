@@ -13,7 +13,7 @@ interface HighlightedCodeProps {
 const HighlightedCode = React.forwardRef<HTMLDivElement, HighlightedCodeProps>(({ code, language, startLine, scrollToLine }, ref) => {
     const codeRef = useRef<HTMLElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    const highlightTimeoutRef = useRef<number>();
+    const highlightTimeoutRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (highlightTimeoutRef.current) {

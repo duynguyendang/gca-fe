@@ -178,7 +178,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                             })));
                             setFileScopedLinks(subgraph.links || []);
                             setFileScopedLinks(subgraph.links || []);
-                            // onViewModeChange('discovery');
+                            onViewModeChange('discovery');
 
 
                             setSearchStatus("Analyzing results with AI...");
@@ -261,8 +261,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                             ...l,
                             _isPath: true
                         })));
-
-                        // onViewModeChange('discovery');
+                        onViewModeChange('discovery');
 
                         setSearchStatus("Analyzing interaction path with AI...");
                         try {
@@ -310,7 +309,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                             })));
                             setFileScopedLinks(subgraph.links || []);
                             setFileScopedLinks(subgraph.links || []);
-                            // onViewModeChange('discovery');
+                            onViewModeChange('discovery');
 
                             // Analyze with AI using multi-file context to ensure code is read
                             setSearchStatus("Analyzing results with AI...");
@@ -354,7 +353,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
 
             console.log('[DEBUG] Transitioning to Discovery view for search results');
             console.log('[DEBUG] Transitioning to Discovery view for search results');
-            // onViewModeChange('discovery');
+            onViewModeChange('discovery');
 
             // Analyze results with AI using multi-file context to pull in actual code
             setSearchStatus("Analyzing results with AI...");

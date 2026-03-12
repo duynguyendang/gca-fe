@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useAppContext } from '../../../context/AppContext';
 import MarkdownRenderer from '../../Synthesis/MarkdownRenderer';
 
@@ -10,13 +10,27 @@ interface EntropyMetricsPanelProps {
 export const EntropyMetricsPanel: React.FC<EntropyMetricsPanelProps> = ({ onLinkClick, onSymbolClick }) => {
     const { selectedNode, nodeInsight, isInsightLoading } = useAppContext();
 
-    const riskScore = 78; // Simulated risk score
-    const complexityScore = selectedNode?.metadata?.complexity || 45;
+    const parsedEntropy = useMemo(() => {
+        if (!nodeInsight) return null;
+        try {
+            const jsonMatch = nodeInsight.match(/```json\n([\s\S]*?)\n```/) || nodeInsight.match(/{[\s\S]*?}/);
+            if (jsonMatch) {
+                const cleaned = jsonMatch[0].replace(/```json\n|```/g, '').trim();
+                const parsed = JSON.parse(cleaned);
+                if (parsed.entropy) return parsed.entropy;
+            }
+        } catch (e) {
+            console.warn('[EntropyMetricsPanel] Failed to parse dynamic entropy metrics:', e);
+        }
+        return null;
+    }, [nodeInsight]);
+
+    const riskScore = parsedEntropy?.riskScore ?? 78; // Simulated fallback
 
     const maintenanceBurden = [
-        { label: 'Technical Debt', value: '3.2d', color: 'text-red-400' },
-        { label: 'Test Coverage', value: '42%', color: 'text-amber-400' },
-        { label: 'Churn Rate', value: 'High', color: 'text-red-400' },
+        { label: 'Technical Debt', value: parsedEntropy?.technicalDebt ?? '3.2d', color: 'text-red-400' },
+        { label: 'Test Coverage', value: parsedEntropy?.testCoverage ?? '42%', color: 'text-amber-400' },
+        { label: 'Churn Rate', value: parsedEntropy?.churnRate ?? 'High', color: 'text-red-400' },
     ];
 
     return (
@@ -60,7 +74,7 @@ export const EntropyMetricsPanel: React.FC<EntropyMetricsPanelProps> = ({ onLink
                 ) : (
                     <div className="text-[11px] text-slate-300 leading-relaxed max-w-none">
                         <MarkdownRenderer
-                            content={nodeInsight || "Select a high-complexity node to analyze technical debt and refactoring impact."}
+                            content={nodeInsight?.replace(/```json\n([\s\S]*?)\n```/g, '') || "Select a high-complexity node to analyze technical debt and refactoring impact."}
                             onLinkClick={onLinkClick}
                             onSymbolClick={onSymbolClick}
                         />

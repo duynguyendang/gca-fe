@@ -140,6 +140,10 @@ interface AppState {
     setActiveSubMode: React.Dispatch<React.SetStateAction<SubMode>>;
     highlightedNodeId: string | null;
     setHighlightedNodeId: React.Dispatch<React.SetStateAction<string | null>>;
+
+    // Landing View
+    isLandingView: boolean;
+    setIsLandingView: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -173,13 +177,19 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     });
 
     // API configuration
-    const [dataApiBase, setDataApiBase] = useState<string>(() => sessionStorage.getItem('gca_api_base_v2') || import.meta.env.GCA_API_BASE_URL || "");
+    const [dataApiBase, setDataApiBase] = useState<string>(() => {
+        // In production, always prioritize the environment variable (which should be "/api" now)
+        const envBase = import.meta.env.VITE_GCA_API_BASE_URL || import.meta.env.GCA_API_BASE_URL;
+        if (envBase && import.meta.env.PROD) return envBase;
+
+        return sessionStorage.getItem('gca_api_base_v2') || envBase || "https://gca-be-180036253374.us-central1.run.app";
+    });
 
 
     // Projects
     const [currentProject, setCurrentProject] = useState<string>("GCA-Sandbox-Default");
     const [availableProjects, setAvailableProjects] = useState<ProjectInfo[]>([]);
-    const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+    const [selectedProjectId, setSelectedProjectId] = useState<string>(() => sessionStorage.getItem('gca_selected_project_v2') || "");
 
     // Sync state
     const [isDataSyncing, setIsDataSyncing] = useState(false);
@@ -229,6 +239,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     const [enableAutoClustering, setEnableAutoClustering] = useState<boolean>(true);
     const [activeSubMode, setActiveSubMode] = useState<SubMode>('NARRATIVE');
     const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
+    const [isLandingView, setIsLandingView] = useState<boolean>(() => {
+        // Show landing if no project is selected and it's a fresh session
+        return !sessionStorage.getItem('gca_selected_project_id');
+    });
 
     const value: AppState = {
         astData, setAstData,
@@ -269,6 +283,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         highlightedNodeId, setHighlightedNodeId,
         isCodeCollapsed, setIsCodeCollapsed,
         isSynthesisCollapsed, setIsSynthesisCollapsed,
+        isLandingView, setIsLandingView,
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

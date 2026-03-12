@@ -8,3 +8,5 @@ export { default as useInsights, useInsights as useInsightsHook } from './useIns
 export { default as useNodeHydration, useNodeHydration as useNodeHydrationHook } from './useNodeHydration';
 export { useManifest } from './useManifest';
 export { useGraphData } from './useGraphData';
+export { useSearchHistory } from './useSearchHistory';
+export { useSessionStorage } from './useSessionStorage';

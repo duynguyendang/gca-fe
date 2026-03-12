@@ -129,6 +129,33 @@ export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClic
 
     return (
         <div className="space-y-4 animate-fade-in custom-scrollbar overflow-y-auto pr-1">
+            {/* AI Summary Section */}
+            <div className="bg-slate-900/50 border border-white/5 rounded-xl p-4 backdrop-blur-md">
+                <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-500 italic">AI Analysis</h4>
+                    {!isInsightLoading && (
+                        <div className="px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[7px] font-black text-blue-400 uppercase tracking-tighter">
+                            Real-time
+                        </div>
+                    )}
+                </div>
+
+                {isInsightLoading ? (
+                    <div className="flex items-center gap-3 text-blue-500/60 animate-pulse py-4">
+                        <Brain size={14} className="animate-bounce" />
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em]">Contextualizing Flow...</span>
+                    </div>
+                ) : (
+                    <div className="text-[11px] text-slate-400 leading-relaxed max-w-none">
+                        <MarkdownRenderer
+                            content={nodeInsight?.replace(/```json\n([\s\S]*?)\n```/g, '') || "Select a logical step below to focus the analysis on specific component interactions."}
+                            onLinkClick={onLinkClick}
+                            onSymbolClick={onSymbolClick}
+                        />
+                    </div>
+                )}
+            </div>
+
             <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-5 mb-6 shadow-inner relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-3 opacity-10">
                     <Zap size={40} className="text-blue-400" />
@@ -202,33 +229,6 @@ export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClic
                         })}
                     </div>
                 </div>
-            </div>
-
-            {/* AI Summary Section */}
-            <div className="bg-slate-900/50 border border-white/5 rounded-xl p-4 backdrop-blur-md">
-                <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-500 italic">AI Analysis</h4>
-                    {!isInsightLoading && (
-                        <div className="px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[7px] font-black text-blue-400 uppercase tracking-tighter">
-                            Real-time
-                        </div>
-                    )}
-                </div>
-
-                {isInsightLoading ? (
-                    <div className="flex items-center gap-3 text-blue-500/60 animate-pulse py-4">
-                        <Brain size={14} className="animate-bounce" />
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em]">Contextualizing Flow...</span>
-                    </div>
-                ) : (
-                    <div className="text-[11px] text-slate-400 leading-relaxed max-w-none">
-                        <MarkdownRenderer
-                            content={nodeInsight?.replace(/```json\n([\s\S]*?)\n```/g, '') || "Select a logical step above to focus the analysis on specific component interactions."}
-                            onLinkClick={onLinkClick}
-                            onSymbolClick={onSymbolClick}
-                        />
-                    </div>
-                )}
             </div>
 
             <button className="group w-full py-3 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 rounded-lg text-[9px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 mt-4 shadow-lg active:scale-[0.98]">

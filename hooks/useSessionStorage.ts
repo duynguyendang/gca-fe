@@ -1,0 +1,37 @@
+import { useEffect } from 'react';
+import { FlatGraph } from '../types';
+
+export const useSessionStorage = (
+  astData: FlatGraph | null,
+  sandboxFiles: Record<string, any>,
+  dataApiBase: string
+) => {
+  // Persist AST data to session storage
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('gca_ast_data', JSON.stringify(astData));
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+        console.debug('Session storage quota exceeded, persistence disabled for this session.');
+      } else {
+        console.warn('Failed to save AST data to session storage:', e);
+      }
+    }
+  }, [astData]);
+
+  // Persist sandbox files to session storage
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('gca_sandbox_files', JSON.stringify(sandboxFiles));
+    } catch (e) {
+      console.warn('Failed to save sandbox files to session storage:', e);
+    }
+  }, [sandboxFiles]);
+
+  // Persist API base URL
+  useEffect(() => {
+    if (dataApiBase) {
+      sessionStorage.setItem('gca_api_base_v2', dataApiBase);
+    }
+  }, [dataApiBase]);
+};

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useAppContext } from '../../../context/AppContext';
 import MarkdownRenderer from '../../Synthesis/MarkdownRenderer';
 
@@ -10,17 +10,36 @@ interface ArchitectureOverviewProps {
 export const ArchitectureOverview: React.FC<ArchitectureOverviewProps> = ({ onLinkClick, onSymbolClick }) => {
     const { selectedNode, nodeInsight, isInsightLoading } = useAppContext();
 
+    const parsedArch = useMemo(() => {
+        if (!nodeInsight) return null;
+        try {
+            const jsonMatch = nodeInsight.match(/```json\n([\s\S]*?)\n```/) || nodeInsight.match(/{[\s\S]*?}/);
+            if (jsonMatch) {
+                const cleaned = jsonMatch[0].replace(/```json\n|```/g, '').trim();
+                const parsed = JSON.parse(cleaned);
+                if (parsed.architecture) return parsed.architecture;
+            }
+        } catch (e) {
+            console.warn('[ArchitectureOverview] Failed to parse dynamic architecture metrics:', e);
+        }
+        return null;
+    }, [nodeInsight]);
+
     const metrics = [
-        { label: 'In-Degree', value: 12, icon: 'fa-arrow-right-to-bracket', color: 'text-teal-400' },
-        { label: 'Out-Degree', value: 4, icon: 'fa-arrow-right-from-bracket', color: 'text-teal-400' },
-        { label: 'Cohesion', value: 'High', icon: 'fa-vector-square', color: 'text-teal-400' },
-        { label: 'Coupling', value: 'Low', icon: 'fa-link-slash', color: 'text-teal-400' },
+        { label: 'In-Degree', value: parsedArch?.inDegree ?? 12, icon: 'fa-arrow-right-to-bracket', color: 'text-teal-400' },
+        { label: 'Out-Degree', value: parsedArch?.outDegree ?? 4, icon: 'fa-arrow-right-from-bracket', color: 'text-teal-400' },
+        { label: 'Cohesion', value: parsedArch?.cohesion ?? 'High', icon: 'fa-vector-square', color: 'text-teal-400' },
+        { label: 'Coupling', value: parsedArch?.coupling ?? 'Low', icon: 'fa-link-slash', color: 'text-teal-400' },
     ];
 
-    const patterns = [
-        { name: 'Singleton', weight: '95%', color: 'border-teal-500/30 bg-teal-500/5' },
-        { name: 'Factory', weight: '12%', color: 'border-white/10 bg-white/5' },
-    ];
+    const patterns = parsedArch?.patterns?.map((p: any) => ({
+        name: p.name,
+        weight: p.weight,
+        color: p.weight.includes('9') ? 'border-teal-500/30 bg-teal-500/5' : 'border-white/10 bg-white/5'
+    })) || [
+            { name: 'Singleton', weight: '95%', color: 'border-teal-500/30 bg-teal-500/5' },
+            { name: 'Factory', weight: '12%', color: 'border-white/10 bg-white/5' },
+        ];
 
     return (
         <div className="space-y-4 animate-fade-in">
@@ -63,7 +82,7 @@ export const ArchitectureOverview: React.FC<ArchitectureOverviewProps> = ({ onLi
                 ) : (
                     <div className="text-[11px] text-slate-300 leading-relaxed max-w-none">
                         <MarkdownRenderer
-                            content={nodeInsight || "Select a module to analyze its structural integrity and dependencies."}
+                            content={nodeInsight?.replace(/```json\n([\s\S]*?)\n```/g, '') || "Select a module to analyze its structural integrity and dependencies."}
                             onLinkClick={onLinkClick}
                             onSymbolClick={onSymbolClick}
                         />

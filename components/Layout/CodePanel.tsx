@@ -10,20 +10,14 @@ interface CodePanelProps {
     width: number;
     isCollapsed: boolean;
     onToggleCollapse: () => void;
-    onStartResize: () => void;
-    onStartVerticalResize?: () => void;
-    codeHeight?: number;
-    children?: React.ReactNode;
+    onStartResize: (e: React.MouseEvent) => void;
 }
 
 const CodePanel: React.FC<CodePanelProps> = ({
     width,
     isCollapsed,
     onToggleCollapse,
-    onStartResize,
-    onStartVerticalResize,
-    codeHeight = 300,
-    children
+    onStartResize
 }) => {
     const { selectedNode, hydratingNodeId } = useAppContext();
 
@@ -93,42 +87,27 @@ const CodePanel: React.FC<CodePanelProps> = ({
                 className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[var(--accent-teal)]/20 active:bg-[var(--accent-teal)]/50 transition-colors z-40"
             />
 
-            {/* Insight/Synthesis (Priority Content) */}
-            <div className={`flex-1 flex flex-col min-h-0 bg-[var(--bg-surface)]`}>
-                {children}
-            </div>
-
-            {/* Secondary Code Section (Collapsible) */}
-            <div className="flex flex-col shrink-0 bg-[var(--bg-main)] relative">
-                {/* Vertical Resize Handle */}
-                {onStartVerticalResize && !isCollapsed && (
-                    <div
-                        onMouseDown={onStartVerticalResize}
-                        className="absolute left-0 top-0 right-0 h-1.5 cursor-row-resize hover:bg-[var(--accent-teal)]/20 active:bg-[var(--accent-teal)]/50 transition-colors z-40"
-                    />
-                )}
-                {/* Header */}
-                <header
-                    className="h-10 px-5 border-t border-[var(--border)] flex items-center justify-between shrink-0 cursor-pointer hover:bg-white/5 transition-colors"
-                    onClick={onToggleCollapse}
-                >
-                    <div className="flex items-center gap-3 overflow-hidden mr-4">
-                        <button
-                            className="text-slate-500 transition-colors"
-                        >
-                            <i className={`fas fa-chevron-${isCollapsed ? 'up' : 'down'}`}></i>
-                        </button>
-                        <i className="fas fa-terminal text-[var(--accent-teal)] text-[10px]"></i>
-                        <span className="text-[10px] font-mono text-slate-300 truncate uppercase tracking-tighter">
-                            RAW SOURCE <span className="text-slate-500 lowercase ml-2">{selectedNode?.id || "idle"}</span>
-                        </span>
-                    </div>
-                </header>
-
-                {/* Code Content */}
-                <div className={`overflow-auto custom-scrollbar border-t border-[var(--border)] bg-[var(--bg-surface)] ${isCollapsed ? 'hidden' : ''}`} style={{ height: isCollapsed ? '0' : `${codeHeight}px` }}>
-                    {renderCode()}
+            {/* Header */}
+            <header
+                className="h-10 px-5 border-b border-[var(--border)] flex items-center justify-between shrink-0 cursor-pointer hover:bg-white/5 transition-colors"
+                onClick={onToggleCollapse}
+            >
+                <div className="flex items-center gap-3 overflow-hidden mr-4">
+                    <button
+                        className="text-slate-500 transition-colors"
+                    >
+                        <i className={`fas fa-chevron-${isCollapsed ? 'right' : 'left'}`}></i>
+                    </button>
+                    <i className="fas fa-terminal text-[var(--accent-teal)] text-[10px]"></i>
+                    <span className="text-[10px] font-mono text-slate-300 truncate uppercase tracking-tighter">
+                        RAW SOURCE <span className="text-slate-500 lowercase ml-2">{selectedNode?.id || "idle"}</span>
+                    </span>
                 </div>
+            </header>
+
+            {/* Code Content */}
+            <div className={`flex-1 overflow-auto custom-scrollbar bg-[var(--bg-surface)] ${isCollapsed ? 'hidden' : ''}`}>
+                {renderCode()}
             </div>
         </aside>
     );

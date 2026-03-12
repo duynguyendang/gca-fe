@@ -25,6 +25,7 @@ The GCA Frontend is a modern React application that visualizes code as an intera
   - **Discovery**: Force-directed graph for exploration
   - **Architecture**: Hierarchical backbone view showing cross-file dependencies
   - **Map View**: High-level clustered view (Leiden algorithm) for navigating large codebases (>300 nodes)
+  - **Narrative Mode**: Focused workspace for interactive, step-by-step logic tracing. Incorporates the **Entropy View**, a diagnostic panel pinpointing technical debt hotspots by calculating a **Risk Index** (factoring in test coverage, churn rate, and complexity).
 - **Cluster Expansion**: Click on cluster nodes in Map View to expand and view constituent files
 - **Interactive Navigation**: Click nodes, expand files, trace relationships
 - **Real-time Updates**: Graph updates as you search and explore

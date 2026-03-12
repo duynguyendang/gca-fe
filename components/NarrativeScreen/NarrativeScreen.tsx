@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import TreeVisualizer from '../TreeVisualizer/index';
-import NarrativeAnalysisPanel from './NarrativeAnalysisPanel';
+import SynthesisPanel from '../Layout/SynthesisPanel';
 import NarrativeQueryBar from './NarrativeQueryBar';
+import { useInsights } from '../../hooks';
 
 interface NarrativeScreenProps {
     onNodeSelect: (node: any) => void;
@@ -24,7 +25,10 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         expandedFileIds,
         expandingFileId,
         isNarrativeLoading,
+        setNodeInsight,
     } = useAppContext();
+
+    const { generateInsights } = useInsights();
 
     const fileScopedData = useMemo(() => ({
         nodes: fileScopedNodes,
@@ -148,9 +152,13 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                     )}
                 </div>
 
-                {/* Right: AI Analysis Panel (40% width) */}
-                <div className="w-[440px] shrink-0">
-                    <NarrativeAnalysisPanel
+                {/* Right: AI Synthesis Panel */}
+                <div className="w-[440px] shrink-0 flex flex-col border-l border-[var(--border)] bg-[var(--bg-main)] overflow-hidden">
+                    <SynthesisPanel
+                        isCollapsed={false}
+                        onToggleCollapse={() => { }}
+                        onAnalyze={generateInsights}
+                        onClearInsight={() => setNodeInsight(null)}
                         onLinkClick={onLinkClick}
                         onSymbolClick={onSymbolClick}
                     />

@@ -7,60 +7,44 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 interface ResizePanelsConfig {
     initialSidebarWidth?: number;
     initialCodePanelWidth?: number;
-    initialSynthesisHeight?: number;
     isCodeCollapsed?: boolean;
     setIsCodeCollapsed?: React.Dispatch<React.SetStateAction<boolean>>;
-    isSynthesisCollapsed?: boolean;
-    setIsSynthesisCollapsed?: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export const useResizePanels = (config: ResizePanelsConfig = {}) => {
     const {
         initialSidebarWidth = 280,
         initialCodePanelWidth,
-        initialSynthesisHeight,
     } = config;
 
     // Calculate responsive defaults
     const defaultCodePanelWidth = typeof window !== 'undefined'
         ? Math.round(window.innerWidth * 0.35)
         : 500;
-    const defaultSynthesisHeight = typeof window !== 'undefined'
-        ? Math.round(window.innerHeight * 0.5)
-        : 400;
 
     const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
     const [codePanelWidth, setCodePanelWidth] = useState(initialCodePanelWidth ?? defaultCodePanelWidth);
-    const [synthesisHeight, setSynthesisHeight] = useState(initialSynthesisHeight ?? defaultSynthesisHeight);
 
     // Get collapse states from config (passed from AppContext in App.tsx)
     const {
         isCodeCollapsed,
         setIsCodeCollapsed,
-        isSynthesisCollapsed,
-        setIsSynthesisCollapsed
     } = config as any;
 
     const isResizingSidebar = useRef(false);
     const isResizingCode = useRef(false);
-    const isResizingSynthesis = useRef(false);
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
         if (isResizingSidebar.current) {
             setSidebarWidth(Math.max(200, Math.min(500, e.clientX)));
         } else if (isResizingCode.current) {
             setCodePanelWidth(Math.max(300, window.innerWidth - e.clientX));
-        } else if (isResizingSynthesis.current) {
-            // Calculate from bottom of viewport
-            const newHeight = window.innerHeight - e.clientY;
-            setSynthesisHeight(Math.max(100, Math.min(window.innerHeight - 200, newHeight)));
         }
     }, []);
 
     const handleMouseUp = useCallback(() => {
         isResizingSidebar.current = false;
         isResizingCode.current = false;
-        isResizingSynthesis.current = false;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
     }, []);
@@ -82,15 +66,10 @@ export const useResizePanels = (config: ResizePanelsConfig = {}) => {
         document.body.style.userSelect = 'none';
     }, []);
 
-    const startResizeCodePanel = useCallback(() => {
+    const startResizeCode = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
         isResizingCode.current = true;
         document.body.style.cursor = 'col-resize';
-        document.body.style.userSelect = 'none';
-    }, []);
-
-    const startResizeSynthesis = useCallback(() => {
-        isResizingSynthesis.current = true;
-        document.body.style.cursor = 'row-resize';
         document.body.style.userSelect = 'none';
     }, []);
 
@@ -98,19 +77,14 @@ export const useResizePanels = (config: ResizePanelsConfig = {}) => {
         // Dimensions
         sidebarWidth,
         codePanelWidth,
-        synthesisHeight,
-        setSynthesisHeight,
 
         // Collapse states
         isCodeCollapsed,
         setIsCodeCollapsed,
-        isSynthesisCollapsed,
-        setIsSynthesisCollapsed,
 
         // Resize handlers
         startResizeSidebar,
-        startResizeCodePanel,
-        startResizeSynthesis,
+        startResizeCode,
     };
 };
 

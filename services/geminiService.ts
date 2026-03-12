@@ -64,12 +64,27 @@ export const getGeminiInsight = async (
   context: any,
   dataApiBase: string,
   projectId: string,
+  activeSubMode: string = 'NARRATIVE'
 ) => {
   if (!node) return null;
   // Backend Task: "insight"
+
+  let instruction = "";
+  if (activeSubMode === 'NARRATIVE') {
+    instruction = `Include a structured JSON block for the "Execution Sequence" at the VERY END.
+    JSON Format: \`\`\`json { "steps": [ { "id": 1, "title": "Step Name", "icon": "LogIn|ShieldCheck|Key|Zap|Database|Brain", "description": "Short description", "nodeId": "exact:symbol:id" } ] } \`\`\``;
+  } else if (activeSubMode === 'ARCHITECTURE') {
+    instruction = `Include a structured JSON block for the "Metrics" and "Patterns" at the VERY END.
+    JSON Format: \`\`\`json { "architecture": { "inDegree": 12, "outDegree": 4, "cohesion": "High", "coupling": "Low", "patterns": [ { "name": "Singleton", "weight": "95%" } ] } } \`\`\``;
+  } else if (activeSubMode === 'ENTROPY') {
+    instruction = `Include a structured JSON block for "Entropy" at the VERY END.
+    JSON Format: \`\`\`json { "entropy": { "riskScore": 78, "technicalDebt": "3.2d", "testCoverage": "42%", "churnRate": "High" } } \`\`\``;
+  }
+
   return await askAI(dataApiBase, projectId, {
     task: 'insight',
-    symbol_id: node.id
+    symbol_id: node.id,
+    query_instruction: instruction
   });
 };
 
@@ -242,10 +257,22 @@ export const generateReactiveNarrative = async (query: string, results: any, dat
   });
 };
 
-export const getFileRoleSummary = async (fileName: string, fileContent: string, neighbors: any, dataApiBase: string, projectId: string) => {
+export const getFileRoleSummary = async (fileName: string, fileContent: string, neighbors: any, dataApiBase: string, projectId: string, activeSubMode: string = 'ARCHITECTURE') => {
   // Use "chat" task to force context injection since "insight" might rely only on backend symbol lookup.
   // We truncate fileContent to avoid blowing up context window (simple safety)
   const truncatedContent = fileContent.length > 20000 ? fileContent.substring(0, 20000) + "\n...(truncated)" : fileContent;
+
+  let jsonInstruction = "";
+  if (activeSubMode === 'NARRATIVE') {
+    jsonInstruction = `Please also include a structured JSON block for the "Execution Sequence" at the VERY END.
+      JSON Format: \`\`\`json { "steps": [ { "id": 1, "title": "Step Name", "icon": "File", "description": "Short description", "nodeId": "exact:symbol:id" } ] } \`\`\``;
+  } else if (activeSubMode === 'ARCHITECTURE') {
+    jsonInstruction = `Please also include a structured JSON block for the "Metrics" and "Patterns" at the VERY END.
+      JSON Format: \`\`\`json { "architecture": { "inDegree": 12, "outDegree": 4, "cohesion": "High", "coupling": "Low", "patterns": [ { "name": "Singleton", "weight": "95%" } ] } } \`\`\``;
+  } else if (activeSubMode === 'ENTROPY') {
+    jsonInstruction = `Please also include a structured JSON block for "Entropy" at the VERY END.
+      JSON Format: \`\`\`json { "entropy": { "riskScore": 78, "technicalDebt": "3.2d", "testCoverage": "42%", "churnRate": "High" } } \`\`\``;
+  }
 
   const prompt = `Analyze the architectural role of the file "${fileName}".
   
@@ -258,7 +285,9 @@ export const getFileRoleSummary = async (fileName: string, fileContent: string, 
   ${truncatedContent}
   \`\`\`
   
-  Provide a technical summary of its role, key interactions, and design patterns used.`;
+  Provide a technical summary of its role, key interactions, and design patterns used.
+  
+  ${jsonInstruction}`;
 
   return await askAI(dataApiBase, projectId, {
     task: 'chat',

@@ -17,7 +17,8 @@ export const useInsights = () => {
         fileScopedNodes,
         fileScopedLinks,
         setNodeInsight,
-        setIsInsightLoading
+        setIsInsightLoading,
+        activeSubMode
     } = useAppContext();
 
     const generateInsights = useCallback(() => {
@@ -81,7 +82,7 @@ export const useInsights = () => {
                 neighbors.callers = Array.from(new Set(neighbors.callers));
                 neighbors.dependencies = Array.from(new Set(neighbors.dependencies));
 
-                return getFileRoleSummary(selectedNode.name, fileContent, neighbors, dataApiBase, selectedProjectId);
+                return getFileRoleSummary(selectedNode.name, fileContent, neighbors, dataApiBase, selectedProjectId, activeSubMode);
             }).then(summary => {
                 setNodeInsight(summary);
             }).catch(err => {
@@ -122,7 +123,7 @@ export const useInsights = () => {
 
         const context = { inbound, outbound };
 
-        getGeminiInsight(selectedNode, context, dataApiBase, selectedProjectId).then(i => {
+        getGeminiInsight(selectedNode, context, dataApiBase, selectedProjectId, activeSubMode).then(i => {
             setNodeInsight(i);
             setIsInsightLoading(false);
         }).catch(() => {

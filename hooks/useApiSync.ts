@@ -4,6 +4,7 @@
  */
 import { useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
+import { logger } from '../src/logger';
 
 export const useApiSync = () => {
     const {
@@ -135,7 +136,7 @@ export const useApiSync = () => {
                         const isClustered = ast.nodes.some((n: any) => n.kind === 'cluster' || n.id.startsWith('cluster_'));
 
                         if (isClustered) {
-                            console.log('[ApiSync] Received clustered graph. Updating Visualizer only.');
+                            logger.log('[ApiSync] Received clustered graph. Updating Visualizer only.');
                             // Clustered graphs usually work best in Map or Architecture mode
                             setViewMode('map');
                             setFileScopedNodes(ast.nodes.map((n: any) => ({ ...n, _project: projectId })));
@@ -159,7 +160,7 @@ export const useApiSync = () => {
                     }
                 }
             } catch (queryErr) {
-                console.log('Query endpoint not available, using file-based AST');
+                logger.log('Query endpoint not available, using file-based AST');
             }
 
             if (onComplete) onComplete();

@@ -5,6 +5,7 @@
 import { useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { FlatGraph } from '../types';
+import { logger } from '../src/logger';
 
 export const useNodeHydration = () => {
     const {
@@ -30,14 +31,14 @@ export const useNodeHydration = () => {
 
         // Check cache first
         if (symbolCache.has(nodeId)) {
-            console.log('[Hydrate] Cache hit for:', nodeId);
+            logger.log('[Hydrate] Cache hit for:', nodeId);
             return symbolCache.get(nodeId);
         }
 
         // Check if node already has code
         const existingNode = (astData as FlatGraph)?.nodes?.find((n: any) => n.id === nodeId);
         if (existingNode?.code) {
-            console.log('[Hydrate] Node already has code:', nodeId);
+            logger.log('[Hydrate] Node already has code:', nodeId);
             setSymbolCache(prev => new Map(prev).set(nodeId, existingNode));
             return existingNode;
         }
@@ -47,7 +48,7 @@ export const useNodeHydration = () => {
             return null;
         }
 
-        console.log('[Hydrate] Fetching node from API:', nodeId);
+        logger.log('[Hydrate] Fetching node from API:', nodeId);
         setHydratingNodeId(nodeId);
 
         let targetId = nodeId;
@@ -67,7 +68,7 @@ export const useNodeHydration = () => {
                     if (suffixMatches.length > 0) {
                         suffixMatches.sort((a: string, b: string) => a.length - b.length);
                         targetId = suffixMatches[0];
-                        console.log('[Hydrate] Resolved dotted ID', nodeId, 'to file', targetId);
+                        logger.log('[Hydrate] Resolved dotted ID', nodeId, 'to file', targetId);
                     }
                 }
             } catch (e) {
@@ -85,7 +86,7 @@ export const useNodeHydration = () => {
             }
 
             const hydratedNode = await response.json();
-            console.log('[Hydrate] Successfully hydrated node:', hydratedNode);
+            logger.log('[Hydrate] Successfully hydrated node:', hydratedNode);
 
             // Update cache
             setSymbolCache(prev => new Map(prev).set(nodeId, hydratedNode));

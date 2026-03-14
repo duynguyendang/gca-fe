@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { UI_CONFIG } from '../src/constants';
 
 interface SearchBarProps {
   searchTerm: string;
@@ -8,22 +9,19 @@ interface SearchBarProps {
   searchStatus: string | null;
   searchError: string | null;
   queryResults: any;
-  setSearchError: (error: string | null) => void;
-  setQueryResults: (results: any) => void;
+  setCtxSearchError: (error: string | null) => void;
   viewMode: string;
   lastExecutedQuery: string;
   dataApiBase: string;
   selectedProjectId: string;
   setCtxSearchStatus: (status: string | null) => void;
   setCtxIsSearching: (searching: boolean) => void;
-  setCtxSearchError: (error: string | null) => void;
   setFileScopedNodes: (nodes: any[]) => void;
   setFileScopedLinks: (links: any[]) => void;
   setIsClustered: (clustered: boolean) => void;
   setNodeInsight: (insight: string | null) => void;
   setSearchTerm: (term: string) => void;
   setQueryResultsNull: () => void;
-  setSearchErrorNull: () => void;
   setFileScopedNodesEmpty: () => void;
   setFileScopedLinksEmpty: () => void;
 }
@@ -36,25 +34,32 @@ const SearchBar: React.FC<SearchBarProps> = ({
   searchStatus,
   searchError,
   queryResults,
-  setSearchError,
+  setCtxSearchError,
   viewMode,
   lastExecutedQuery,
   dataApiBase,
   selectedProjectId,
   setCtxSearchStatus,
   setCtxIsSearching,
-  setCtxSearchError,
   setFileScopedNodes,
   setFileScopedLinks,
   setIsClustered,
   setNodeInsight,
   setSearchTerm,
   setQueryResultsNull,
-  setSearchErrorNull,
   setFileScopedNodesEmpty,
   setFileScopedLinksEmpty,
 }) => {
   const [showHistory, setShowHistory] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+    };
+  }, []);
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('queryHistory');
@@ -66,7 +71,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
 
   const addToHistory = (query: string) => {
     if (!query || !query.trim()) return;
-    const newHistory = [query, ...searchHistory.filter(q => q !== query)].slice(0, 10);
+    const newHistory = [query, ...searchHistory.filter(q => q !== query)].slice(0, UI_CONFIG.HISTORY_LIMIT);
     setSearchHistory(newHistory);
     localStorage.setItem('queryHistory', JSON.stringify(newHistory));
   };
@@ -85,7 +90,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
   const handleClearSearch = () => {
     setSearchTerm('');
     setQueryResultsNull();
-    setSearchErrorNull();
+    setCtxSearchError(null);
     setNodeInsight(null);
     setFileScopedNodesEmpty();
     setFileScopedLinksEmpty();
@@ -121,12 +126,12 @@ const SearchBar: React.FC<SearchBarProps> = ({
         value={searchTerm}
         onChange={(e) => {
           onSearchTermChange(e.target.value);
-          setSearchError(null);
-          if (e.target.value.length > 2) {
-            clearTimeout((e.target as any)._searchTimeout);
-            (e.target as any)._searchTimeout = setTimeout(() => {
+          setCtxSearchError(null);
+          if (e.target.value.length > UI_CONFIG.MIN_SEARCH_LENGTH) {
+            if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+            searchTimeoutRef.current = setTimeout(() => {
               // Auto-search disabled for cleaner experience
-            }, 800);
+            }, UI_CONFIG.DEBOUNCE_DELAY);
           }
         }}
         onKeyDown={(e) => {
@@ -138,7 +143,10 @@ const SearchBar: React.FC<SearchBarProps> = ({
         }}
         className="bg-transparent border-none flex-1 px-2 text-xs focus:outline-none text-white font-medium placeholder-slate-500 h-8"
         onFocus={() => setShowHistory(true)}
-        onBlur={() => setTimeout(() => setShowHistory(false), 200)}
+        onBlur={() => {
+          if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+          blurTimeoutRef.current = setTimeout(() => setShowHistory(false), UI_CONFIG.BLUR_DELAY);
+        }}
       />
 
       {searchStatus && (

@@ -12,6 +12,8 @@ import AppFooter from './components/AppFooter';
 import SettingsModal from './components/SettingsModal';
 import GraphContainer from './components/GraphContainer';
 import { useSessionStorage } from './hooks/useSessionStorage';
+import { CDN_URLS } from './src/constants';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 // Ensure Prism is available for highlighting
 declare var Prism: any;
@@ -133,15 +135,15 @@ const App: React.FC = () => {
   useEffect(() => {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css';
+    link.href = CDN_URLS.PRISM_CSS;
     document.head.appendChild(link);
 
     const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js';
+    script.src = CDN_URLS.PRISM_JS;
     script.onload = () => {
       ['go', 'typescript', 'javascript', 'python', 'json', 'rust', 'cpp', 'css', 'html'].forEach(lang => {
         const langScript = document.createElement('script');
-        langScript.src = `https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-${lang}.min.js`;
+        langScript.src = CDN_URLS.PRISM_COMPONENT(lang);
         langScript.onerror = (e) => console.warn(`Failed to load Prism language: ${lang}`, e);
         document.head.appendChild(langScript);
       });
@@ -187,12 +189,8 @@ const App: React.FC = () => {
   // Clear search helpers
   const setSearchTermWrapper = useCallback((term: string) => setSearchTerm(term), [setSearchTerm]);
   const setQueryResultsNull = useCallback(() => setQueryResults(null), [setQueryResults]);
-  const setSearchErrorNull = useCallback(() => setSearchError(null), [setSearchError]);
   const setFileScopedNodesEmpty = useCallback(() => setFileScopedNodes([]), [setFileScopedNodes]);
   const setFileScopedLinksEmpty = useCallback(() => setFileScopedLinks([]), [setFileScopedLinks]);
-  const setCtxSearchStatus = useCallback((status: string | null) => setSearchStatus(status), [setSearchStatus]);
-  const setCtxIsSearching = useCallback((searching: boolean) => setCtxIsSearching(searching), [setCtxIsSearching]);
-  const setCtxSearchError = useCallback((error: string | null) => setSearchError(error), [setSearchError]);
   const setNodeInsightNull = useCallback(() => setNodeInsight(null), [setNodeInsight]);
 
   // Expanded graph data computation
@@ -258,8 +256,9 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen w-screen bg-[var(--bg-main)] text-slate-400 overflow-hidden font-sans">
-      <AppSidebar
+    <ErrorBoundary>
+      <div className="flex h-screen w-screen bg-[var(--bg-main)] text-slate-400 overflow-hidden font-sans">
+        <AppSidebar
         width={sidebarWidth}
         onResizeStart={startResizeSidebar}
         currentProject={currentProject}
@@ -285,7 +284,7 @@ const App: React.FC = () => {
           searchStatus={searchStatus}
           searchError={searchError}
           queryResults={queryResults}
-          setSearchError={setSearchError}
+          setCtxSearchError={setCtxSearchError}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           isSubModeSwitching={isSubModeSwitching}
@@ -295,14 +294,12 @@ const App: React.FC = () => {
           selectedProjectId={selectedProjectId}
           setCtxSearchStatus={setCtxSearchStatus}
           setCtxIsSearching={setCtxIsSearching}
-          setCtxSearchError={setCtxSearchError}
           setFileScopedNodes={setFileScopedNodes}
           setFileScopedLinks={setFileScopedLinks}
           setIsClustered={setIsClustered}
           setNodeInsight={setNodeInsightNull}
           setSearchTerm={setSearchTermWrapper}
           setQueryResultsNull={setQueryResultsNull}
-          setSearchErrorNull={setSearchErrorNull}
           setFileScopedNodesEmpty={setFileScopedNodesEmpty}
           setFileScopedLinksEmpty={setFileScopedLinksEmpty}
         />
@@ -361,7 +358,8 @@ const App: React.FC = () => {
         availableProjects={availableProjects}
         onConnect={handleConnect}
       />
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 };
 

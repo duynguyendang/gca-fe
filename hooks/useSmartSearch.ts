@@ -12,6 +12,7 @@ import {
     fetchSemanticSearch,
     fetchSubgraph
 } from '../services/graphService';
+import { logger } from '../src/logger';
 import {
     resolveSymbolFromQuery,
     translateNLToDatalog,
@@ -64,7 +65,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
     const [queryResults, setQueryResults] = useState<any>(null);
 
     const handleSmartSearch = useCallback(async (query: string) => {
-        console.log('=== handleSmartSearch called ===', query);
+        logger.log('=== handleSmartSearch called ===', query);
         setSearchError(null);
         setIsSearching(true);
         setQueryResults(null);
@@ -82,14 +83,14 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             const whatIsMatch = query.match(/^what\s+is\s+(\w+)\??$/i);
             if (whatIsMatch) {
                 const symbolName = whatIsMatch[1];
-                console.log('[Ultra-Fast-Path] Detected simple lookup:', symbolName);
+                logger.log('[Ultra-Fast-Path] Detected simple lookup:', symbolName);
                 setSearchStatus(`Looking up ${symbolName}...`);
 
                 const symbols = await fetchSymbols(dataApiBase, selectedProjectId, symbolName);
                 if (symbols.length > 0) {
                     // Found it! Just select the symbol and show it
                     const symbolId = symbols[0];
-                    console.log('[Ultra-Fast-Path] Found symbol:', symbolId);
+                    logger.log('[Ultra-Fast-Path] Found symbol:', symbolId);
                     setSelectedNode({ id: symbolId });
                     setNodeInsight(`Found symbol: ${symbolName}`);
                     setSearchStatus(null);
@@ -102,7 +103,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             if (manifest && manifest.S && manifest.F) {
                 const exactMatchId = manifest.S[query.trim()];
                 if (exactMatchId) {
-                    console.log('[Fast-Path] Found exact match in manifest:', query, '->', exactMatchId);
+                    logger.log('[Fast-Path] Found exact match in manifest:', query, '->', exactMatchId);
                     setSearchStatus("Fast-path found...");
 
                     const fileId = exactMatchId.toString();
@@ -110,10 +111,10 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
 
                     if (filePath) {
                         const putativeSymbolId = `${filePath}:${query.trim()}`;
-                        console.log('[Fast-Path] Inferring Symbol ID:', putativeSymbolId);
+                        logger.log('[Fast-Path] Inferring Symbol ID:', putativeSymbolId);
 
                         const fastDatalog = `triples(?s, "calls", "${putativeSymbolId}"), triples("${putativeSymbolId}", "calls", ?o), triples("${putativeSymbolId}", "defines", ?d)`;
-                        console.log('[Fast-Path] Generated Datalog:', fastDatalog);
+                        logger.log('[Fast-Path] Generated Datalog:', fastDatalog);
 
                         setSearchStatus("Executing fast query...");
                         const result = await executeQuery(dataApiBase, selectedProjectId, fastDatalog);
@@ -140,7 +141,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             // Translate directly to Datalog (with project-specific predicates)
             setSearchStatus("Translating to Datalog...");
             const datalogQuery = await translateNLToDatalog(query, null, dataApiBase, selectedProjectId, availablePredicates);
-            console.log('Generated Datalog:', datalogQuery);
+            logger.log('Generated Datalog:', datalogQuery);
 
             if (!datalogQuery) {
                 setSearchError("Could not translate query to Datalog.");
@@ -156,7 +157,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
 
             // If it's NOT a valid structural query, treat it as a broad semantic query
             if (!isDatalog && !isToolCall) {
-                console.log('[useSmartSearch] Response is not valid Datalog. Falling back to semantic search...', datalogQuery);
+                logger.log('[useSmartSearch] Response is not valid Datalog. Falling back to semantic search...', datalogQuery);
                 // Force a fallback by simulating an empty result flow
                 // We do this by jumping to the fallback logic block below
                 // Refactoring to a unified fallback function would be cleaner, but for now:
@@ -215,7 +216,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                 try {
                     const toolCall = JSON.parse(datalogQuery);
                     if (toolCall.tool === 'find_connection') {
-                        console.log('[Path-Finding] Tool call detected:', toolCall);
+                        logger.log('[Path-Finding] Tool call detected:', toolCall);
 
                         // Resolve symbol names to full IDs
                         setSearchStatus("Resolving symbols for path...");
@@ -239,7 +240,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                         const sourceId = sourceSymbols[0];
                         const targetId = targetSymbols[0];
 
-                        console.log('[Path-Finding] Resolved:', { sourceId, targetId });
+                        logger.log('[Path-Finding] Resolved:', { sourceId, targetId });
                         setSearchStatus(`Tracing path from ${sourceId} to ${targetId}...`);
 
                         const pathGraph = await fetchGraphPath(dataApiBase, selectedProjectId, sourceId, targetId);
@@ -286,10 +287,10 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             setSearchStatus("Executing Datalog query...");
             setLastExecutedQuery(datalogQuery); // Store for clustering
             const results = await executeQuery(dataApiBase, selectedProjectId, datalogQuery, true);
-            console.log('Query Results:', results);
+            logger.log('Query Results:', results);
 
             if (!results || !results.nodes || results.nodes.length === 0) {
-                console.log('[useSmartSearch] No Datalog results. Falling back to semantic search...');
+                logger.log('[useSmartSearch] No Datalog results. Falling back to semantic search...');
                 setSearchStatus("Falling back to semantic search...");
 
                 try {
@@ -351,8 +352,8 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             })));
             setFileScopedLinks(finalLinks);
 
-            console.log('[DEBUG] Transitioning to Discovery view for search results');
-            console.log('[DEBUG] Transitioning to Discovery view for search results');
+            logger.log('[DEBUG] Transitioning to Discovery view for search results');
+            logger.log('[DEBUG] Transitioning to Discovery view for search results');
             onViewModeChange('discovery');
 
             // Analyze results with AI using multi-file context to pull in actual code

@@ -1,21 +1,22 @@
 
 import { useMemo } from 'react';
 import { ASTNode, FlatGraph } from '../types';
+import { logger } from '../src/logger';
 
 export const useGraphData = (data: ASTNode | FlatGraph) => {
   return useMemo(() => {
     if (!data || !('nodes' in data)) {
-      console.log('useGraphData: no valid data');
+      logger.log('useGraphData: no valid data');
       return null;
     }
 
     // Safety check for empty or invalid node arrays
     if (!Array.isArray(data.nodes)) {
-      console.log('useGraphData: nodes is not an array');
+      logger.log('useGraphData: nodes is not an array');
       return null;
     }
 
-    console.log('useGraphData: data.nodes:', data.nodes.length, 'data.links:', data.links?.length);
+    logger.log('useGraphData: data.nodes:', data.nodes.length, 'data.links:', data.links?.length);
 
     const nodeMap = new Map();
     data.nodes.forEach(n => {
@@ -41,7 +42,7 @@ export const useGraphData = (data: ASTNode | FlatGraph) => {
       return { source, target };
     }).filter((l): l is { source: any, target: any } => l !== null) : [];
 
-    console.log('useGraphData: processed links:', links.length);
+    logger.log('useGraphData: processed links:', links.length);
     if (links.length === 0 && data.links?.length > 0) {
       console.warn('useGraphData: WARNING - ALL links were dropped! Original count:', data.links.length);
     }

@@ -1,4 +1,5 @@
 import React from 'react';
+import { API_CONFIG } from '../src/constants';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -58,7 +59,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               onChange={(e) => {
                 onDataApiBaseChange(e.target.value);
               }}
-              placeholder="https://gca-be-180036253374.us-central1.run.app"
+              placeholder={API_CONFIG.DEFAULT_BASE_URL}
               className={`w-full bg-[var(--bg-main)] border rounded px-4 py-2.5 text-xs text-white focus:outline-none font-mono ${dataApiBase && isValidUrl(dataApiBase) ? 'border-white/10 focus:border-[var(--accent-teal)]/50' : 'border-red-500/50 focus:border-red-500'}`}
             />
             {dataApiBase && !isValidUrl(dataApiBase) && (

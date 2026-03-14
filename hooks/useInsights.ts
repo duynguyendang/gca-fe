@@ -7,6 +7,7 @@ import { fetchSource } from '../services/graphService';
 import { getGeminiInsight, getFileRoleSummary } from '../services/geminiService';
 import { FlatGraph } from '../types';
 import { useAppContext } from '../context/AppContext';
+import { logger } from '../src/logger';
 
 export const useInsights = () => {
     const {
@@ -38,7 +39,7 @@ export const useInsights = () => {
         if (selectedFile) uniqueFiles.add(selectedFile);
 
         if (uniqueFiles.size > 1) {
-            console.log("Generating Multi-File Insight for:", Array.from(uniqueFiles));
+            logger.log("Generating Multi-File Insight for:", Array.from(uniqueFiles));
             const fileList = Array.from(uniqueFiles);
             // Use the new multi-file service
             import('../services/geminiService').then(({ getMultiFileInsight }) => {

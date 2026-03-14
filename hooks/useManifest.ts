@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { fetchManifest } from '../services/graphService';
+import { logger } from '../src/logger';
 
 interface ManifestData {
     F: Record<string, string>;
@@ -20,13 +21,13 @@ export function useManifest(apiBase: string, projectId: string) {
             .then(data => {
                 setManifest(data);
                 setLoading(false);
-                console.log('[useManifest] Loaded manifest:', {
+                logger.log('[useManifest] Loaded manifest:', {
                     files: Object.keys(data.F).length,
                     symbols: Object.keys(data.S).length
                 });
             })
             .catch(err => {
-                console.error('[useManifest] Error loading manifest:', err);
+                logger.error('[useManifest] Error loading manifest:', err);
                 setError(err.message);
                 setLoading(false);
             });

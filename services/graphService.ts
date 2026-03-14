@@ -3,6 +3,24 @@
  * Handles API calls for progressive graph expansion
  */
 
+const isValidUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const sanitizeInput = (input: string, maxLength = 1000): string => {
+  if (!input || typeof input !== 'string') return '';
+  return input.trim().slice(0, maxLength);
+};
+
+const isValidProjectId = (projectId: string): boolean => {
+  return /^[a-zA-Z0-9_-]{1,100}$/.test(projectId);
+};
+
 export interface GraphMapNode {
   id: string;
   name: string;
@@ -97,6 +115,9 @@ export async function fetchSummary(dataApiBase: string, projectId: string): Prom
  * GET /v1/files?project={projectId}
  */
 export async function fetchFiles(dataApiBase: string, projectId: string): Promise<string[]> {
+  if (!isValidUrl(dataApiBase)) throw new Error('Invalid API base URL');
+  if (!isValidProjectId(projectId)) throw new Error('Invalid project ID');
+  
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/v1/files?project=${encodeURIComponent(projectId)}`;
   const response = await fetch(url);
@@ -110,6 +131,10 @@ export async function fetchFiles(dataApiBase: string, projectId: string): Promis
  * GET /v1/source?project={projectId}&id={id}&start={start}&end={end}
  */
 export async function fetchSource(dataApiBase: string, projectId: string, id: string, start?: number, end?: number): Promise<string> {
+  if (!isValidUrl(dataApiBase)) throw new Error('Invalid API base URL');
+  if (!isValidProjectId(projectId)) throw new Error('Invalid project ID');
+  if (!id || typeof id !== 'string') throw new Error('Invalid ID');
+  
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   let url = `${cleanBase}/v1/source?project=${encodeURIComponent(projectId)}&id=${encodeURIComponent(id)}`;
   if (start) url += `&start=${start}`;
@@ -163,6 +188,11 @@ export async function fetchHydrate(dataApiBase: string, projectId: string, id: s
  * POST /v1/query
  */
 export async function executeQuery(dataApiBase: string, projectId: string, query: string, hydrate: boolean = true): Promise<any> {
+  if (!isValidUrl(dataApiBase)) throw new Error('Invalid API base URL');
+  if (!isValidProjectId(projectId)) throw new Error('Invalid project ID');
+  if (!query || typeof query !== 'string') throw new Error('Invalid query');
+  
+  const sanitizedQuery = sanitizeInput(query, 5000);
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/v1/query?project=${encodeURIComponent(projectId)}${hydrate ? '&hydrate=true' : ''}`;
 

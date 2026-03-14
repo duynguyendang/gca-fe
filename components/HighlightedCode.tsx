@@ -1,4 +1,5 @@
 import React, { useRef, useEffect } from 'react';
+import { UI_CONFIG } from '../src/constants';
 
 // Ensure Prism is available for highlighting
 declare var Prism: any;
@@ -46,7 +47,7 @@ const HighlightedCode = React.forwardRef<HTMLDivElement, HighlightedCodeProps>((
                 if (targetLine) {
                     targetLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     targetLine.classList.add('bg-[#00f2ff]/10');
-                    setTimeout(() => targetLine.classList.remove('bg-[#00f2ff]/10'), 2000);
+                    setTimeout(() => targetLine.classList.remove('bg-[#00f2ff]/10'), UI_CONFIG.HIGHLIGHT_TIMEOUT);
                 }
             }
         }

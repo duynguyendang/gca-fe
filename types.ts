@@ -1,14 +1,17 @@
 
 import * as d3 from 'd3';
 
+export type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
+export interface JsonObject { [key: string]: JsonValue; }
+
 export interface ASTNode {
   id?: string;
   name: string;
   type: string;
   children?: ASTNode[];
-  value?: any;
+  value?: JsonValue;
   metadata?: Record<string, string>;
-  [key: string]: any;
+  [key: string]: JsonValue;
 }
 
 export interface SymbolStub {
@@ -21,14 +24,36 @@ export interface SymbolStub {
   end_line?: number;
   parent?: string;
   _isStub?: true;
-  code?: never; // SymbolStub never has code
+  code?: never;
 }
 
 export type HydratedNode = ASTNode | SymbolStub;
 
+export interface GraphNode {
+  id: string;
+  name: string;
+  type: string;
+  kind?: string;
+  filePath?: string;
+  file_path?: string;
+  start_line?: number;
+  end_line?: number;
+  code?: string;
+  metadata?: Record<string, string>;
+  [key: string]: JsonValue;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  relation?: string;
+  source_type?: 'ast' | 'virtual';
+  weight?: number;
+}
+
 export interface FlatGraph {
-  nodes: Array<{ id: string; name: string; type: string;[key: string]: any }>;
-  links: Array<{ source: string; target: string; relation?: string; source_type?: 'ast' | 'virtual'; weight?: number }>;
+  nodes: GraphNode[];
+  links: GraphLink[];
 }
 
 export interface D3Node extends d3.SimulationNodeDatum {
@@ -36,7 +61,7 @@ export interface D3Node extends d3.SimulationNodeDatum {
   name: string;
   type: string;
   depth?: number;
-  original: any;
+  original: GraphNode;
 }
 
 export interface D3Link extends d3.SimulationLinkDatum<D3Node> {
@@ -61,7 +86,7 @@ export interface BackboneNode {
   isGateway?: boolean;
   code?: string;
   metadata?: Record<string, string>;
-  [key: string]: any;
+  [key: string]: JsonValue;
 }
 
 export interface BackboneLink {

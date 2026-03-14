@@ -4,6 +4,7 @@
 import React, { createContext, useContext, useState, useRef, useCallback, ReactNode } from 'react';
 import { FlatGraph, ASTNode } from '../types';
 import { FileDetailsResponse } from '../services/graphService';
+import { API_CONFIG } from '../src/constants';
 
 // Sample data for initial state
 const SAMPLE_DATA: FlatGraph = {
@@ -182,7 +183,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         const envBase = import.meta.env.VITE_GCA_API_BASE_URL || import.meta.env.GCA_API_BASE_URL;
         if (envBase && import.meta.env.PROD) return envBase;
 
-        return sessionStorage.getItem('gca_api_base_v2') || envBase || "https://gca-be-180036253374.us-central1.run.app";
+        return sessionStorage.getItem('gca_api_base_v2') || envBase || API_CONFIG.DEFAULT_BASE_URL;
     });
 
 

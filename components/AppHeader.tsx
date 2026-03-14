@@ -12,8 +12,7 @@ interface AppHeaderProps {
   searchStatus: string | null;
   searchError: string | null;
   queryResults: any;
-  setSearchError: (error: string | null) => void;
-  setQueryResults: (results: any) => void;
+  setCtxSearchError: (error: string | null) => void;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   isSubModeSwitching: boolean;
@@ -23,14 +22,12 @@ interface AppHeaderProps {
   selectedProjectId: string;
   setCtxSearchStatus: (status: string | null) => void;
   setCtxIsSearching: (searching: boolean) => void;
-  setCtxSearchError: (error: string | null) => void;
   setFileScopedNodes: (nodes: any[]) => void;
   setFileScopedLinks: (links: any[]) => void;
   setIsClustered: (clustered: boolean) => void;
   setNodeInsight: (insight: string | null) => void;
   setSearchTerm: (term: string) => void;
   setQueryResultsNull: () => void;
-  setSearchErrorNull: () => void;
   setFileScopedNodesEmpty: () => void;
   setFileScopedLinksEmpty: () => void;
 }
@@ -44,7 +41,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({
   searchStatus,
   searchError,
   queryResults,
-  setSearchError,
+  setCtxSearchError,
   viewMode,
   onViewModeChange,
   isSubModeSwitching,
@@ -54,14 +51,12 @@ const AppHeader: React.FC<AppHeaderProps> = ({
   selectedProjectId,
   setCtxSearchStatus,
   setCtxIsSearching,
-  setCtxSearchError,
   setFileScopedNodes,
   setFileScopedLinks,
   setIsClustered,
   setNodeInsight,
   setSearchTerm,
   setQueryResultsNull,
-  setSearchErrorNull,
   setFileScopedNodesEmpty,
   setFileScopedLinksEmpty,
 }) => {
@@ -94,21 +89,19 @@ const AppHeader: React.FC<AppHeaderProps> = ({
           searchStatus={searchStatus}
           searchError={searchError}
           queryResults={queryResults}
-          setSearchError={setSearchError}
+          setCtxSearchError={setCtxSearchError}
           viewMode={viewMode}
           lastExecutedQuery={lastExecutedQuery}
           dataApiBase={dataApiBase}
           selectedProjectId={selectedProjectId}
           setCtxSearchStatus={setCtxSearchStatus}
           setCtxIsSearching={setCtxIsSearching}
-          setCtxSearchError={setCtxSearchError}
           setFileScopedNodes={setFileScopedNodes}
           setFileScopedLinks={setFileScopedLinks}
           setIsClustered={setIsClustered}
           setNodeInsight={setNodeInsight}
           setSearchTerm={setSearchTerm}
           setQueryResultsNull={setQueryResultsNull}
-          setSearchErrorNull={setSearchErrorNull}
           setFileScopedNodesEmpty={setFileScopedNodesEmpty}
           setFileScopedLinksEmpty={setFileScopedLinksEmpty}
         />

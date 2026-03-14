@@ -12,6 +12,7 @@ import {
     Play
 } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
+import { EXTERNAL_URLS } from '../../src/constants';
 
 export const LandingScreen: React.FC = () => {
     const { setIsLandingView } = useAppContext();
@@ -118,7 +119,7 @@ export const LandingScreen: React.FC = () => {
                     </button>
 
                     <a
-                        href="https://www.youtube.com/watch?v=z3oDvCIMDYI"
+                        href={EXTERNAL_URLS.YOUTUBE_DEMO}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="px-8 py-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all font-bold flex items-center gap-2 hover:scale-105 active:scale-95 backdrop-blur-sm text-white"
@@ -139,7 +140,7 @@ export const LandingScreen: React.FC = () => {
 
                     <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl rounded-3xl p-3 overflow-hidden">
                         <div className="w-full aspect-video rounded-2xl bg-[#0f172a] overflow-hidden flex items-center justify-center border border-white/5 relative">
-                            <div className="absolute inset-0 opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] pointer-events-none" />
+                            <div className="absolute inset-0 opacity-20" style={{ backgroundImage: `url('${EXTERNAL_URLS.NOISE_SVG}')` }} pointer-events-none />
                             <div className="flex flex-col items-center gap-4">
                                 <Cpu className="w-16 h-16 text-[#2dd4bf] animate-pulse" />
                                 <span className="text-sm font-mono text-slate-500 uppercase tracking-widest">GCA_SYSTEM_INITIALIZED</span>

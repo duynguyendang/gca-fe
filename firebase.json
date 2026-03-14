@@ -4,6 +4,13 @@
         "public": "dist",
         "rewrites": [
             {
+                "source": "/v1/**",
+                "run": {
+                    "serviceId": "gca-be",
+                    "region": "us-central1"
+                }
+            },
+            {
                 "source": "/api/**",
                 "run": {
                     "serviceId": "gca-be",

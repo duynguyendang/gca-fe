@@ -5,6 +5,8 @@
  * Replaces direct Google GenAI client with calls to the Go Backend Proxy.
  * Endpoint: POST /v1/ai/ask
  */
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { API_CONFIG } from '../src/constants';
 
 export interface AIResponse {
   answer: string;
@@ -28,7 +30,7 @@ export const askAI = async (
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/v1/ai/ask`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -333,4 +335,48 @@ export const analyzePathWithCode = async (pathGraph: any, originalQuery: string,
     query: originalQuery,
     data: pathGraph.nodes.map((n: any) => ({ name: n.id })) // Assuming ID list for path
   });
+};
+
+// --- Agent Execution (multi-step reasoning) ---
+
+export interface AgentStep {
+  index: number;
+  task: string;
+  query: string;
+  status: 'Pending' | 'Running' | 'Success' | 'Failed' | 'Corrected';
+  result?: any[];
+  hydrated?: Array<{ id: string; name: string; kind: string; code?: string }>;
+  error?: string;
+}
+
+export interface AgentResponse {
+  session_id: string;
+  steps: AgentStep[];
+  narrative: string;
+}
+
+/**
+ * Execute a multi-step agent reasoning session.
+ * POST /api/v1/agent/execute
+ */
+export const executeAgent = async (
+  dataApiBase: string,
+  projectId: string,
+  query: string
+): Promise<AgentResponse> => {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/v1/agent/execute`;
+
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId, query }),
+  }, API_CONFIG.TIMEOUT.LONG);
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Agent execution failed: ${errText}`);
+  }
+
+  return await response.json();
 };

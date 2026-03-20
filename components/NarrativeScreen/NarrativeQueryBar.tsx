@@ -1,12 +1,14 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useAppContext, NarrativeMessage, NarrativeSection } from '../../context/AppContext';
 import { askAI } from '../../services/geminiService';
+import { fetchWithTimeout } from '../../utils/fetchWithTimeout';
 
-const SUGGESTION_CHIPS = [
-    'NARRATE BOOT SEQUENCE',
-    'FIND DEAD CODE',
-    'EXPLAIN DATA FLOW',
-];
+interface SuggestionGroup {
+    label: string;
+    icon: string;
+    color: string;
+    questions: string[];
+}
 
 const NarrativeQueryBar: React.FC = () => {
     const {
@@ -20,6 +22,146 @@ const NarrativeQueryBar: React.FC = () => {
         searchTerm,
         setSearchTerm,
     } = useAppContext();
+
+    // Dynamically generate suggestions based on project context
+    const [projectContext, setProjectContext] = useState<{
+        hasTests: boolean;
+        hasSecurity: boolean;
+        hasApi: boolean;
+        fileCount: number;
+    } | null>(null);
+
+    // Fetch project context on mount
+    React.useEffect(() => {
+        if (!dataApiBase || !selectedProjectId) return;
+
+        const fetchProjectContext = async () => {
+            try {
+                const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+                const filesRes = await fetchWithTimeout(`${cleanBase}/v1/files?project=${encodeURIComponent(selectedProjectId)}`);
+                if (filesRes.ok) {
+                    const files: string[] = await filesRes.json();
+                    
+                    const hasTests = files.some(f => f.includes('_test.') || f.includes('.test.') || f.includes('.spec.'));
+                    const hasSecurity = files.some(f => 
+                        f.includes('auth') || f.includes('security') || f.includes('permission') || 
+                        f.includes('login') || f.includes('jwt') || f.includes('oauth')
+                    );
+                    const hasApi = files.some(f => 
+                        f.includes('handler') || f.includes('controller') || f.includes('route') || 
+                        f.includes('endpoint') || f.includes('api')
+                    );
+
+                    setProjectContext({
+                        hasTests,
+                        hasSecurity,
+                        hasApi,
+                        fileCount: files.length,
+                    });
+                }
+            } catch (e) {
+                console.warn('Failed to fetch project context:', e);
+            }
+        };
+
+        fetchProjectContext();
+    }, [dataApiBase, selectedProjectId]);
+
+    // Dynamic suggestions based on project context
+    const dynamicSuggestions = useMemo((): SuggestionGroup[] => {
+        const groups: SuggestionGroup[] = [];
+
+        // Always available - Narrative/Flow
+        groups.push({
+            label: 'Flow',
+            icon: 'fa-route',
+            color: 'blue',
+            questions: projectContext?.hasApi 
+                ? ['Trace the API request flow', 'Explain the boot sequence', 'How does authentication work?']
+                : ['Explain how the app starts up', 'Trace the data flow', 'Show execution path'],
+        });
+
+        // Architecture - always useful
+        groups.push({
+            label: 'Architecture',
+            icon: 'fa-sitemap',
+            color: 'purple',
+            questions: projectContext && projectContext.fileCount > 50
+                ? ['Analyze the module structure', 'What are the core components?', 'Show dependency hierarchy']
+                : ['Analyze file organization', 'What are the main files?', 'Show imports'],
+        });
+
+        // Resolve - always useful when files loaded
+        if (fileScopedNodes.length > 0) {
+            const firstFile = fileScopedNodes[0]?.name || 'this';
+            groups.push({
+                label: 'Find',
+                icon: 'fa-search',
+                color: 'green',
+                questions: [
+                    `Where is ${firstFile} defined?`,
+                    'Find the main handler',
+                    'Who calls this function?',
+                ],
+            });
+        }
+
+        // Test - if no tests found
+        if (!projectContext?.hasTests) {
+            groups.push({
+                label: 'Missing Tests',
+                icon: 'fa-vial',
+                color: 'teal',
+                questions: [
+                    'Generate test structure',
+                    'Suggest test coverage areas',
+                    'Where to add tests?',
+                ],
+            });
+        }
+
+        // Security - if security-related files exist
+        if (projectContext?.hasSecurity) {
+            groups.push({
+                label: 'Security',
+                icon: 'fa-shield-alt',
+                color: 'red',
+                questions: [
+                    'Audit authentication flow',
+                    'Check permission checks',
+                    'Find security vulnerabilities',
+                ],
+            });
+        }
+
+        // Refactor - always useful
+        groups.push({
+            label: 'Refactor',
+            icon: 'fa-wrench',
+            color: 'amber',
+            questions: [
+                'Find code duplication',
+                'Suggest refactoring',
+                'Identify technical debt',
+            ],
+        });
+
+        // Performance - for larger projects
+        if (projectContext && projectContext.fileCount > 20) {
+            groups.push({
+                label: 'Performance',
+                icon: 'fa-bolt',
+                color: 'orange',
+                questions: [
+                    'Find performance bottlenecks',
+                    'Analyze algorithmic complexity',
+                    'Identify expensive operations',
+                ],
+            });
+        }
+
+        return groups;
+    }, [projectContext, fileScopedNodes]);
 
     const parseAIResponse = (raw: string): NarrativeSection[] => {
         const sections: NarrativeSection[] = [];
@@ -138,23 +280,39 @@ const NarrativeQueryBar: React.FC = () => {
         }
     };
 
+    const getColorClass = (color: string) => {
+        switch (color) {
+            case 'blue': return 'hover:text-blue-400 hover:border-blue-400/30';
+            case 'purple': return 'hover:text-purple-400 hover:border-purple-400/30';
+            case 'green': return 'hover:text-green-400 hover:border-green-400/30';
+            case 'amber': return 'hover:text-amber-400 hover:border-amber-400/30';
+            case 'teal': return 'hover:text-teal-400 hover:border-teal-400/30';
+            case 'red': return 'hover:text-red-400 hover:border-red-400/30';
+            case 'orange': return 'hover:text-orange-400 hover:border-orange-400/30';
+            default: return 'hover:text-white hover:border-white/30';
+        }
+    };
+
     return (
         <div className="shrink-0 bg-[var(--bg-main)]/95 backdrop-blur-xl border-t border-[var(--border)] px-6 py-4 flex items-center justify-between gap-6">
-            {/* Suggestion Chips - Centered */}
-            <div className="flex flex-wrap gap-2 flex-1 justify-center">
-                {SUGGESTION_CHIPS.map((chip, i) => (
-                    <button
-                        key={i}
-                        onClick={() => {
-                            setSearchTerm(chip.toLowerCase());
-                            submitQuery(chip.toLowerCase());
-                        }}
-                        disabled={isNarrativeLoading}
-                        className="px-4 py-2 bg-[#16222a] border border-white/10 rounded-lg text-[9px] font-bold uppercase tracking-[0.15em] text-slate-400 hover:text-white hover:border-[var(--accent-blue)]/30 hover:bg-[var(--accent-blue)]/5 disabled:opacity-30 transition-all font-mono"
-                    >
-                        "{chip}"
-                    </button>
-                ))}
+            {/* Dynamic Suggestion Chips based on project context */}
+            <div className="flex-1 overflow-auto max-h-24">
+                <div className="flex flex-wrap gap-2">
+                    {dynamicSuggestions.map((group, gIdx) => (
+                        group.questions.map((chip, i) => (
+                            <button
+                                key={`${group.label}-${i}`}
+                                onClick={() => submitQuery(chip.toLowerCase())}
+                                disabled={isNarrativeLoading}
+                                className={`px-3 py-1.5 bg-[#16222a] border border-white/10 rounded text-[8px] font-bold text-slate-400 ${getColorClass(group.color)} disabled:opacity-30 transition-all`}
+                                title={`${group.label} - Click to query`}
+                            >
+                                <i className={`fas ${group.icon} mr-1.5 opacity-50`}></i>
+                                {chip}
+                            </button>
+                        ))
+                    ))}
+                </div>
             </div>
 
             {/* Consult Button - Right Aligned */}

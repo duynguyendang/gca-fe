@@ -2,9 +2,12 @@
  * App Context - Shared state for GCA Explorer
  */
 import React, { createContext, useContext, useState, useRef, useCallback, ReactNode } from 'react';
-import { FlatGraph, ASTNode } from '../types';
+import { FlatGraph, ASTNode, GraphNode, GraphLink } from '../types';
 import { FileDetailsResponse } from '../services/graphService';
 import { API_CONFIG } from '../src/constants';
+
+// Re-export for convenience
+export type { GraphNode, GraphLink } from '../types';
 
 // Sample data for initial state
 const SAMPLE_DATA: FlatGraph = {
@@ -41,8 +44,8 @@ interface AppState {
     // Core data
     astData: ASTNode | FlatGraph;
     setAstData: React.Dispatch<React.SetStateAction<ASTNode | FlatGraph>>;
-    sandboxFiles: Record<string, any>;
-    setSandboxFiles: React.Dispatch<React.SetStateAction<Record<string, any>>>;
+    sandboxFiles: Record<string, string[]>;
+    setSandboxFiles: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;
 
     // API configuration
     dataApiBase: string;
@@ -64,12 +67,12 @@ interface AppState {
     setSyncError: React.Dispatch<React.SetStateAction<string | null>>;
 
     // Node selection
-    selectedNode: any;
-    setSelectedNode: React.Dispatch<React.SetStateAction<any>>;
+    selectedNode: GraphNode | null;
+    setSelectedNode: React.Dispatch<React.SetStateAction<GraphNode | null>>;
     hydratingNodeId: string | null;
     setHydratingNodeId: React.Dispatch<React.SetStateAction<string | null>>;
-    symbolCache: Map<string, any>;
-    setSymbolCache: React.Dispatch<React.SetStateAction<Map<string, any>>>;
+    symbolCache: Map<string, GraphNode>;
+    setSymbolCache: React.Dispatch<React.SetStateAction<Map<string, GraphNode>>>;
 
     // Insights
     nodeInsight: string | null;
@@ -82,8 +85,8 @@ interface AppState {
     setSearchTerm: React.Dispatch<React.SetStateAction<string>>;
     lastExecutedQuery: string; // Datalog query for clustering
     setLastExecutedQuery: React.Dispatch<React.SetStateAction<string>>;
-    queryResults: any;
-    setQueryResults: React.Dispatch<React.SetStateAction<any>>;
+    queryResults: FlatGraph | null;
+    setQueryResults: React.Dispatch<React.SetStateAction<FlatGraph | null>>;
     isSearching: boolean;
     setIsSearching: React.Dispatch<React.SetStateAction<boolean>>;
     searchError: string | null;
@@ -98,10 +101,10 @@ interface AppState {
     setIsFlowLoading: React.Dispatch<React.SetStateAction<boolean>>;
 
     // File scoped data (for architecture view)
-    fileScopedNodes: any[];
-    setFileScopedNodes: React.Dispatch<React.SetStateAction<any[]>>;
-    fileScopedLinks: any[];
-    setFileScopedLinks: React.Dispatch<React.SetStateAction<any[]>>;
+    fileScopedNodes: GraphNode[];
+    setFileScopedNodes: React.Dispatch<React.SetStateAction<GraphNode[]>>;
+    fileScopedLinks: GraphLink[];
+    setFileScopedLinks: React.Dispatch<React.SetStateAction<GraphLink[]>>;
     currentFlowFileRef: React.MutableRefObject<string | null>;
     skipFlowZoom: boolean;
     setSkipFlowZoom: React.Dispatch<React.SetStateAction<boolean>>;
@@ -170,7 +173,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         } catch (e) { return SAMPLE_DATA; }
     });
 
-    const [sandboxFiles, setSandboxFiles] = useState<Record<string, any>>(() => {
+    const [sandboxFiles, setSandboxFiles] = useState<Record<string, string[]>>(() => {
         try {
             const saved = sessionStorage.getItem('gca_sandbox_files');
             return saved ? JSON.parse(saved) : {};
@@ -197,9 +200,9 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     const [syncError, setSyncError] = useState<string | null>(null);
 
     // Node selection
-    const [selectedNode, setSelectedNode] = useState<any>(null);
+    const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
     const [hydratingNodeId, setHydratingNodeId] = useState<string | null>(null);
-    const [symbolCache, setSymbolCache] = useState<Map<string, any>>(new Map());
+    const [symbolCache, setSymbolCache] = useState<Map<string, GraphNode>>(new Map());
 
     // Insights
     const [nodeInsight, setNodeInsight] = useState<string | null>(null);
@@ -208,7 +211,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     // Search
     const [searchTerm, setSearchTerm] = useState("");
     const [lastExecutedQuery, setLastExecutedQuery] = useState("");
-    const [queryResults, setQueryResults] = useState<any>(null);
+    const [queryResults, setQueryResults] = useState<FlatGraph | null>(null);
     const [isSearching, setIsSearching] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
     const [searchStatus, setSearchStatus] = useState<string | null>(null);
@@ -218,8 +221,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     const [isFlowLoading, setIsFlowLoading] = useState(false);
 
     // File scoped data
-    const [fileScopedNodes, setFileScopedNodes] = useState<any[]>([]);
-    const [fileScopedLinks, setFileScopedLinks] = useState<any[]>([]);
+    const [fileScopedNodes, setFileScopedNodes] = useState<GraphNode[]>([]);
+    const [fileScopedLinks, setFileScopedLinks] = useState<GraphLink[]>([]);
     const currentFlowFileRef = useRef<string | null>(null);
     const [skipFlowZoom, setSkipFlowZoom] = useState(false);
 

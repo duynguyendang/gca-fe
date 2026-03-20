@@ -178,9 +178,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                                 kind: n.kind || 'struct'
                             })));
                             setFileScopedLinks(subgraph.links || []);
-                            setFileScopedLinks(subgraph.links || []);
                             onViewModeChange('discovery');
-
 
                             setSearchStatus("Analyzing results with AI...");
                             const analysis = await askAI(dataApiBase, selectedProjectId, {
@@ -308,7 +306,6 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                                 name: n.name || n.id.split('/').pop(),
                                 kind: n.kind || 'struct'
                             })));
-                            setFileScopedLinks(subgraph.links || []);
                             setFileScopedLinks(subgraph.links || []);
                             onViewModeChange('discovery');
 

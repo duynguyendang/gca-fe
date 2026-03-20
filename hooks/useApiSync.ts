@@ -5,6 +5,7 @@
 import { useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { logger } from '../src/logger';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 
 export const useApiSync = () => {
     const {
@@ -49,7 +50,7 @@ export const useApiSync = () => {
             }
 
             // Fetch all projects
-            const projectsRes = await fetch(`${cleanBase}/v1/projects`);
+            const projectsRes = await fetchWithTimeout(`${cleanBase}/v1/projects`);
             if (!projectsRes.ok) {
                 setSyncError('Failed to fetch projects');
                 setIsDataSyncing(false);
@@ -75,7 +76,7 @@ export const useApiSync = () => {
 
             // Fetch files for the project
             const filesUrl = `${cleanBase}/v1/files?project=${encodeURIComponent(projectId)}`;
-            const filesRes = await fetch(filesUrl);
+            const filesRes = await fetchWithTimeout(filesUrl);
             if (!filesRes.ok) {
                 setSyncError(`Failed to fetch files: ${filesRes.statusText}`);
                 setIsDataSyncing(false);
@@ -122,7 +123,7 @@ export const useApiSync = () => {
             // Fetch enriched AST from query endpoint
             try {
                 // Change query to 'imports' to get file-to-file dependencies
-                const queryRes = await fetch(`${cleanBase}/v1/query?project=${encodeURIComponent(projectId)}&hydrate=true`, {
+                const queryRes = await fetchWithTimeout(`${cleanBase}/v1/query?project=${encodeURIComponent(projectId)}&hydrate=true`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ query: 'triples(?s, "imports", ?o)' })

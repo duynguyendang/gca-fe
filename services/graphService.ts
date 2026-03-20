@@ -2,6 +2,8 @@
  * Graph API Service
  * Handles API calls for progressive graph expansion
  */
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { API_CONFIG } from '../src/constants';
 
 const isValidUrl = (url: string): boolean => {
   try {
@@ -93,7 +95,7 @@ export interface ProjectSummary {
 export async function fetchProjects(dataApiBase: string): Promise<ProjectMetadata[]> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/v1/projects`;
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch projects: ${response.statusText}`);
   return await response.json();
 }
@@ -105,7 +107,7 @@ export async function fetchProjects(dataApiBase: string): Promise<ProjectMetadat
 export async function fetchSummary(dataApiBase: string, projectId: string): Promise<ProjectSummary> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/v1/summary?project=${encodeURIComponent(projectId)}`;
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch summary: ${response.statusText}`);
   return await response.json();
 }
@@ -120,7 +122,7 @@ export async function fetchFiles(dataApiBase: string, projectId: string): Promis
   
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/v1/files?project=${encodeURIComponent(projectId)}`;
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch files: ${response.statusText}`);
   const data = await response.json();
   return data.files || [];
@@ -139,7 +141,7 @@ export async function fetchSource(dataApiBase: string, projectId: string, id: st
   let url = `${cleanBase}/v1/source?project=${encodeURIComponent(projectId)}&id=${encodeURIComponent(id)}`;
   if (start) url += `&start=${start}`;
   if (end) url += `&end=${end}`;
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch source: ${response.statusText}`);
   return await response.text();
 }
@@ -152,7 +154,7 @@ export async function fetchSymbols(dataApiBase: string, projectId: string, query
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   let url = `${cleanBase}/v1/symbols?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query)}`;
   if (predicate) url += `&p=${encodeURIComponent(predicate)}`;
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch symbols: ${response.statusText}`);
   const data = await response.json();
   return data.symbols || [];
@@ -165,7 +167,7 @@ export async function fetchSymbols(dataApiBase: string, projectId: string, query
 export async function fetchPredicates(dataApiBase: string, projectId: string): Promise<any[]> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/v1/predicates?project=${encodeURIComponent(projectId)}`;
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch predicates: ${response.statusText}`);
   const data = await response.json();
   return data.predicates || [];
@@ -178,7 +180,7 @@ export async function fetchPredicates(dataApiBase: string, projectId: string): P
 export async function fetchHydrate(dataApiBase: string, projectId: string, id: string): Promise<any> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/v1/hydrate?project=${encodeURIComponent(projectId)}&id=${encodeURIComponent(id)}`;
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to hydrate symbol: ${response.statusText}`);
   return await response.json();
 }
@@ -196,7 +198,7 @@ export async function executeQuery(dataApiBase: string, projectId: string, query
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/v1/query?project=${encodeURIComponent(projectId)}${hydrate ? '&hydrate=true' : ''}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query })
@@ -229,7 +231,7 @@ export async function fetchFileGraph(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/v1/graph?project=${encodeURIComponent(projectId)}&file=${encodeURIComponent(fileId)}&lazy=${lazy}`;
 
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch file graph: ${response.statusText}`);
   return await response.json();
 }
@@ -261,7 +263,7 @@ export async function fetchGraphMap(
   const url = `${cleanBase}/v1/graph/map?project=${encodeURIComponent(projectId)}`;
 
   console.log('[GraphService] Fetching graph map:', url);
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch graph map: ${response.status} ${response.statusText}`);
@@ -284,7 +286,7 @@ export async function fetchManifest(
   const url = `${cleanBase}/v1/graph/manifest?project=${encodeURIComponent(projectId)}`;
 
   console.log('[GraphService] Fetching manifest:', url);
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch manifest: ${response.status} ${response.statusText}`);
@@ -307,7 +309,7 @@ export async function fetchFileDetails(
   const url = `${cleanBase}/v1/graph/file-details?file=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}`;
 
   console.log('[GraphService] Fetching file details:', url);
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch file details: ${response.status} ${response.statusText}`);
@@ -331,7 +333,7 @@ export async function fetchBackbone(
   const url = `${cleanBase}/v1/graph/backbone?project=${encodeURIComponent(projectId)}&aggregate=${aggregate}`;
 
   console.log('[GraphService] Fetching backbone graph:', url);
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch backbone graph: ${response.status} ${response.statusText}`);
@@ -431,7 +433,7 @@ export async function fetchFileCalls(
   const url = `${cleanBase}/v1/graph/file-calls?id=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}&depth=${depth}`;
 
   console.log('[GraphService] Fetching file calls:', url);
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch file calls: ${response.status} ${response.statusText}`);
@@ -456,7 +458,7 @@ export async function fetchFlowPath(
   const url = `${cleanBase}/v1/search/flow?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&project=${encodeURIComponent(projectId)}`;
 
   console.log('[GraphService] Fetching flow path:', url);
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch flow path: ${response.status} ${response.statusText}`);
@@ -480,7 +482,7 @@ export async function fetchFileBackbone(
   const url = `${cleanBase}/v1/graph/file-backbone?id=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}`;
 
   console.log('[GraphService] Fetching file backbone:', url);
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch file backbone: ${response.status} ${response.statusText}`);
@@ -505,7 +507,7 @@ export async function fetchGraphPath(
   const url = `${cleanBase}/v1/graph/path?project=${encodeURIComponent(projectId)}&source=${encodeURIComponent(source)}&target=${encodeURIComponent(target)}`;
 
   console.log('[GraphService] Fetching graph path:', url);
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch graph path: ${response.status} ${response.statusText}`);
@@ -536,7 +538,7 @@ export async function fetchSemanticSearch(
   const url = `${cleanBase}/v1/semantic-search?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query)}&k=${k}`;
 
   console.log('[GraphService] Fetching semantic search:', url);
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch semantic search: ${response.status} ${response.statusText}`);
@@ -560,7 +562,7 @@ export async function getClusteredGraph(
   const url = `${cleanBase}/v1/graph/cluster?project=${encodeURIComponent(projectId)}&query=${encodeURIComponent(query)}`;
 
   console.log('[GraphService] Fetching clustered graph:', url);
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch clustered graph: ${response.status} ${response.statusText}`);
@@ -583,7 +585,7 @@ export async function fetchSubgraph(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/v1/graph/subgraph?project=${encodeURIComponent(projectId)}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ids })

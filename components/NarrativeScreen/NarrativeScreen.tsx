@@ -11,6 +11,8 @@ interface NarrativeScreenProps {
     onLinkClick?: (href: string) => void;
 }
 
+type FlowStep = 'discovery' | 'expansion' | 'hydration' | 'synthesis' | 'idle';
+
 const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
     onNodeSelect,
     onSymbolClick,
@@ -25,30 +27,51 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         expandedFileIds,
         expandingFileId,
         isNarrativeLoading,
+        isInsightLoading,
         setNodeInsight,
+        narrativeMessages,
     } = useAppContext();
 
     const { generateInsights } = useInsights();
+
+    // Determine current flow step based on loading states
+    const currentStep = useMemo((): FlowStep => {
+        if (isInsightLoading) return 'hydration';
+        if (isNarrativeLoading) return 'expansion';
+        if (narrativeMessages.length > 0 && !isNarrativeLoading) return 'synthesis';
+        if (fileScopedNodes.length > 0) return 'discovery';
+        return 'idle';
+    }, [isNarrativeLoading, isInsightLoading, fileScopedNodes.length, narrativeMessages.length]);
+
+    const getStepStatus = (step: FlowStep): 'completed' | 'active' | 'pending' => {
+        const order: FlowStep[] = ['discovery', 'expansion', 'hydration', 'synthesis'];
+        const currentIdx = order.indexOf(currentStep);
+        const stepIdx = order.indexOf(step);
+        
+        if (stepIdx < currentIdx) return 'completed';
+        if (stepIdx === currentIdx) return 'active';
+        return 'pending';
+    };
 
     const fileScopedData = useMemo(() => ({
         nodes: fileScopedNodes,
         links: fileScopedLinks,
     }), [fileScopedNodes, fileScopedLinks]);
 
-    // Steps for the top progress bar
-    const steps = [
-        { num: '01', label: 'CONTEXT INGESTION', active: true },
-        { num: '02', label: 'GRAPH SYNTHESIS', active: true },
-        { num: '03', label: 'LOGIC REASONING', active: true },
-        { num: '04', label: 'IMPL. MAPPING', active: false },
-    ];
+    // Steps for the top progress bar - now dynamic based on workflow status
+    const steps = useMemo(() => [
+        { num: '01', label: 'Entrypoint Discovery', status: getStepStatus('discovery') },
+        { num: '02', label: 'Relation Expansion', status: getStepStatus('expansion') },
+        { num: '03', label: 'Logic Hydration', status: getStepStatus('hydration') },
+        { num: '04', label: 'Narrative Synthesis', status: getStepStatus('synthesis') },
+    ], [currentStep]);
 
     return (
         <div className="flex-1 flex flex-col min-h-0 bg-[var(--bg-main)]">
             {/* Top Progress Bar */}
             <div className="h-12 border-b border-[var(--border)] flex items-center px-6 gap-1 bg-[var(--bg-main)]/90 backdrop-blur-md shrink-0">
                 <div className="flex items-center gap-2 mr-6">
-                    <div className="w-2 h-2 rounded-full bg-[#10b981] narrative-pulse shadow-[0_0_8px_#10b981]"></div>
+                    <div className={`w-2 h-2 rounded-full narrative-pulse shadow-[0_0_8px_#10b981] ${isNarrativeLoading ? 'bg-[var(--accent-blue)] animate-pulse' : 'bg-[#10b981]'}`}></div>
                     <span className="text-sm font-bold text-white tracking-tight uppercase">
                         Narrative Flow
                     </span>
@@ -58,19 +81,33 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                     {steps.map((step, i) => (
                         <React.Fragment key={step.num}>
                             <div className="flex items-center gap-2">
-                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold border ${step.active
-                                    ? 'bg-[var(--accent-blue)]/20 border-[var(--accent-blue)]/50 text-[var(--accent-blue)]'
-                                    : 'border-white/10 text-slate-600'
-                                    }`}>
-                                    {step.num}
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold border transition-all ${
+                                    step.status === 'completed' 
+                                        ? 'bg-[#10b981]/20 border-[#10b981]/50 text-[#10b981]'
+                                        : step.status === 'active'
+                                            ? 'bg-[var(--accent-blue)]/20 border-[var(--accent-blue)]/50 text-[var(--accent-blue)] animate-pulse'
+                                            : 'border-white/10 text-slate-600'
+                                }`}>
+                                    {step.status === 'completed' ? (
+                                        <i className="fas fa-check text-[8px]"></i>
+                                    ) : (
+                                        step.num
+                                    )}
                                 </div>
-                                <span className={`text-[9px] font-bold uppercase tracking-[0.1em] ${step.active ? 'text-white' : 'text-slate-600'
-                                    }`}>
+                                <span className={`text-[9px] font-bold uppercase tracking-[0.1em] transition-all ${
+                                    step.status === 'completed' 
+                                        ? 'text-[#10b981]'
+                                        : step.status === 'active'
+                                            ? 'text-white'
+                                            : 'text-slate-600'
+                                }`}>
                                     {step.label}
                                 </span>
                             </div>
                             {i < steps.length - 1 && (
-                                <div className={`w-16 h-px mx-3 ${i < 2 ? 'bg-[var(--accent-blue)]/30' : 'bg-white/5'}`}></div>
+                                <div className={`w-16 h-px mx-3 transition-all ${
+                                    step.status === 'completed' ? 'bg-[#10b981]/50' : 'bg-white/5'
+                                }`}></div>
                             )}
                         </React.Fragment>
                     ))}
@@ -78,18 +115,14 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
 
                 {/* Model Status */}
                 <div className="flex items-center gap-3 ml-auto">
-                    <div className="text-right">
-                        <div className="text-[8px] font-bold uppercase tracking-[0.2em] text-slate-600">MODEL_STATUS</div>
-                        <div className={`text-[10px] font-black uppercase tracking-wider ${isNarrativeLoading ? 'text-[var(--accent-blue)] animate-pulse' : 'text-[#10b981]'}`}>
-                            {isNarrativeLoading ? 'REASONING...' : 'READY'}
-                        </div>
+                    <div className={`text-[10px] font-black uppercase tracking-wider ${isNarrativeLoading ? 'text-[var(--accent-blue)] animate-pulse' : 'text-[#10b981]'}`}>
+                        {isNarrativeLoading ? 'REASONING...' : 'READY'}
                     </div>
                     <div className={`w-8 h-8 rounded-full border flex items-center justify-center ${isNarrativeLoading
                         ? 'border-[var(--accent-blue)]/50 bg-[var(--accent-blue)]/10'
-                        : 'border-[#10b981]/30 bg-[#10b981]/10'
+                        : 'border-[#10b981]/30 bg-[#10b981]/5'
                         }`}>
-                        <i className={`fas fa-atom text-xs ${isNarrativeLoading ? 'text-[var(--accent-blue)] animate-spin' : 'text-[#10b981]'}`}
-                            style={{ animationDuration: '3s' }}></i>
+                        <i className={`fas fa-atom text-xs ${isNarrativeLoading ? 'text-[var(--accent-blue)] animate-spin' : 'text-[#10b981]'}`}></i>
                     </div>
                 </div>
             </div>

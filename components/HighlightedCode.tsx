@@ -1,8 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { UI_CONFIG } from '../src/constants';
-
-// Ensure Prism is available for highlighting
-declare var Prism: any;
+import Prism from '../src/prismSetup';
 
 interface HighlightedCodeProps {
     code: string;

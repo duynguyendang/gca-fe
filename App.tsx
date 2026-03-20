@@ -12,11 +12,10 @@ import AppFooter from './components/AppFooter';
 import SettingsModal from './components/SettingsModal';
 import GraphContainer from './components/GraphContainer';
 import { useSessionStorage } from './hooks/useSessionStorage';
-import { CDN_URLS } from './src/constants';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
-
-// Ensure Prism is available for highlighting
-declare var Prism: any;
+import { fetchFileCalls } from './services/graphService';
+import { logger } from './src/logger';
+import './src/prismSetup';
 
 const App: React.FC = () => {
   // Global Context
@@ -131,31 +130,10 @@ const App: React.FC = () => {
     }
   }, [availableProjects, dataApiBase, setCurrentProject, setSelectedProjectId, syncDataFromApi]);
 
-  // Prism.js loading
-  useEffect(() => {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = CDN_URLS.PRISM_CSS;
-    document.head.appendChild(link);
-
-    const script = document.createElement('script');
-    script.src = CDN_URLS.PRISM_JS;
-    script.onload = () => {
-      ['go', 'typescript', 'javascript', 'python', 'json', 'rust', 'cpp', 'css', 'html'].forEach(lang => {
-        const langScript = document.createElement('script');
-        langScript.src = CDN_URLS.PRISM_COMPONENT(lang);
-        langScript.onerror = (e) => console.warn(`Failed to load Prism language: ${lang}`, e);
-        document.head.appendChild(langScript);
-      });
-    };
-    script.onerror = (e) => console.warn('Failed to load Prism core', e);
-    document.head.appendChild(script);
-  }, []);
-
   // Auto-sync on mount
   useEffect(() => {
     if (dataApiBase && !isDataSyncing && availableProjects.length === 0) {
-      console.log('[Auto-Sync] Connecting to API on mount:', dataApiBase);
+      logger.log('[Auto-Sync] Connecting to API on mount:', dataApiBase);
       syncDataFromApi(dataApiBase);
     }
   }, []);
@@ -168,10 +146,10 @@ const App: React.FC = () => {
       fetchPredicates(dataApiBase, selectedProjectId)
         .then((preds: any[]) => {
           const predNames = preds.map((p: any) => typeof p === 'string' ? p : p.name).filter(Boolean);
-          console.log('Fetched predicates:', predNames);
+          logger.log('Fetched predicates:', predNames);
           setAvailablePredicates(predNames);
         })
-        .catch((err: any) => console.warn('Failed to fetch predicates:', err));
+        .catch((err: any) => logger.warn('Failed to fetch predicates:', err));
     });
   }, [dataApiBase, selectedProjectId]);
 
@@ -241,15 +219,68 @@ const App: React.FC = () => {
       });
     } else {
       // Expand - would call expandFile logic here
-      console.log('Expanding file:', fileId);
+      logger.log('Expanding file:', fileId);
     }
   }, [expandedFileIds]);
 
-  // Node select handler (simplified - full implementation would move to separate hook)
-  const handleNodeSelect = useCallback((node: any, isNavigation: boolean = false) => {
-    console.log('Node selected:', node.id);
+  // Node select handler - fetches file graph data when file is selected
+  const handleNodeSelect = useCallback(async (node: any, isNavigation: boolean = false) => {
+    logger.log('Node selected:', node.id, 'isNavigation:', isNavigation);
     setSelectedNode(node);
-  }, [setSelectedNode]);
+
+    // If it's a file navigation, fetch the file's graph data
+    if (isNavigation && node._isFile && dataApiBase && selectedProjectId) {
+      try {
+        logger.log('[App] Fetching file calls for:', node._filePath || node.id);
+        const fileId = node._filePath || node.id;
+        const graphData = await fetchFileCalls(dataApiBase, selectedProjectId, fileId, 3);
+        
+        if (graphData && graphData.nodes) {
+          logger.log('[App] File graph loaded:', graphData.nodes.length, 'nodes');
+          setFileScopedNodes(graphData.nodes);
+          setFileScopedLinks(graphData.links || []);
+        }
+      } catch (err) {
+        logger.error('[App] Failed to fetch file calls:', err);
+      }
+    }
+  }, [setSelectedNode, dataApiBase, selectedProjectId, setFileScopedNodes, setFileScopedLinks]);
+
+  // Hydrate selected node when it doesn't have code
+  const selectedNodeRef = React.useRef(selectedNode);
+  selectedNodeRef.current = selectedNode;
+  
+  React.useEffect(() => {
+    if (!selectedNode || !hydrateNode) return;
+    
+    const nodeId = selectedNode.id;
+    logger.log('[App] selectedNode changed:', nodeId, 'code:', !!selectedNode.code, '_isMissingCode:', selectedNode._isMissingCode);
+    
+    // Skip if already has code or marked as missing
+    if (selectedNode.code || selectedNode._isMissingCode) return;
+    
+    // Determine the best ID to hydrate
+    let hydrateId = nodeId;
+    if (selectedNode._filePath) {
+      hydrateId = selectedNode._filePath;
+    }
+    
+    logger.log('[App] Calling hydrateNode with:', hydrateId);
+    
+    hydrateNode(hydrateId).then(hydrated => {
+      logger.log('[App] Hydration result:', hydrated);
+      if (hydrated && hydrated.code) {
+        logger.log('[App] Node hydrated successfully, updating UI');
+        setSelectedNode(prev => prev ? { ...prev, ...hydrated } : null);
+      } else {
+        logger.log('[App] Hydration returned no code, marking as missing');
+        setSelectedNode(prev => prev ? { ...prev, _isMissingCode: true } : null);
+      }
+    }).catch(err => {
+      logger.error('[App] Hydration error:', err);
+      setSelectedNode(prev => prev ? { ...prev, _isMissingCode: true } : null);
+    });
+  }, [selectedNode?.id, hydrateNode, setSelectedNode]);
 
   if (isLandingView) {
     return <LandingScreen />;
@@ -308,8 +339,8 @@ const App: React.FC = () => {
           {viewMode === 'narrative' ? (
             <NarrativeScreen
               onNodeSelect={handleNodeSelect}
-              onLinkClick={(href: string) => console.log('Link clicked:', href)}
-              onSymbolClick={(symbol: string) => console.log('Symbol clicked:', symbol)}
+              onLinkClick={(href: string) => logger.log('Link clicked:', href)}
+              onSymbolClick={(symbol: string) => logger.log('Symbol clicked:', symbol)}
             />
           ) : (
             <div className={`flex-1 flex min-h-0 ${isSubModeSwitching ? 'animate-pulse opacity-80' : 'transition-opacity duration-500'}`}>

@@ -597,3 +597,65 @@ export async function fetchSubgraph(
 
   return await response.json();
 }
+
+/**
+ * Paginated graph response with cursor-based pagination support
+ */
+export interface PaginatedGraphResponse {
+  nodes: GraphMapNode[];
+  links: GraphMapLink[];
+  next_cursor?: string;
+  has_more: boolean;
+  total_nodes: number;
+  total_links: number;
+}
+
+/**
+ * Options for paginated graph loading
+ */
+export interface PaginatedGraphOptions {
+  cursor?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * Fetch paginated graph for large datasets with lazy loading
+ * GET /v1/graph/paginated?project={projectId}&query={query}&cursor={cursor}&limit={limit}&offset={offset}
+ */
+export async function fetchPaginatedGraph(
+  dataApiBase: string,
+  projectId: string,
+  query: string,
+  options?: PaginatedGraphOptions
+): Promise<PaginatedGraphResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+
+  const params = new URLSearchParams({
+    project: projectId,
+    query: query
+  });
+
+  if (options?.cursor) {
+    params.append('cursor', options.cursor);
+  }
+  if (options?.limit) {
+    params.append('limit', options.limit.toString());
+  }
+  if (options?.offset) {
+    params.append('offset', options.offset.toString());
+  }
+
+  const url = `${cleanBase}/v1/graph/paginated?${params.toString()}`;
+
+  console.log('[GraphService] Fetching paginated graph:', url);
+  const response = await fetchWithTimeout(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch paginated graph: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] Paginated graph response:', data);
+  return data;
+}

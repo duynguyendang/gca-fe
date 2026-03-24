@@ -1,6 +1,7 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useAppContext, NarrativeMessage, NarrativeSection } from '../../context/AppContext';
 import { askAI } from '../../services/geminiService';
+import { fetchSummary, fetchSource } from '../../services/graphService';
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout';
 
 interface SuggestionGroup {
@@ -19,6 +20,7 @@ const NarrativeQueryBar: React.FC = () => {
         isNarrativeLoading,
         setIsNarrativeLoading,
         fileScopedNodes,
+        selectedNode,
         searchTerm,
         setSearchTerm,
     } = useAppContext();
@@ -30,6 +32,9 @@ const NarrativeQueryBar: React.FC = () => {
         hasApi: boolean;
         fileCount: number;
     } | null>(null);
+    
+    // Project summary for better AI context
+    const [projectSummary, setProjectSummary] = useState<any>(null);
 
     // Fetch project context on mount
     React.useEffect(() => {
@@ -43,12 +48,12 @@ const NarrativeQueryBar: React.FC = () => {
                     const files: string[] = await filesRes.json();
                     
                     const hasTests = files.some(f => f.includes('_test.') || f.includes('.test.') || f.includes('.spec.'));
-                    const hasSecurity = files.some(f => 
-                        f.includes('auth') || f.includes('security') || f.includes('permission') || 
+                    const hasSecurity = files.some(f =>
+                        f.includes('auth') || f.includes('security') || f.includes('permission') ||
                         f.includes('login') || f.includes('jwt') || f.includes('oauth')
                     );
-                    const hasApi = files.some(f => 
-                        f.includes('handler') || f.includes('controller') || f.includes('route') || 
+                    const hasApi = files.some(f =>
+                        f.includes('handler') || f.includes('controller') || f.includes('route') ||
                         f.includes('endpoint') || f.includes('api')
                     );
 
@@ -66,6 +71,22 @@ const NarrativeQueryBar: React.FC = () => {
 
         fetchProjectContext();
     }, [dataApiBase, selectedProjectId]);
+    
+    // Fetch project summary for better AI context
+    React.useEffect(() => {
+        if (!dataApiBase || !selectedProjectId) return;
+        
+        const fetchProjectSummary = async () => {
+            try {
+                const summary = await fetchSummary(dataApiBase, selectedProjectId);
+                setProjectSummary(summary);
+            } catch (e) {
+                console.warn('Failed to fetch project summary:', e);
+            }
+        };
+        
+        fetchProjectSummary();
+    }, [dataApiBase, selectedProjectId]);
 
     // Dynamic suggestions based on project context
     const dynamicSuggestions = useMemo((): SuggestionGroup[] => {
@@ -76,7 +97,7 @@ const NarrativeQueryBar: React.FC = () => {
             label: 'Flow',
             icon: 'fa-route',
             color: 'blue',
-            questions: projectContext?.hasApi 
+            questions: projectContext?.hasApi
                 ? ['Trace the API request flow', 'Explain the boot sequence', 'How does authentication work?']
                 : ['Explain how the app starts up', 'Trace the data flow', 'Show execution path'],
         });
@@ -231,12 +252,65 @@ const NarrativeQueryBar: React.FC = () => {
         setIsNarrativeLoading(true);
 
         try {
-            // Build context from currently visible nodes
-            const contextData = fileScopedNodes.slice(0, 20).map(n => ({
-                id: n.id,
-                name: n.name,
-                kind: n.kind || n.type,
-            }));
+            // Build context from project summary and selected node - always fetch fresh data for the selected project
+            let contextData: any[] = [];
+            
+            // If there's a selected node (e.g., from source navigator), include it in the context
+            if (selectedNode) {
+                let nodeCode = selectedNode.code;
+                
+                // If the selected node doesn't have code, fetch it from the source API
+                if (!nodeCode && selectedNode.id) {
+                    try {
+                        nodeCode = await fetchSource(dataApiBase, selectedProjectId, selectedNode.id);
+                    } catch (e) {
+                        console.warn('Failed to fetch source for selected node:', e);
+                    }
+                }
+                
+                contextData.push({
+                    id: selectedNode.id,
+                    name: selectedNode.name,
+                    kind: selectedNode.kind || selectedNode.type,
+                    code: nodeCode,
+                    filePath: selectedNode.filePath,
+                    start_line: selectedNode.start_line,
+                    end_line: selectedNode.end_line,
+                });
+            }
+            
+            // Fetch fresh project summary to ensure context is relevant to selected project
+            try {
+                const freshSummary = await fetchSummary(dataApiBase, selectedProjectId);
+                if (freshSummary?.top_symbols) {
+                    // Add top symbols, but filter out the selected node if it's already included
+                    const selectedNodeId = selectedNode?.id;
+                    const topSymbols = freshSummary.top_symbols
+                        .filter((s: any) => s.id !== selectedNodeId)
+                        .slice(0, selectedNode ? 10 : 15)
+                        .map((s: any) => ({
+                            id: s.id,
+                            name: s.name,
+                            kind: s.kind || s.type,
+                        }));
+                    contextData = [...contextData, ...topSymbols];
+                }
+            } catch (e) {
+                console.warn('Failed to fetch fresh project summary:', e);
+                // Fallback to cached summary if available
+                if (projectSummary?.top_symbols) {
+                    const selectedNodeId = selectedNode?.id;
+                    const topSymbols = projectSummary.top_symbols
+                        .filter((s: any) => s.id !== selectedNodeId)
+                        .slice(0, selectedNode ? 10 : 15)
+                        .map((s: any) => ({
+                            id: s.id,
+                            name: s.name,
+                            kind: s.kind || s.type,
+                        }));
+                    contextData = [...contextData, ...topSymbols];
+                }
+            }
 
             const answer = await askAI(dataApiBase, selectedProjectId, {
                 task: 'chat',
@@ -269,7 +343,7 @@ const NarrativeQueryBar: React.FC = () => {
         } finally {
             setIsNarrativeLoading(false);
         }
-    }, [dataApiBase, selectedProjectId, isNarrativeLoading, fileScopedNodes, setNarrativeMessages, setIsNarrativeLoading]);
+    }, [dataApiBase, selectedProjectId, selectedNode, isNarrativeLoading, setNarrativeMessages, setIsNarrativeLoading]);
 
     const handleSubmit = () => submitQuery(searchTerm);
 
@@ -294,45 +368,78 @@ const NarrativeQueryBar: React.FC = () => {
     };
 
     return (
-        <div className="shrink-0 bg-[var(--bg-main)]/95 backdrop-blur-xl border-t border-[var(--border)] px-6 py-4 flex items-center justify-between gap-6">
-            {/* Dynamic Suggestion Chips based on project context */}
-            <div className="flex-1 overflow-auto max-h-24">
-                <div className="flex flex-wrap gap-2">
-                    {dynamicSuggestions.map((group, gIdx) => (
-                        group.questions.map((chip, i) => (
-                            <button
-                                key={`${group.label}-${i}`}
-                                onClick={() => submitQuery(chip.toLowerCase())}
-                                disabled={isNarrativeLoading}
-                                className={`px-3 py-1.5 bg-[#16222a] border border-white/10 rounded text-[8px] font-bold text-slate-400 ${getColorClass(group.color)} disabled:opacity-30 transition-all`}
-                                title={`${group.label} - Click to query`}
-                            >
-                                <i className={`fas ${group.icon} mr-1.5 opacity-50`}></i>
-                                {chip}
-                            </button>
-                        ))
+        <div className="shrink-0 bg-[var(--bg-main)]/95 backdrop-blur-xl border-t border-[var(--border)] px-6 py-4">
+            {/* Proactive Suggestions - Show after last AI message */}
+            {narrativeMessages.length > 0 && narrativeMessages[narrativeMessages.length - 1]?.role === 'ai' && !isNarrativeLoading && (
+                <div className="mb-4 flex flex-wrap gap-2">
+                    <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mr-2">Suggested follow-ups:</span>
+                    {[
+                        'Tell me more about this',
+                        'Show me the code',
+                        'Find similar patterns',
+                        'What are the risks?',
+                    ].map((suggestion, i) => (
+                        <button
+                            key={i}
+                            onClick={() => submitQuery(suggestion)}
+                            disabled={isNarrativeLoading}
+                            className="px-3 py-1.5 bg-[#16222a] border border-white/10 rounded text-[9px] text-slate-400 hover:text-white hover:border-[var(--accent-blue)]/30 disabled:opacity-30 transition-all"
+                        >
+                            {suggestion}
+                        </button>
                     ))}
                 </div>
+            )}
+
+            {/* Input Area */}
+            <div className="flex items-center gap-3">
+                <div className="flex-1 relative">
+                    <input
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Ask about your codebase..."
+                        disabled={isNarrativeLoading}
+                        className="w-full px-4 py-3 bg-[#16222a] border border-white/10 rounded-xl text-[13px] text-white placeholder-slate-500 focus:outline-none focus:border-[var(--accent-blue)]/50 disabled:opacity-50 transition-all"
+                    />
+                    {isNarrativeLoading && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <i className="fas fa-circle-notch animate-spin text-[var(--accent-blue)]"></i>
+                        </div>
+                    )}
+                </div>
+                
+                <button
+                    onClick={handleSubmit}
+                    disabled={!searchTerm.trim() || isNarrativeLoading || !dataApiBase || !selectedProjectId}
+                    className="px-6 py-3 bg-[var(--accent-blue)] text-white rounded-xl text-[11px] font-bold uppercase tracking-wider hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-[0_0_20px_rgba(59,130,246,0.3)] active:scale-95"
+                >
+                    {isNarrativeLoading ? (
+                        <i className="fas fa-circle-notch animate-spin"></i>
+                    ) : (
+                        <i className="fas fa-paper-plane"></i>
+                    )}
+                </button>
             </div>
 
-            {/* Consult Button - Right Aligned */}
-            <button
-                onClick={handleSubmit}
-                disabled={!searchTerm.trim() || isNarrativeLoading || !dataApiBase || !selectedProjectId}
-                className="shrink-0 px-8 py-3 bg-[var(--accent-blue)] text-white rounded-lg text-[10px] font-black uppercase tracking-[0.2em] hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-[0_0_20px_rgba(59,130,246,0.3)] active:scale-95 flex items-center gap-2"
-            >
-                {isNarrativeLoading ? (
-                    <>
-                        <i className="fas fa-circle-notch animate-spin"></i>
-                        THINKING...
-                    </>
-                ) : (
-                    <>
-                        <i className="fas fa-bolt text-xs opacity-80"></i>
-                        CONSULT
-                    </>
-                )}
-            </button>
+            {/* Quick Suggestions */}
+            <div className="mt-3 flex flex-wrap gap-2">
+                {dynamicSuggestions.slice(0, 3).map((group, gIdx) => (
+                    group.questions.slice(0, 1).map((chip, i) => (
+                        <button
+                            key={`${group.label}-${i}`}
+                            onClick={() => submitQuery(chip.toLowerCase())}
+                            disabled={isNarrativeLoading}
+                            className={`px-3 py-1.5 bg-[#16222a] border border-white/10 rounded text-[8px] font-bold text-slate-400 ${getColorClass(group.color)} disabled:opacity-30 transition-all`}
+                            title={`${group.label} - Click to query`}
+                        >
+                            <i className={`fas ${group.icon} mr-1.5 opacity-50`}></i>
+                            {chip}
+                        </button>
+                    ))
+                ))}
+            </div>
         </div>
     );
 };

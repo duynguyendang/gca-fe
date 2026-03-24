@@ -177,8 +177,8 @@ const App: React.FC = () => {
       return astData;
     }
 
-    const baseNodes = astData.nodes || [];
-    const baseLinks = astData.links || [];
+    const baseNodes = Array.isArray(astData.nodes) ? astData.nodes : [];
+    const baseLinks = Array.isArray(astData.links) ? astData.links : [];
     const expandedNodes: any[] = [...baseNodes];
     const expandedLinks: any[] = [...baseLinks];
 
@@ -281,10 +281,6 @@ const App: React.FC = () => {
       setSelectedNode(prev => prev ? { ...prev, _isMissingCode: true } : null);
     });
   }, [selectedNode?.id, hydrateNode, setSelectedNode]);
-
-  if (isLandingView) {
-    return <LandingScreen />;
-  }
 
   return (
     <ErrorBoundary>

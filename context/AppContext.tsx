@@ -217,7 +217,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     const [searchStatus, setSearchStatus] = useState<string | null>(null);
 
     // View mode
-    const [viewMode, setViewMode] = useState<ViewMode>('discovery');
+    const [viewMode, setViewMode] = useState<ViewMode>('narrative');
     const [isFlowLoading, setIsFlowLoading] = useState(false);
 
     // File scoped data

@@ -1,6 +1,6 @@
 import React from 'react';
 
-type ViewMode = 'discovery' | 'architecture' | 'map' | 'narrative';
+type ViewMode = 'flow' | 'map' | 'discovery' | 'backbone' | 'architecture' | 'narrative';
 
 interface ViewModeSwitcherProps {
   viewMode: ViewMode;

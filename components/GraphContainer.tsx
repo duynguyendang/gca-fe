@@ -1,14 +1,14 @@
 import React from 'react';
-import { FlatGraph } from '../types';
+import { ASTNode, FlatGraph } from '../types';
 import TreeVisualizer from './TreeVisualizer/index';
 import ClassDiagramCanvas from './ClassDiagramCanvas';
 
-type ViewMode = 'discovery' | 'architecture' | 'map' | 'narrative';
+type ViewMode = 'flow' | 'map' | 'discovery' | 'backbone' | 'architecture' | 'narrative';
 
 interface GraphContainerProps {
   viewMode: ViewMode;
-  astData: FlatGraph | null;
-  expandedGraphData: FlatGraph | null;
+  astData: ASTNode | FlatGraph | null;
+  expandedGraphData: ASTNode | FlatGraph | null;
   fileScopedNodes: any[];
   fileScopedLinks: any[];
   sidebarWidth: number;
@@ -52,8 +52,9 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
   }, [onNodeSelect]);
 
   const visualizationNodeCount = fileScopedNodes.length;
-  const nodeCount = astData?.nodes?.length || 0;
-  const linkCount = astData?.links?.length || 0;
+  const isFlatGraph = astData && 'nodes' in astData && Array.isArray(astData.nodes);
+  const nodeCount = isFlatGraph ? (astData as FlatGraph).nodes?.length || 0 : 0;
+  const linkCount = isFlatGraph ? (astData as FlatGraph).links?.length || 0 : 0;
   const tooManyNodes = visualizationNodeCount > 1000;
 
   if (tooManyNodes) {

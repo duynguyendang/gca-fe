@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { FlatGraph } from '../types';
+import { ASTNode, FlatGraph } from '../types';
 
 export const useSessionStorage = (
-  astData: FlatGraph | null,
+  astData: ASTNode | FlatGraph | null,
   sandboxFiles: Record<string, any>,
   dataApiBase: string
 ) => {

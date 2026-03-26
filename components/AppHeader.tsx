@@ -1,64 +1,23 @@
 import React from 'react';
 import { ViewMode } from './ViewModeSwitcher';
-import SearchBar from './SearchBar';
 import ViewModeSwitcher from './ViewModeSwitcher';
 
 interface AppHeaderProps {
   currentProject: string;
-  searchTerm: string;
-  onSearchTermChange: (term: string) => void;
-  onSearch: (term: string) => void;
-  isSearching: boolean;
-  searchStatus: string | null;
-  searchError: string | null;
-  queryResults: any;
-  setCtxSearchError: (error: string | null) => void;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   isSubModeSwitching: boolean;
   openSettings: () => void;
-  lastExecutedQuery: string;
-  dataApiBase: string;
-  selectedProjectId: string;
-  setCtxSearchStatus: (status: string | null) => void;
-  setCtxIsSearching: (searching: boolean) => void;
-  setFileScopedNodes: (nodes: any[]) => void;
-  setFileScopedLinks: (links: any[]) => void;
-  setIsClustered: (clustered: boolean) => void;
-  setNodeInsight: (insight: string | null) => void;
-  setSearchTerm: (term: string) => void;
-  setQueryResultsNull: () => void;
-  setFileScopedNodesEmpty: () => void;
-  setFileScopedLinksEmpty: () => void;
+  isSearching: boolean;
 }
 
 const AppHeader: React.FC<AppHeaderProps> = ({
   currentProject,
-  searchTerm,
-  onSearchTermChange,
-  onSearch,
-  isSearching,
-  searchStatus,
-  searchError,
-  queryResults,
-  setCtxSearchError,
   viewMode,
   onViewModeChange,
   isSubModeSwitching,
   openSettings,
-  lastExecutedQuery,
-  dataApiBase,
-  selectedProjectId,
-  setCtxSearchStatus,
-  setCtxIsSearching,
-  setFileScopedNodes,
-  setFileScopedLinks,
-  setIsClustered,
-  setNodeInsight,
-  setSearchTerm,
-  setQueryResultsNull,
-  setFileScopedNodesEmpty,
-  setFileScopedLinksEmpty,
+  isSearching,
 }) => {
   return (
     <header className="h-14 border-b border-white/5 flex items-center px-6 gap-6 bg-[var(--bg-main)]/90 backdrop-blur-md z-20 shrink-0">
@@ -79,33 +38,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="flex-1 flex items-center justify-center">
-        <SearchBar
-          searchTerm={searchTerm}
-          onSearchTermChange={onSearchTermChange}
-          onSearch={onSearch}
-          isSearching={isSearching}
-          searchStatus={searchStatus}
-          searchError={searchError}
-          queryResults={queryResults}
-          setCtxSearchError={setCtxSearchError}
-          viewMode={viewMode}
-          lastExecutedQuery={lastExecutedQuery}
-          dataApiBase={dataApiBase}
-          selectedProjectId={selectedProjectId}
-          setCtxSearchStatus={setCtxSearchStatus}
-          setCtxIsSearching={setCtxIsSearching}
-          setFileScopedNodes={setFileScopedNodes}
-          setFileScopedLinks={setFileScopedLinks}
-          setIsClustered={setIsClustered}
-          setNodeInsight={setNodeInsight}
-          setSearchTerm={setSearchTerm}
-          setQueryResultsNull={setQueryResultsNull}
-          setFileScopedNodesEmpty={setFileScopedNodesEmpty}
-          setFileScopedLinksEmpty={setFileScopedLinksEmpty}
-        />
-      </div>
+      {/* Spacer */}<div className="flex-1"></div>
 
       {/* Model Status & View Switcher */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/50 border border-white/5 rounded-full">

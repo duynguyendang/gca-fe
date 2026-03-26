@@ -112,9 +112,11 @@ export const useApiSync = () => {
 
                 // ENFORCE CLUSTERING FOR LARGE GRAPHS BEFORE SETTING DATA
                 // If we have > 300 nodes, default to "Map" mode to prevent graph explosion
+                // Note: Narrative view is now default, only switch to map if explicitly needed
                 if (astNodes.length > 300 && enableAutoClustering) {
                     console.warn(`[Performance] Node count ${astNodes.length} > 300. Forcing Map View.`);
-                    setViewMode('map');
+                    // Keep narrative view as default - don't force map mode
+                    // setViewMode('map');
                 }
 
                 setAstData({ nodes: astNodes, links: astLinks });
@@ -139,14 +141,16 @@ export const useApiSync = () => {
                         if (isClustered) {
                             logger.log('[ApiSync] Received clustered graph. Updating Visualizer only.');
                             // Clustered graphs usually work best in Map or Architecture mode
-                            setViewMode('map');
+                            // Keep narrative view as default - don't force map mode
+                            // setViewMode('map');
                             setFileScopedNodes(ast.nodes.map((n: any) => ({ ...n, _project: projectId })));
                             setFileScopedLinks(ast.links || []);
                             // Do NOT update astData (keep files for navigator)
                         } else {
                             // ENFORCE CLUSTERING if new enriched data is large
                             if (ast.nodes.length > 300 && enableAutoClustering) {
-                                setViewMode('map');
+                                // Keep narrative view as default - don't force map mode
+                                // setViewMode('map');
                             }
 
                             // Otherwise, enrich existing file nodes (keep graph focused on file list)

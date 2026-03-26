@@ -1,7 +1,10 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, useCallback } from 'react';
 import { useAppContext, NarrativeMessage } from '../../context/AppContext';
-import NarrativeQueryBar from './NarrativeQueryBar';
+import UnifiedSearchBar from '../UnifiedSearchBar';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
+import { fetchSummary, fetchSource } from '../../services/graphService';
+import { fetchWithTimeout } from '../../utils/fetchWithTimeout';
+import { useContextualSuggestions } from '../../hooks/useContextualSuggestions';
 
 interface NarrativeScreenProps {
     onNodeSelect: (node: any) => void;
@@ -18,7 +21,14 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         narrativeMessages,
         isNarrativeLoading,
         selectedProjectId,
+        setNarrativeMessages,
+        setIsNarrativeLoading,
+        selectedNode,
+        dataApiBase,
     } = useAppContext();
+
+    // Get contextual suggestions
+    const { suggestions: contextualSuggestions } = useContextualSuggestions();
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -26,6 +36,149 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [narrativeMessages, isNarrativeLoading]);
+
+    // Submit query to AI
+    const submitNarrativeQuery = useCallback(async (query: string) => {
+        if (!query.trim() || isNarrativeLoading || !dataApiBase || !selectedProjectId) return;
+
+        // Build enhanced query with conversation context
+        let enhancedQuery = query;
+        let contextData: any[] = [];
+
+        // Add conversation context if there are previous messages
+        if (narrativeMessages.length > 0) {
+            const lastUserMessage = [...narrativeMessages].reverse().find(m => m.role === 'user');
+            if (lastUserMessage && lastUserMessage.content !== query) {
+                // This is a follow-up question, add context
+                enhancedQuery = `Follow-up question (continuing our discussion about this codebase): ${query}`;
+            }
+        }
+
+        // Add project context to all queries (not just the first)
+        enhancedQuery += `\n\n[Project: ${selectedProjectId}]`;
+
+        // If there's a selected node, include it in the context
+        if (selectedNode) {
+            let nodeCode = selectedNode.code;
+
+            // If the selected node doesn't have code, fetch it
+            if (!nodeCode && selectedNode.id) {
+                try {
+                    nodeCode = await fetchSource(dataApiBase, selectedProjectId, selectedNode.id);
+                    console.log('[Narrative] Fetched source for selected node:', selectedNode.id, 'Code length:', nodeCode?.length || 0);
+                } catch (e) {
+                    console.warn('Failed to fetch source for selected node:', e);
+                }
+            }
+
+            // Add the selected node with full context to all queries
+            contextData.push({
+                id: selectedNode.id,
+                name: selectedNode.name,
+                kind: selectedNode.kind || selectedNode.type,
+                code: nodeCode || '',
+                filePath: selectedNode._filePath || selectedNode.filePath || selectedNode.id,
+                start_line: selectedNode.start_line || 1,
+                end_line: selectedNode.end_line || 100,
+            });
+
+            // Add node info to the query for context
+            enhancedQuery += `\n\nCurrently viewing: ${selectedNode.name} (${selectedNode.kind || selectedNode.type})`;
+        }
+
+        const userMsg: NarrativeMessage = {
+            role: 'user',
+            content: enhancedQuery,
+            timestamp: Date.now(),
+        };
+
+        setNarrativeMessages(prev => [...prev, userMsg]);
+        setIsNarrativeLoading(true);
+
+        try {
+            // Fetch project summary to get more context
+            try {
+                const freshSummary = await fetchSummary(dataApiBase, selectedProjectId);
+                if (freshSummary?.top_symbols) {
+                    const selectedNodeId = selectedNode?.id;
+                    const existingIds = new Set(contextData.map(n => n.id));
+
+                    // Add top symbols that aren't already in context
+                    freshSummary.top_symbols
+                        .filter((s: any) => s.id !== selectedNodeId && !existingIds.has(s.id))
+                        .slice(0, 15)
+                        .forEach((symbol: any) => {
+                            contextData.push({
+                                id: symbol.id,
+                                name: symbol.name,
+                                kind: symbol.kind || symbol.type || 'unknown',
+                                code: symbol.code || '',
+                                filePath: symbol._filePath || symbol.filePath || symbol.id,
+                            });
+                        });
+
+                    console.log('[Narrative] Query context:', {
+                        query: enhancedQuery.substring(0, 100) + '...',
+                        contextItems: contextData.length,
+                        hasConversationHistory: narrativeMessages.length > 0
+                    });
+                }
+            } catch (e) {
+                console.warn('Failed to fetch summary:', e);
+            }
+
+            const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+            const response = await fetchWithTimeout(`${cleanBase}/v1/ai/ask`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_id: selectedProjectId,
+                    query: enhancedQuery,
+                    context: contextData.length > 0 ? contextData : undefined,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[Narrative] AI API error:', response.status, errorText);
+                throw new Error(`AI service error: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const aiResponse = data.answer || data.response || 'No response received.';
+
+            console.log('[Narrative] AI response received, length:', aiResponse.length);
+
+            const aiMsg: NarrativeMessage = {
+                role: 'ai',
+                content: aiResponse,
+                timestamp: Date.now(),
+                sections: data.sections ? data.sections.map((s: any) => ({
+                    type: s.type || 'info',
+                    title: s.title || 'Information',
+                    content: s.content || s.text || '',
+                    actionLabel: s.action_label,
+                })) : undefined,
+            };
+
+            setNarrativeMessages(prev => [...prev, aiMsg]);
+        } catch (error: any) {
+            console.error('Narrative AI Error:', error);
+            const errorMsg: NarrativeMessage = {
+                role: 'ai',
+                content: `I apologize, but I encountered an error while processing your request: ${error.message || 'Unknown error'}. Please try again.`,
+                timestamp: Date.now(),
+                sections: [{
+                    type: 'inconsistency',
+                    title: 'Error',
+                    content: error.message || 'Failed to process your request',
+                }],
+            };
+            setNarrativeMessages(prev => [...prev, errorMsg]);
+        } finally {
+            setIsNarrativeLoading(false);
+        }
+    }, [isNarrativeLoading, dataApiBase, selectedProjectId, selectedNode, narrativeMessages, setNarrativeMessages, setIsNarrativeLoading]);
 
     const getSectionIcon = (type: string) => {
         switch (type) {
@@ -200,7 +353,9 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                             ].map((suggestion, i) => (
                                 <button
                                     key={i}
-                                    className="px-4 py-2 bg-[#16222a] border border-white/10 rounded-lg text-[10px] text-slate-400 hover:text-white hover:border-[var(--accent-blue)]/30 transition-all"
+                                    onClick={() => submitNarrativeQuery(suggestion)}
+                                    disabled={isNarrativeLoading}
+                                    className="px-4 py-2 bg-[#16222a] border border-white/10 rounded-lg text-[10px] text-slate-400 hover:text-white hover:border-[var(--accent-blue)]/30 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
                                     {suggestion}
                                 </button>
@@ -244,7 +399,11 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
             </div>
 
             {/* Query Bar */}
-            <NarrativeQueryBar />
+            <UnifiedSearchBar
+              accentColor="blue"
+              suggestions={contextualSuggestions}
+              onSubmit={submitNarrativeQuery}
+            />
         </div>
     );
 };

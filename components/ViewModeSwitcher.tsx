@@ -20,10 +20,11 @@ const ViewModeSwitcher: React.FC<ViewModeSwitcherProps> = ({ viewMode, onViewMod
   return (
     <div className="view-switcher" style={{ '--glow-color': getGlowColor() } as any}>
       <button
-        className={viewMode === 'discovery' ? 'active' : ''}
-        onClick={() => onViewModeChange('discovery')}
+        className={viewMode === 'narrative' ? 'active' : ''}
+        onClick={() => onViewModeChange('narrative')}
       >
-        DISCOVERY
+        <i className="fas fa-brain mr-1.5 opacity-80"></i>
+        NARRATIVE
       </button>
       <button
         className={viewMode === 'architecture' ? 'active' : ''}
@@ -32,17 +33,16 @@ const ViewModeSwitcher: React.FC<ViewModeSwitcherProps> = ({ viewMode, onViewMod
         ARCHITECTURE
       </button>
       <button
+        className={viewMode === 'discovery' ? 'active' : ''}
+        onClick={() => onViewModeChange('discovery')}
+      >
+        DISCOVERY
+      </button>
+      <button
         className={viewMode === 'map' ? 'active' : ''}
         onClick={() => onViewModeChange('map')}
       >
         MAP
-      </button>
-      <button
-        className={viewMode === 'narrative' ? 'active' : ''}
-        onClick={() => onViewModeChange('narrative')}
-      >
-        <i className="fas fa-brain mr-1.5 opacity-80"></i>
-        NARRATIVE
       </button>
     </div>
   );

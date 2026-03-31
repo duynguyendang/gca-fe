@@ -37,6 +37,11 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [narrativeMessages, isNarrativeLoading]);
 
+    // Start new conversation
+    const startNewConversation = useCallback(() => {
+        setNarrativeMessages([]);
+    }, [setNarrativeMessages]);
+
     // Submit query to AI
     const submitNarrativeQuery = useCallback(async (query: string) => {
         if (!query.trim() || isNarrativeLoading || !dataApiBase || !selectedProjectId) return;
@@ -55,35 +60,41 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         }
 
         // Add project context to all queries (not just the first)
-        enhancedQuery += `\n\n[Project: ${selectedProjectId}]`;
+        enhancedQuery += `\n\n[Project: ${selectedProjectId}]\n\nIMPORTANT: Please analyze the COMPLETE file contents I'm providing, not just snippets. Look at the full code to understand the complete implementation.`;
 
-        // If there's a selected node, include it in the context
+        // If there's a selected node, include FULL code in the context
         if (selectedNode) {
             let nodeCode = selectedNode.code;
 
-            // If the selected node doesn't have code, fetch it
-            if (!nodeCode && selectedNode.id) {
-                try {
-                    nodeCode = await fetchSource(dataApiBase, selectedProjectId, selectedNode.id);
-                    console.log('[Narrative] Fetched source for selected node:', selectedNode.id, 'Code length:', nodeCode?.length || 0);
-                } catch (e) {
-                    console.warn('Failed to fetch source for selected node:', e);
+            // If the selected node doesn't have code, fetch the COMPLETE file
+            if (!nodeCode || nodeCode.trim() === '') {
+                if (selectedNode.id && dataApiBase && selectedProjectId) {
+                    try {
+                        nodeCode = await fetchSource(dataApiBase, selectedProjectId, selectedNode.id);
+                        console.log('[Narrative] Fetched FULL source for selected node:', selectedNode.id, 'Code length:', nodeCode?.length || 0);
+                    } catch (e) {
+                        console.warn('Failed to fetch source for selected node:', e);
+                    }
                 }
             }
 
-            // Add the selected node with full context to all queries
+            // Add the selected node with FULL code - no snippets
             contextData.push({
                 id: selectedNode.id,
                 name: selectedNode.name,
                 kind: selectedNode.kind || selectedNode.type,
-                code: nodeCode || '',
+                code: nodeCode || '', // Send FULL code, not just a snippet
                 filePath: selectedNode._filePath || selectedNode.filePath || selectedNode.id,
                 start_line: selectedNode.start_line || 1,
                 end_line: selectedNode.end_line || 100,
+                _isFullFile: true, // Flag to indicate this is the complete file
             });
 
             // Add node info to the query for context
             enhancedQuery += `\n\nCurrently viewing: ${selectedNode.name} (${selectedNode.kind || selectedNode.type})`;
+            if (nodeCode && nodeCode.trim() !== '') {
+                enhancedQuery += `\n\nCode:\n${nodeCode.trim()}\n[End of file]`;
+            }
         }
 
         const userMsg: NarrativeMessage = {
@@ -96,31 +107,44 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         setIsNarrativeLoading(true);
 
         try {
-            // Fetch project summary to get more context
+            // Fetch project summary to get more context with FULL code
             try {
                 const freshSummary = await fetchSummary(dataApiBase, selectedProjectId);
                 if (freshSummary?.top_symbols) {
                     const selectedNodeId = selectedNode?.id;
                     const existingIds = new Set(contextData.map(n => n.id));
 
-                    // Add top symbols that aren't already in context
-                    freshSummary.top_symbols
-                        .filter((s: any) => s.id !== selectedNodeId && !existingIds.has(s.id))
-                        .slice(0, 15)
-                        .forEach((symbol: any) => {
+                    // Add top symbols with FULL code
+                    for (const symbol of freshSummary.top_symbols.slice(0, 10)) {
+                        if (symbol.id !== selectedNodeId && !existingIds.has(symbol.id)) {
+                            let symbolCode = symbol.code || '';
+
+                            // If no code, fetch the COMPLETE file
+                            if (!symbolCode || symbolCode.trim() === '') {
+                                try {
+                                    symbolCode = await fetchSource(dataApiBase, selectedProjectId, symbol.id);
+                                    console.log('[Narrative] Fetched FULL source for symbol:', symbol.id, 'Code length:', symbolCode?.length || 0);
+                                } catch (e) {
+                                    console.warn('[Narrative] Failed to fetch source for symbol:', symbol.id);
+                                }
+                            }
+
                             contextData.push({
                                 id: symbol.id,
                                 name: symbol.name,
                                 kind: symbol.kind || symbol.type || 'unknown',
-                                code: symbol.code || '',
+                                code: symbolCode, // FULL code
                                 filePath: symbol._filePath || symbol.filePath || symbol.id,
+                                _isFullFile: true, // Flag to indicate complete file
                             });
-                        });
+                        }
+                    }
 
                     console.log('[Narrative] Query context:', {
                         query: enhancedQuery.substring(0, 100) + '...',
                         contextItems: contextData.length,
-                        hasConversationHistory: narrativeMessages.length > 0
+                        hasConversationHistory: narrativeMessages.length > 0,
+                        fullCodeFiles: contextData.filter(n => n._isFullFile).length
                     });
                 }
             } catch (e) {
@@ -128,7 +152,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
             }
 
             const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-            const response = await fetchWithTimeout(`${cleanBase}/v1/ai/ask`, {
+            const response = await fetchWithTimeout(`${cleanBase}/api/v1/ai/ask`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -306,8 +330,20 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                         </p>
                     </div>
                 </div>
-                
+
                 <div className="ml-auto flex items-center gap-3">
+                    {/* New Conversation Button */}
+                    {narrativeMessages.length > 0 && !isNarrativeLoading && (
+                        <button
+                            onClick={startNewConversation}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-[#16222a] border border-white/10 rounded-lg text-[9px] text-slate-400 hover:text-white hover:border-white/20 transition-all"
+                            title="Start a new conversation"
+                        >
+                            <i className="fas fa-plus text-[8px]"></i>
+                            <span className="hidden sm:inline">New</span>
+                        </button>
+                    )}
+
                     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
                         isNarrativeLoading
                             ? 'bg-[var(--accent-blue)]/10 border border-[var(--accent-blue)]/30'

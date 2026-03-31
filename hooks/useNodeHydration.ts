@@ -58,7 +58,7 @@ export const useNodeHydration = () => {
             try {
                 const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
                 // Fetch file list to resolve path - minimal overhead for single click
-                const filesResp = await fetchWithTimeout(`${cleanBase}/v1/files?project=${encodeURIComponent(selectedProjectId)}`);
+                const filesResp = await fetchWithTimeout(`${cleanBase}/api/v1/files?project=${encodeURIComponent(selectedProjectId)}`);
                 if (filesResp.ok) {
                     const allFiles = await filesResp.json();
                     const slashPath = nodeId.replace(/\./g, '/');
@@ -79,7 +79,7 @@ export const useNodeHydration = () => {
 
         try {
             const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-            const response = await fetchWithTimeout(`${cleanBase}/v1/hydrate?id=${encodeURIComponent(targetId)}&project=${encodeURIComponent(selectedProjectId)}`);
+            const response = await fetchWithTimeout(`${cleanBase}/api/v1/hydrate?id=${encodeURIComponent(targetId)}&project=${encodeURIComponent(selectedProjectId)}`);
 
             if (!response.ok) {
                 console.error('[Hydrate] Failed to hydrate node:', response.status, response.statusText);

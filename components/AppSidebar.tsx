@@ -68,10 +68,32 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
                 </option>
               ))}
             </select>
+          ) : isDataSyncing ? (
+            <div className="w-full bg-[#16222a] border border-white/5 rounded px-3 py-3 text-[11px] text-slate-400 font-medium flex items-center gap-2">
+              <i className="fas fa-spinner fa-spin text-[var(--accent-teal)] text-[10px]"></i>
+              Connecting to backend...
+            </div>
+          ) : !dataApiBase ? (
+            <div className="w-full bg-[#16222a] border border-white/5 rounded px-3 py-3 text-[10px] text-slate-500 font-medium space-y-2">
+              <div className="flex items-center gap-2">
+                <i className="fas fa-info-circle text-[var(--accent-teal)] text-[10px]"></i>
+                <span className="font-bold text-slate-400">No Backend Connected</span>
+              </div>
+              <p className="text-[9px] leading-relaxed">
+                Open Settings (⚙) to configure the API URL, or run:<br/>
+                <code className="bg-black/30 px-1 rounded text-[var(--accent-teal)]">gca server</code>
+              </p>
+            </div>
           ) : (
-            <div className="w-full bg-[#16222a] border border-white/5 rounded px-3 py-2 text-[11px] text-white truncate font-medium flex items-center gap-2">
-              <i className="fas fa-cube text-[var(--accent-teal)] text-[10px]"></i>
-              {currentProject}
+            <div className="w-full bg-[#16222a] border border-white/5 rounded px-3 py-3 text-[10px] text-slate-500 font-medium space-y-2">
+              <div className="flex items-center gap-2">
+                <i className="fas fa-database text-amber-500 text-[10px]"></i>
+                <span className="font-bold text-slate-400">No Projects Found</span>
+              </div>
+              <p className="text-[9px] leading-relaxed">
+                Index a codebase with:<br/>
+                <code className="bg-black/30 px-1 rounded text-[var(--accent-teal)]">gca ingest ./repo ./data</code>
+              </p>
             </div>
           )}
         </div>

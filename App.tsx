@@ -2,6 +2,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { FlatGraph, ASTNode } from './types';
 import { useAppContext, NarrativeMessage } from './context/AppContext';
+import { useToast } from './context/ToastContext';
 import { useApiSync, useResizePanels, useSmartSearch, useInsights, useManifest, useNodeHydration, useContextualSuggestions } from './hooks';
 import { CodePanel } from './components/Layout';
 import { NarrativeScreen } from './components/NarrativeScreen';
@@ -21,6 +22,7 @@ import './src/prismSetup';
 const App: React.FC = () => {
   // Global Context
   const context = useAppContext();
+  const toast = useToast();
   const {
     astData, setAstData,
     sandboxFiles, setSandboxFiles,
@@ -132,9 +134,43 @@ const App: React.FC = () => {
     const project = availableProjects.find((p: { id: string; name: string; description?: string }) => p.id === projectId);
     if (project) {
       setCurrentProject(project.name);
-      syncDataFromApi(dataApiBase, projectId);
+      toast.info(`Loading project: ${project.name}`);
+      syncDataFromApi(dataApiBase, projectId, () => {
+        toast.success(`Project ${project.name} loaded`);
+      });
     }
-  }, [availableProjects, dataApiBase, setCurrentProject, setSelectedProjectId, syncDataFromApi]);
+  }, [availableProjects, dataApiBase, setCurrentProject, setSelectedProjectId, syncDataFromApi, toast]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+      
+      // Don't trigger shortcuts when typing in inputs
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      
+      if (mod && e.key === 'k') {
+        e.preventDefault();
+        // Focus search - trigger via custom event
+        window.dispatchEvent(new CustomEvent('gca:focus-search'));
+      } else if (mod && e.key === 'b') {
+        e.preventDefault();
+        setIsCodeCollapsed(prev => !prev);
+      } else if (e.key === 'Escape') {
+        setSelectedNode(null);
+        setSearchTerm('');
+      } else if (mod && e.key >= '1' && e.key <= '5') {
+        e.preventDefault();
+        const modes = ['narrative', 'flow', 'map', 'discovery', 'architecture'] as const;
+        const idx = parseInt(e.key) - 1;
+        if (idx < modes.length) setViewMode(modes[idx]);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setViewMode, setIsCodeCollapsed, setSelectedNode, setSearchTerm]);
 
   // Auto-sync on mount
   useEffect(() => {
@@ -221,45 +257,74 @@ const App: React.FC = () => {
       enhancedQuery += nodeInfo;
     }
 
-    // Add visible graph context
+    // Add visible graph context - include FULL code for important nodes
     if (fileScopedNodes && fileScopedNodes.length > 0) {
-      // Include visible nodes in context (up to 30 most relevant)
+      // Include visible nodes in context (up to 30 most relevant) with FULL code
       const relevantNodes = fileScopedNodes.slice(0, 30);
 
-      relevantNodes.forEach((node: any) => {
+      for (const node of relevantNodes) {
         // Skip the selected node to avoid duplicates
         if (node.id !== selectedNode?.id && contextData.length < 50) {
+          // Try to fetch full code for each important node
+          let nodeCode = node.code;
+
+          // If no code but we have an ID, try to fetch the full source
+          if ((!nodeCode || nodeCode.trim() === '') && node.id && dataApiBase && selectedProjectId) {
+            try {
+              const { fetchSource } = await import('./services/graphService');
+              nodeCode = await fetchSource(dataApiBase, selectedProjectId, node.id);
+              logger.log('[App] Fetched full source for node:', node.id, 'Code length:', nodeCode?.length || 0);
+            } catch (e) {
+              logger.warn('[App] Failed to fetch source for node:', node.id, e);
+            }
+          }
+
           contextData.push({
             id: node.id,
             name: node.name || node.id,
             kind: node.kind || node.type || 'unknown',
-            code: node.code || '',
+            code: nodeCode || '', // Send FULL code, not empty
             filePath: node._filePath || node.filePath || node.id,
             language: node.language || detectLanguage(node._filePath || node.id),
           });
         }
-      });
+      }
 
       enhancedQuery += `\n\nCurrently viewing ${fileScopedNodes.length} elements in ${viewMode} mode.`;
     }
 
-    // If no graph context, try to include basic project info
+    // If no graph context, try to include basic project info with FULL code samples
     if (contextData.length === 0 && astData && 'nodes' in astData) {
       const totalNodes = (astData.nodes as any[]).length;
       enhancedQuery += `\n\nProject contains ${totalNodes} analyzed elements.`;
 
-      // Include a few sample nodes from the project
-      const sampleNodes = (astData.nodes as any[]).slice(0, 10);
-      sampleNodes.forEach((node: any) => {
-        if (contextData.length < 20) {
+      // Include a few sample nodes with FULL code from the project
+      const sampleNodes = (astData.nodes as any[]).slice(0, 5); // Fewer nodes but with FULL code
+
+      for (const node of sampleNodes) {
+        if (contextData.length < 10) {
+          let nodeCode = node.code;
+
+          // Try to fetch full code
+          if ((!nodeCode || nodeCode.trim() === '') && node.id && dataApiBase && selectedProjectId) {
+            try {
+              const { fetchSource } = await import('./services/graphService');
+              nodeCode = await fetchSource(dataApiBase, selectedProjectId, node.id);
+              logger.log('[App] Fetched full source for sample node:', node.id);
+            } catch (e) {
+              logger.warn('[App] Failed to fetch source for sample node:', node.id);
+            }
+          }
+
           contextData.push({
             id: node.id,
             name: node.name || node.id,
             kind: node.kind || node.type || 'unknown',
+            code: nodeCode || '',
             filePath: node._filePath || node.filePath || node.id,
           });
         }
-      });
+      }
     }
 
     // Add view mode context
@@ -293,15 +358,19 @@ const App: React.FC = () => {
         enhancedQuery += `Selected element: "${selectedNode.name}" (${selectedNode.kind || selectedNode.type})\n`;
         enhancedQuery += `File: ${selectedNode._filePath || selectedNode.filePath || 'Unknown'}\n`;
         if (selectedNode.code && selectedNode.code.trim() !== '') {
-          enhancedQuery += `\nCode:\n${selectedNode.code.trim().substring(0, 500)}${selectedNode.code.length > 500 ? '...' : ''}\n`;
+          // Send FULL code, not just snippets
+          enhancedQuery += `\nFull Code:\n${selectedNode.code.trim()}\n`;
         }
       }
 
       if (fileScopedNodes && fileScopedNodes.length > 0) {
-        enhancedQuery += `\nVisible elements: ${fileScopedNodes.length} items\n`;
+        enhancedQuery += `\n\nCurrently viewing ${fileScopedNodes.length} elements:\n`;
+        fileScopedNodes.slice(0, 10).forEach((node: any) => {
+          enhancedQuery += `- ${node.name || node.id} (${node.kind || node.type})\n`;
+        });
       }
 
-      enhancedQuery += `\n\nPlease explain:\n1. What this code does\n2. How the components interact\n3. Key patterns and architecture\n4. Any potential improvements`;
+      enhancedQuery += `\n\nPlease analyze the FULL code and provide:\n1. What this code does (complete functionality)\n2. How all components interact\n3. Key patterns and architecture\n4. Any potential improvements`;
     }
 
     // Set the search term
@@ -354,7 +423,7 @@ const App: React.FC = () => {
           project: selectedProjectId
         });
 
-        const response = await fetchWithTimeout(`${cleanBase}/v1/ai/ask`, {
+        const response = await fetchWithTimeout(`${cleanBase}/api/v1/ai/ask`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -571,52 +640,52 @@ const App: React.FC = () => {
           isSearching={isSearching}
         />
 
-        <div className="relative flex-1 flex flex-col min-h-0">
-          <div className="flex-1 flex flex-col min-h-0 view-crossfade-enter" key={viewMode}>
-            {viewMode === 'narrative' ? (
-              <NarrativeScreen
-                onNodeSelect={handleNodeSelect}
-                onLinkClick={(href: string) => logger.log('Link clicked:', href)}
-                onSymbolClick={(symbol: string) => logger.log('Symbol clicked:', symbol)}
+          <div className="relative flex-1 flex flex-col min-h-0">
+            {/* Search Bar - moved outside keyed div to prevent remounting on view change */}
+            {viewMode !== 'narrative' && (
+              <UnifiedSearchBar
+                accentColor="teal"
+                suggestions={contextualSuggestions}
+                onSubmit={handleSmartSearchWithNarrativeSwitch}
               />
-            ) : (
-              <div className={`flex-1 flex min-h-0 ${isSubModeSwitching ? 'animate-pulse opacity-80' : 'transition-opacity duration-500'}`}>
-                <GraphContainer
-                  viewMode={viewMode}
-                  astData={astData}
-                  expandedGraphData={expandedGraphData}
-                  fileScopedNodes={fileScopedNodes}
-                  fileScopedLinks={fileScopedLinks}
-                  sidebarWidth={sidebarWidth}
-                  codePanelWidth={codePanelWidth}
-                  selectedNode={selectedNode}
-                  onNodeSelect={handleNodeSelect}
-                  skipFlowZoom={skipFlowZoom}
-                  expandedFileIds={expandedFileIds}
-                  onToggleFileExpansion={toggleFileExpansion}
-                  expandingFileId={expandingFileId}
-                  activeSubMode={activeSubMode}
-                  highlightedNodeId={highlightedNodeId}
-                />
-                <CodePanel
-                  width={codePanelWidth}
-                  isCollapsed={isCodeCollapsed}
-                  onToggleCollapse={() => setIsCodeCollapsed(!isCodeCollapsed)}
-                  onStartResize={startResizeCode}
-                />
-              </div>
             )}
-          </div>
 
-          {/* Search Bar - shared across all non-Narrative modes, outside keyed div to prevent remounting */}
-          {viewMode !== 'narrative' && (
-            <UnifiedSearchBar
-              accentColor="teal"
-              suggestions={contextualSuggestions}
-              onSubmit={handleSmartSearchWithNarrativeSwitch}
-            />
-          )}
-        </div>
+            <div className="flex-1 flex flex-col min-h-0 view-crossfade-enter" key={viewMode}>
+              {viewMode === 'narrative' ? (
+                <NarrativeScreen
+                  onNodeSelect={handleNodeSelect}
+                  onLinkClick={(href: string) => logger.log('Link clicked:', href)}
+                  onSymbolClick={(symbol: string) => logger.log('Symbol clicked:', symbol)}
+                />
+              ) : (
+                <div className={`flex-1 flex min-h-0 ${isSubModeSwitching ? 'animate-pulse opacity-80' : 'transition-opacity duration-500'}`}>
+                  <GraphContainer
+                    viewMode={viewMode}
+                    astData={astData}
+                    expandedGraphData={expandedGraphData}
+                    fileScopedNodes={fileScopedNodes}
+                    fileScopedLinks={fileScopedLinks}
+                    sidebarWidth={sidebarWidth}
+                    codePanelWidth={codePanelWidth}
+                    selectedNode={selectedNode}
+                    onNodeSelect={handleNodeSelect}
+                    skipFlowZoom={skipFlowZoom}
+                    expandedFileIds={expandedFileIds}
+                    onToggleFileExpansion={toggleFileExpansion}
+                    expandingFileId={expandingFileId}
+                    activeSubMode={activeSubMode}
+                    highlightedNodeId={highlightedNodeId}
+                  />
+                  <CodePanel
+                    width={codePanelWidth}
+                    isCollapsed={isCodeCollapsed}
+                    onToggleCollapse={() => setIsCodeCollapsed(!isCodeCollapsed)}
+                    onStartResize={startResizeCode}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
 
         <AppFooter
           astData={astData}

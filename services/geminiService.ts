@@ -3,7 +3,7 @@
  * Gemini Service (Refactored)
  * 
  * Replaces direct Google GenAI client with calls to the Go Backend Proxy.
- * Endpoint: POST /v1/ai/ask
+ * Endpoint: POST /api/v1/ai/ask
  */
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { API_CONFIG } from '../src/constants';
@@ -28,7 +28,7 @@ export const askAI = async (
   }
 ): Promise<string> => {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/ai/ask`;
+  const url = `${cleanBase}/api/v1/ai/ask`;
 
   const response = await fetchWithTimeout(url, {
     method: 'POST',
@@ -365,7 +365,7 @@ export const executeAgent = async (
   query: string
 ): Promise<AgentResponse> => {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/agent/execute`;
+  const url = `${cleanBase}/api/v1/agent/execute`;
 
   const response = await fetchWithTimeout(url, {
     method: 'POST',

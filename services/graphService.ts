@@ -90,11 +90,11 @@ export interface ProjectSummary {
 
 /**
  * Fetch list of projects
- * GET /v1/projects
+ * GET /api/v1/projects
  */
 export async function fetchProjects(dataApiBase: string): Promise<ProjectMetadata[]> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/projects`;
+  const url = `${cleanBase}/api/v1/projects`;
   const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch projects: ${response.statusText}`);
   return await response.json();
@@ -102,11 +102,11 @@ export async function fetchProjects(dataApiBase: string): Promise<ProjectMetadat
 
 /**
  * Fetch project summary
- * GET /v1/summary?project={projectId}
+ * GET /api/v1/summary?project={projectId}
  */
 export async function fetchSummary(dataApiBase: string, projectId: string): Promise<ProjectSummary> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/summary?project=${encodeURIComponent(projectId)}`;
+  const url = `${cleanBase}/api/v1/summary?project=${encodeURIComponent(projectId)}`;
   const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch summary: ${response.statusText}`);
   return await response.json();
@@ -114,23 +114,23 @@ export async function fetchSummary(dataApiBase: string, projectId: string): Prom
 
 /**
  * List files in project
- * GET /v1/files?project={projectId}
+ * GET /api/v1/files?project={projectId}
  */
 export async function fetchFiles(dataApiBase: string, projectId: string): Promise<string[]> {
   if (!isValidUrl(dataApiBase)) throw new Error('Invalid API base URL');
   if (!isValidProjectId(projectId)) throw new Error('Invalid project ID');
   
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/files?project=${encodeURIComponent(projectId)}`;
+  const url = `${cleanBase}/api/v1/files?project=${encodeURIComponent(projectId)}`;
   const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch files: ${response.statusText}`);
-  const data = await response.json();
-  return data.files || [];
+  // Backend returns plain array of strings directly
+  return await response.json();
 }
 
 /**
  * Get source code
- * GET /v1/source?project={projectId}&id={id}&start={start}&end={end}
+ * GET /api/v1/source?project={projectId}&id={id}&start={start}&end={end}
  */
 export async function fetchSource(dataApiBase: string, projectId: string, id: string, start?: number, end?: number): Promise<string> {
   if (!isValidUrl(dataApiBase)) throw new Error('Invalid API base URL');
@@ -138,7 +138,7 @@ export async function fetchSource(dataApiBase: string, projectId: string, id: st
   if (!id || typeof id !== 'string') throw new Error('Invalid ID');
   
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  let url = `${cleanBase}/v1/source?project=${encodeURIComponent(projectId)}&id=${encodeURIComponent(id)}`;
+  let url = `${cleanBase}/api/v1/source?project=${encodeURIComponent(projectId)}&id=${encodeURIComponent(id)}`;
   if (start) url += `&start=${start}`;
   if (end) url += `&end=${end}`;
   const response = await fetchWithTimeout(url);
@@ -148,11 +148,11 @@ export async function fetchSource(dataApiBase: string, projectId: string, id: st
 
 /**
  * Search symbols
- * GET /v1/symbols?project={projectId}&q={query}&p={predicate}
+ * GET /api/v1/symbols?project={projectId}&q={query}&p={predicate}
  */
 export async function fetchSymbols(dataApiBase: string, projectId: string, query: string, predicate?: string): Promise<string[]> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  let url = `${cleanBase}/v1/symbols?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query)}`;
+  let url = `${cleanBase}/api/v1/symbols?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query)}`;
   if (predicate) url += `&p=${encodeURIComponent(predicate)}`;
   const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch symbols: ${response.statusText}`);
@@ -162,11 +162,11 @@ export async function fetchSymbols(dataApiBase: string, projectId: string, query
 
 /**
  * Get predicates
- * GET /v1/predicates?project={projectId}
+ * GET /api/v1/predicates?project={projectId}
  */
 export async function fetchPredicates(dataApiBase: string, projectId: string): Promise<any[]> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/predicates?project=${encodeURIComponent(projectId)}`;
+  const url = `${cleanBase}/api/v1/predicates?project=${encodeURIComponent(projectId)}`;
   const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch predicates: ${response.statusText}`);
   const data = await response.json();
@@ -175,11 +175,11 @@ export async function fetchPredicates(dataApiBase: string, projectId: string): P
 
 /**
  * Hydrate symbol
- * GET /v1/hydrate?project={projectId}&id={id}
+ * GET /api/v1/hydrate?project={projectId}&id={id}
  */
 export async function fetchHydrate(dataApiBase: string, projectId: string, id: string): Promise<any> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/hydrate?project=${encodeURIComponent(projectId)}&id=${encodeURIComponent(id)}`;
+  const url = `${cleanBase}/api/v1/hydrate?project=${encodeURIComponent(projectId)}&id=${encodeURIComponent(id)}`;
   const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to hydrate symbol: ${response.statusText}`);
   return await response.json();
@@ -187,7 +187,7 @@ export async function fetchHydrate(dataApiBase: string, projectId: string, id: s
 
 /**
  * Execute Datalog query
- * POST /v1/query
+ * POST /api/v1/query
  */
 export async function executeQuery(dataApiBase: string, projectId: string, query: string, hydrate: boolean = true): Promise<any> {
   if (!isValidUrl(dataApiBase)) throw new Error('Invalid API base URL');
@@ -196,7 +196,7 @@ export async function executeQuery(dataApiBase: string, projectId: string, query
   
   const sanitizedQuery = sanitizeInput(query, 5000);
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/query?project=${encodeURIComponent(projectId)}${hydrate ? '&hydrate=true' : ''}`;
+  const url = `${cleanBase}/api/v1/query?project=${encodeURIComponent(projectId)}${hydrate ? '&hydrate=true' : ''}`;
 
   const response = await fetchWithTimeout(url, {
     method: 'POST',
@@ -220,7 +220,7 @@ export async function executeQuery(dataApiBase: string, projectId: string, query
 
 /**
  * Fetch composite graph for a specific file (Defines + Imports + Calls)
- * GET /v1/graph?project={projectId}&file={fileId}
+ * GET /api/v1/graph?project={projectId}&file={fileId}
  */
 export async function fetchFileGraph(
   dataApiBase: string,
@@ -229,7 +229,7 @@ export async function fetchFileGraph(
   lazy: boolean = true
 ): Promise<GraphMapResponse> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/graph?project=${encodeURIComponent(projectId)}&file=${encodeURIComponent(fileId)}&lazy=${lazy}`;
+  const url = `${cleanBase}/api/v1/graph?project=${encodeURIComponent(projectId)}&file=${encodeURIComponent(fileId)}&lazy=${lazy}`;
 
   const response = await fetchWithTimeout(url);
   if (!response.ok) throw new Error(`Failed to fetch file graph: ${response.statusText}`);
@@ -247,20 +247,20 @@ export async function fetchFileImports(
 ): Promise<GraphMapResponse> {
   const query = `triples("${fileId}", "imports", ?target)`;
   // Use executeQuery but we need to format the result as GraphMapResponse (nodes/links)
-  // executeQuery returns whatever the backend returns for POST /v1/query, which IS {nodes, links}
+  // executeQuery returns whatever the backend returns for POST /api/v1/query, which IS {nodes, links}
   return await executeQuery(dataApiBase, projectId, query, false);
 }
 
 /**
  * Fetch the initial graph map (file-level overview)
- * GET /v1/graph/map?project={projectId}
+ * GET /api/v1/graph/map?project={projectId}
  */
 export async function fetchGraphMap(
   dataApiBase: string,
   projectId: string
 ): Promise<GraphMapResponse> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/graph/map?project=${encodeURIComponent(projectId)}`;
+  const url = `${cleanBase}/api/v1/graph/map?project=${encodeURIComponent(projectId)}`;
 
   console.log('[GraphService] Fetching graph map:', url);
   const response = await fetchWithTimeout(url);
@@ -276,14 +276,14 @@ export async function fetchGraphMap(
 
 /**
  * Fetch project manifest (compressed symbol map)
- * GET /v1/graph/manifest?project={projectId}
+ * GET /api/v1/graph/manifest?project={projectId}
  */
 export async function fetchManifest(
   dataApiBase: string,
   projectId: string
 ): Promise<{ F: Record<string, string>, S: Record<string, number> }> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/graph/manifest?project=${encodeURIComponent(projectId)}`;
+  const url = `${cleanBase}/api/v1/graph/manifest?project=${encodeURIComponent(projectId)}`;
 
   console.log('[GraphService] Fetching manifest:', url);
   const response = await fetchWithTimeout(url);
@@ -298,7 +298,7 @@ export async function fetchManifest(
 
 /**
  * Fetch detailed graph for a specific file
- * GET /v1/graph/file-details?file={fileId}&project={projectId}
+ * GET /api/v1/graph/file-details?file={fileId}&project={projectId}
  */
 export async function fetchFileDetails(
   dataApiBase: string,
@@ -306,7 +306,7 @@ export async function fetchFileDetails(
   projectId: string
 ): Promise<FileDetailsResponse> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/graph/file-details?file=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}`;
+  const url = `${cleanBase}/api/v1/graph/file-details?file=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}`;
 
   console.log('[GraphService] Fetching file details:', url);
   const response = await fetchWithTimeout(url);
@@ -322,7 +322,7 @@ export async function fetchFileDetails(
 
 /**
  * Fetch backbone graph (cross-file architecture)
- * GET /v1/graph/backbone?project={projectId}&aggregate={aggregate}
+ * GET /api/v1/graph/backbone?project={projectId}&aggregate={aggregate}
  */
 export async function fetchBackbone(
   dataApiBase: string,
@@ -330,7 +330,7 @@ export async function fetchBackbone(
   aggregate: boolean = true
 ): Promise<BackboneResponse> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/graph/backbone?project=${encodeURIComponent(projectId)}&aggregate=${aggregate}`;
+  const url = `${cleanBase}/api/v1/graph/backbone?project=${encodeURIComponent(projectId)}&aggregate=${aggregate}`;
 
   console.log('[GraphService] Fetching backbone graph:', url);
   const response = await fetchWithTimeout(url);
@@ -421,7 +421,7 @@ export async function fetchBackbone(
 
 /**
  * Fetch recursive file call graph
- * GET /v1/graph/file-calls?id={fileId}&project={projectId}&depth={depth}
+ * GET /api/v1/graph/file-calls?id={fileId}&project={projectId}&depth={depth}
  */
 export async function fetchFileCalls(
   dataApiBase: string,
@@ -430,7 +430,7 @@ export async function fetchFileCalls(
   depth: number = 3
 ): Promise<GraphMapResponse> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/graph/file-calls?id=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}&depth=${depth}`;
+  const url = `${cleanBase}/api/v1/graph/file-calls?id=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}&depth=${depth}`;
 
   console.log('[GraphService] Fetching file calls:', url);
   const response = await fetchWithTimeout(url);
@@ -446,7 +446,7 @@ export async function fetchFileCalls(
 
 /**
  * Fetch flow path between two symbols
- * GET /v1/search/flow?from={from}&to={to}&project={projectId}
+ * GET /api/v1/search/flow?from={from}&to={to}&project={projectId}
  */
 export async function fetchFlowPath(
   dataApiBase: string,
@@ -455,7 +455,7 @@ export async function fetchFlowPath(
   to: string
 ): Promise<GraphMapResponse> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/search/flow?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&project=${encodeURIComponent(projectId)}`;
+  const url = `${cleanBase}/api/v1/search/flow?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&project=${encodeURIComponent(projectId)}`;
 
   console.log('[GraphService] Fetching flow path:', url);
   const response = await fetchWithTimeout(url);
@@ -471,7 +471,7 @@ export async function fetchFlowPath(
 
 /**
  * Fetch file backbone (bidirectional depth-1)
- * GET /v1/graph/file-backbone?id={fileId}&project={projectId}
+ * GET /api/v1/graph/file-backbone?id={fileId}&project={projectId}
  */
 export async function fetchFileBackbone(
   dataApiBase: string,
@@ -479,7 +479,7 @@ export async function fetchFileBackbone(
   fileId: string
 ): Promise<GraphMapResponse> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/graph/file-backbone?id=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}`;
+  const url = `${cleanBase}/api/v1/graph/file-backbone?id=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}`;
 
   console.log('[GraphService] Fetching file backbone:', url);
   const response = await fetchWithTimeout(url);
@@ -495,7 +495,7 @@ export async function fetchFileBackbone(
 
 /**
  * Fetch shortest path between two symbols
- * GET /v1/graph/path?project={projectId}&source={source}&target={target}
+ * GET /api/v1/graph/path?project={projectId}&source={source}&target={target}
  */
 export async function fetchGraphPath(
   dataApiBase: string,
@@ -504,7 +504,7 @@ export async function fetchGraphPath(
   target: string
 ): Promise<GraphMapResponse> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/graph/path?project=${encodeURIComponent(projectId)}&source=${encodeURIComponent(source)}&target=${encodeURIComponent(target)}`;
+  const url = `${cleanBase}/api/v1/graph/path?project=${encodeURIComponent(projectId)}&source=${encodeURIComponent(source)}&target=${encodeURIComponent(target)}`;
 
   console.log('[GraphService] Fetching graph path:', url);
   const response = await fetchWithTimeout(url);
@@ -520,7 +520,7 @@ export async function fetchGraphPath(
 
 /**
  * Search for symbols using semantic similarity
- * GET /v1/semantic-search?project={projectId}&q={query}&k={k}
+ * GET /api/v1/semantic-search?project={projectId}&q={query}&k={k}
  */
 export interface SemanticSearchResult {
   symbol_id: string;
@@ -535,7 +535,7 @@ export async function fetchSemanticSearch(
   k: number = 10
 ): Promise<SemanticSearchResult[]> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/semantic-search?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query)}&k=${k}`;
+  const url = `${cleanBase}/api/v1/semantic-search?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query)}&k=${k}`;
 
   console.log('[GraphService] Fetching semantic search:', url);
   const response = await fetchWithTimeout(url);
@@ -551,7 +551,7 @@ export async function fetchSemanticSearch(
 
 /**
  * Get clustered graph for large result sets using Leiden algorithm
- * GET /v1/graph/cluster?project={projectId}&query={query}
+ * GET /api/v1/graph/cluster?project={projectId}&query={query}
  */
 export async function getClusteredGraph(
   apiBase: string,
@@ -559,7 +559,7 @@ export async function getClusteredGraph(
   query: string
 ): Promise<GraphMapResponse> {
   const cleanBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
-  const url = `${cleanBase}/v1/graph/cluster?project=${encodeURIComponent(projectId)}&query=${encodeURIComponent(query)}`;
+  const url = `${cleanBase}/api/v1/graph/cluster?project=${encodeURIComponent(projectId)}&query=${encodeURIComponent(query)}`;
 
   console.log('[GraphService] Fetching clustered graph:', url);
   const response = await fetchWithTimeout(url);
@@ -575,7 +575,7 @@ export async function getClusteredGraph(
 
 /**
  * Fetch subgraph for specific IDs (used for cluster expansion)
- * POST /v1/graph/subgraph
+ * POST /api/v1/graph/subgraph
  */
 export async function fetchSubgraph(
   dataApiBase: string,
@@ -583,7 +583,7 @@ export async function fetchSubgraph(
   ids: string[]
 ): Promise<GraphMapResponse> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/v1/graph/subgraph?project=${encodeURIComponent(projectId)}`;
+  const url = `${cleanBase}/api/v1/graph/subgraph?project=${encodeURIComponent(projectId)}`;
 
   const response = await fetchWithTimeout(url, {
     method: 'POST',
@@ -621,7 +621,7 @@ export interface PaginatedGraphOptions {
 
 /**
  * Fetch paginated graph for large datasets with lazy loading
- * GET /v1/graph/paginated?project={projectId}&query={query}&cursor={cursor}&limit={limit}&offset={offset}
+ * GET /api/v1/graph/paginated?project={projectId}&query={query}&cursor={cursor}&limit={limit}&offset={offset}
  */
 export async function fetchPaginatedGraph(
   dataApiBase: string,
@@ -646,7 +646,7 @@ export async function fetchPaginatedGraph(
     params.append('offset', options.offset.toString());
   }
 
-  const url = `${cleanBase}/v1/graph/paginated?${params.toString()}`;
+  const url = `${cleanBase}/api/v1/graph/paginated?${params.toString()}`;
 
   console.log('[GraphService] Fetching paginated graph:', url);
   const response = await fetchWithTimeout(url);

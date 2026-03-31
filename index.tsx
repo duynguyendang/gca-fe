@@ -9,12 +9,15 @@ if (!rootElement) {
 }
 
 import { AppProvider } from './context/AppContext';
+import { ToastProvider } from './context/ToastContext';
 
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <AppProvider>
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </AppProvider>
   </React.StrictMode>
 );

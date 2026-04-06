@@ -24,8 +24,6 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             'vendor-react': ['react', 'react-dom'],
             'vendor-d3': ['d3'],
-            'vendor-framer': ['framer-motion'],
-            'vendor-lucide': ['lucide-react'],
           }
         }
       }

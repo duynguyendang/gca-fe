@@ -58,8 +58,8 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
   const processedData = useMemo(() => {
     if (!data || !('nodes' in data)) return null;
 
-    const nodes = data.nodes.map(d => ({ ...d }));
-    const links = data.links.map(d => {
+    const nodes = (data.nodes as any[]).map(d => ({ ...d }));
+    const links = (data.links as any[]).map(d => {
       const sourceId = typeof d.source === 'object' ? (d.source as any).id : d.source;
       const targetId = typeof d.target === 'object' ? (d.target as any).id : d.target;
       return {

@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../../../context/AppContext';
-import { LogIn, ShieldCheck, Key, Zap, Database, ChevronRight, Brain } from 'lucide-react';
 import MarkdownRenderer from '../../Synthesis/MarkdownRenderer';
 
-const IconMap: Record<string, any> = {
-    LogIn,
-    ShieldCheck,
-    Key,
-    Zap,
-    Database,
-    Brain,
-    default: Zap
+const iconClasses: Record<string, string> = {
+    LogIn: 'fa-right-to-bracket',
+    ShieldCheck: 'fa-shield-halved',
+    Key: 'fa-key',
+    Zap: 'fa-bolt',
+    Database: 'fa-database',
+    Brain: 'fa-brain',
+    default: 'fa-bolt',
 };
 
 interface SequenceStep {
@@ -59,8 +58,7 @@ export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClic
             console.warn('[LogicSequenceCard] Failed to parse dynamic steps:', e);
         }
 
-        // Fallback or legacy markdown parsing?
-        // Let's try to extract from common markdown list pattern: "1. **Title** (id: ...): Description"
+        // Fallback or legacy markdown parsing
         const fallbackSteps: SequenceStep[] = [];
         const lines = nodeInsight.split('\n');
         let counter = 1;
@@ -119,7 +117,7 @@ export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClic
     if (steps.length === 0 && !isInsightLoading) {
         return (
             <div className="bg-slate-900/50 border border-white/5 rounded-xl p-6 text-center opacity-40 italic">
-                <Brain size={24} className="mx-auto mb-3 text-slate-600" />
+                <i className="fas fa-brain text-2xl text-slate-600 mx-auto mb-3 block"></i>
                 <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">
                     Waiting for AI Narrative...
                 </p>
@@ -142,7 +140,7 @@ export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClic
 
                 {isInsightLoading ? (
                     <div className="flex items-center gap-3 text-blue-500/60 animate-pulse py-4">
-                        <Brain size={14} className="animate-bounce" />
+                        <i className="fas fa-brain text-sm animate-bounce"></i>
                         <span className="text-[10px] font-black uppercase tracking-[0.2em]">Contextualizing Flow...</span>
                     </div>
                 ) : (
@@ -158,7 +156,7 @@ export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClic
 
             <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-5 mb-6 shadow-inner relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-3 opacity-10">
-                    <Zap size={40} className="text-blue-400" />
+                    <i className="fas fa-bolt text-5xl text-blue-400"></i>
                 </div>
 
                 <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400 mb-6 flex items-center gap-2">
@@ -183,7 +181,7 @@ export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClic
 
                     <div className="space-y-8">
                         {steps.map((step) => {
-                            const Icon = IconMap[step.icon] || IconMap.default;
+                            const iconClass = iconClasses[step.icon] || iconClasses.default;
                             const isActive = activeStepId === step.id;
                             const isCompleted = activeStepId !== null && step.id < activeStepId;
 
@@ -209,7 +207,7 @@ export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClic
                                     {/* Content */}
                                     <div className={`flex-1 transition-all duration-300 ${isActive ? 'pl-2 border-l-2 border-blue-500 -ml-[2px]' : ''}`}>
                                         <div className="flex items-center gap-2 mb-1">
-                                            <Icon size={12} className={isActive || isCompleted ? 'text-blue-400' : 'text-slate-500'} />
+                                            <i className={`fas ${iconClass} text-[10px] ${isActive || isCompleted ? 'text-blue-400' : 'text-slate-500'}`}></i>
                                             <span className={`text-[11px] font-black uppercase tracking-wider transition-colors ${isActive ? 'text-white' : 'text-slate-400'}`}>
                                                 {step.id}. {step.title}
                                             </span>
@@ -221,7 +219,7 @@ export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClic
 
                                     {isActive && (
                                         <div className="absolute right-0 top-1/2 -translate-y-1/2 text-blue-500/40 animate-pulse">
-                                            <ChevronRight size={14} />
+                                            <i className="fas fa-chevron-right text-sm"></i>
                                         </div>
                                     )}
                                 </div>
@@ -232,7 +230,7 @@ export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClic
             </div>
 
             <button className="group w-full py-3 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 rounded-lg text-[9px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 mt-4 shadow-lg active:scale-[0.98]">
-                <Brain size={12} className="group-hover:rotate-12 transition-transform" />
+                <i className="fas fa-brain text-[10px] group-hover:rotate-12 transition-transform"></i>
                 Narrate Entire Sequence
             </button>
         </div>

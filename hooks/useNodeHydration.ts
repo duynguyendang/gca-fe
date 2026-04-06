@@ -97,7 +97,7 @@ export const useNodeHydration = () => {
                 if (!prev || !('nodes' in prev)) return prev;
                 return {
                     ...prev,
-                    nodes: prev.nodes.map(n =>
+                    nodes: (prev.nodes as any[]).map(n =>
                         n.id === nodeId ? { ...n, ...hydratedNode } : n
                     )
                 };

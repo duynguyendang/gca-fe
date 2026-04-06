@@ -1,10 +1,9 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import * as d3 from 'd3';
-import { ASTNode, FlatGraph, BackboneGraph as BackboneGraphType } from '../../types';
+import { ASTNode, FlatGraph } from '../../types';
 import { useGraphData } from '../../hooks/useGraphData';
 import { SubMode } from '../../context/AppContext';
-import FlowGraph from './graphs/FlowGraph';
 import DiscoveryGraph from './graphs/DiscoveryGraph';
 import TreeMapGraph from './graphs/TreeMapGraph';
 
@@ -13,11 +12,9 @@ interface TreeVisualizerProps {
   data: ASTNode | FlatGraph;
   onNodeSelect: (node: any, isNavigation?: boolean) => void;
   onNodeHover: (node: any | null) => void;
-  mode: 'flow' | 'map' | 'discovery' | 'architecture' | 'backbone' | 'narrative';
-  layoutStyle?: 'organic' | 'flow';
+  mode: 'map' | 'discovery' | 'architecture' | 'narrative';
   selectedId?: string;
   fileScopedData?: { nodes: any[]; links: any[] };
-  skipFlowZoom?: boolean;
 
   expandedFileIds?: Set<string>;
   onToggleFileExpansion?: (fileId: string) => void;
@@ -36,7 +33,6 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
   mode,
   selectedId,
   fileScopedData,
-  skipFlowZoom = false,
 
   expandedFileIds = new Set<string>(),
   onToggleFileExpansion,
@@ -112,27 +108,10 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
 
   }, [dimensions]);
 
-  // Pass a ref to the zoom-layer G to children?
-  // Actually children currently take svgRef/gRef.
-  // FlowGraph takes svgRef to CALL zoom transforms manually (centering).
-  // The rendering happens in `gRef` inside the component.
-  // We need to coordinate: The sub-components should render inside the `zoom-layer` G.
-  // But React Portals for SVG are messy.
-  // Easier: We pass a ref to the G that is already Zoomed!
-  // BUT the sub-components currently create their own `gRef` and attach d3 to it.
-  // They return `<g ref={gRef} />`.
-  // If we render them inside `<g class="zoom-layer"> <FlowGraph /> </g>`, then FlowGraph's G is a child of zoom-layer.
-  // That works perfectly!
-
   const { nodes, links } = processedData || { nodes: [], links: [] };
   const { width, height } = dimensions;
 
   if (width === 0 || height === 0) return <div ref={containerRef} className="w-full h-full bg-slate-900" />;
-
-  // Calculate rendering logic at component scope
-  // Calculate rendering logic at component scope
-  const shouldRenderFlow = (mode === 'flow' || mode === 'architecture' || mode === 'backbone') &&
-    !!(fileScopedData && fileScopedData.nodes && fileScopedData.nodes.length > 0);
 
   return (
     <div ref={containerRef} className="w-full h-full relative bg-slate-900">
@@ -146,25 +125,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
       )}
       <svg ref={svgRef} className="w-full h-full absolute inset-0" style={{ background: '#0f172a' }}>
         <g className="zoom-layer">
-          {shouldRenderFlow && (
-            <FlowGraph
-              nodes={fileScopedData!.nodes}
-              links={fileScopedData!.links}
-              width={width}
-              height={height}
-              onNodeSelect={onNodeSelect}
-              skipZoom={skipFlowZoom}
-
-              expandedFileIds={expandedFileIds}
-              onToggleFileExpansion={onToggleFileExpansion}
-              expandingFileId={expandingFileId}
-              svgRef={svgRef}
-              zoomObj={zoomObj}
-              focusModeEnabled={focusModeEnabled}
-              criticalPathNodeIds={criticalPathNodeIds}
-            />
-          )}
-          {mode === 'discovery' && !shouldRenderFlow && (
+          {mode === 'discovery' && (
             <DiscoveryGraph
               nodes={fileScopedData?.nodes?.length ? fileScopedData.nodes : nodes}
               links={fileScopedData?.nodes?.length ? (fileScopedData.links || []) : links}

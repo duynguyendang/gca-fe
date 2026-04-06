@@ -1,10 +1,10 @@
-import React, { useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { useAppContext, NarrativeMessage } from '../../context/AppContext';
 import UnifiedSearchBar from '../UnifiedSearchBar';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
-import { fetchSummary, fetchSource } from '../../services/graphService';
-import { fetchWithTimeout } from '../../utils/fetchWithTimeout';
 import { useContextualSuggestions } from '../../hooks/useContextualSuggestions';
+import { useQueryContext } from '../../hooks/useQueryContext';
+import { askAI } from '../../services/geminiService';
 
 interface NarrativeScreenProps {
     onNodeSelect: (node: any) => void;
@@ -23,83 +23,43 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         selectedProjectId,
         setNarrativeMessages,
         setIsNarrativeLoading,
-        selectedNode,
         dataApiBase,
     } = useAppContext();
 
-    // Get contextual suggestions
     const { suggestions: contextualSuggestions } = useContextualSuggestions();
-
+    const { buildContext } = useQueryContext();
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // Auto-scroll to bottom on new messages
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [narrativeMessages, isNarrativeLoading]);
 
-    // Start new conversation
     const startNewConversation = useCallback(() => {
+        if (narrativeMessages.length > 0 && !window.confirm('Start a new conversation? This will clear your current chat.')) {
+            return;
+        }
         setNarrativeMessages([]);
-    }, [setNarrativeMessages]);
+    }, [setNarrativeMessages, narrativeMessages.length]);
 
-    // Submit query to AI
     const submitNarrativeQuery = useCallback(async (query: string) => {
         if (!query.trim() || isNarrativeLoading || !dataApiBase || !selectedProjectId) return;
 
-        // Build enhanced query with conversation context
-        let enhancedQuery = query;
-        let contextData: any[] = [];
+        const { enhancedQuery, contextData } = await buildContext();
 
-        // Add conversation context if there are previous messages
+        let fullQuery = query;
         if (narrativeMessages.length > 0) {
             const lastUserMessage = [...narrativeMessages].reverse().find(m => m.role === 'user');
-            if (lastUserMessage && lastUserMessage.content !== query) {
-                // This is a follow-up question, add context
-                enhancedQuery = `Follow-up question (continuing our discussion about this codebase): ${query}`;
+            if (lastUserMessage && lastUserMessage.displayContent !== query) {
+                fullQuery = `Follow-up: ${query}`;
             }
         }
 
-        // Add project context to all queries (not just the first)
-        enhancedQuery += `\n\n[Project: ${selectedProjectId}]\n\nIMPORTANT: Please analyze the COMPLETE file contents I'm providing, not just snippets. Look at the full code to understand the complete implementation.`;
-
-        // If there's a selected node, include FULL code in the context
-        if (selectedNode) {
-            let nodeCode = selectedNode.code;
-
-            // If the selected node doesn't have code, fetch the COMPLETE file
-            if (!nodeCode || nodeCode.trim() === '') {
-                if (selectedNode.id && dataApiBase && selectedProjectId) {
-                    try {
-                        nodeCode = await fetchSource(dataApiBase, selectedProjectId, selectedNode.id);
-                        console.log('[Narrative] Fetched FULL source for selected node:', selectedNode.id, 'Code length:', nodeCode?.length || 0);
-                    } catch (e) {
-                        console.warn('Failed to fetch source for selected node:', e);
-                    }
-                }
-            }
-
-            // Add the selected node with FULL code - no snippets
-            contextData.push({
-                id: selectedNode.id,
-                name: selectedNode.name,
-                kind: selectedNode.kind || selectedNode.type,
-                code: nodeCode || '', // Send FULL code, not just a snippet
-                filePath: selectedNode._filePath || selectedNode.filePath || selectedNode.id,
-                start_line: selectedNode.start_line || 1,
-                end_line: selectedNode.end_line || 100,
-                _isFullFile: true, // Flag to indicate this is the complete file
-            });
-
-            // Add node info to the query for context
-            enhancedQuery += `\n\nCurrently viewing: ${selectedNode.name} (${selectedNode.kind || selectedNode.type})`;
-            if (nodeCode && nodeCode.trim() !== '') {
-                enhancedQuery += `\n\nCode:\n${nodeCode.trim()}\n[End of file]`;
-            }
-        }
+        fullQuery += `\n\n${enhancedQuery}`;
 
         const userMsg: NarrativeMessage = {
             role: 'user',
-            content: enhancedQuery,
+            content: fullQuery,
+            displayContent: query,
             timestamp: Date.now(),
         };
 
@@ -107,82 +67,16 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         setIsNarrativeLoading(true);
 
         try {
-            // Fetch project summary to get more context with FULL code
-            try {
-                const freshSummary = await fetchSummary(dataApiBase, selectedProjectId);
-                if (freshSummary?.top_symbols) {
-                    const selectedNodeId = selectedNode?.id;
-                    const existingIds = new Set(contextData.map(n => n.id));
-
-                    // Add top symbols with FULL code
-                    for (const symbol of freshSummary.top_symbols.slice(0, 10)) {
-                        if (symbol.id !== selectedNodeId && !existingIds.has(symbol.id)) {
-                            let symbolCode = symbol.code || '';
-
-                            // If no code, fetch the COMPLETE file
-                            if (!symbolCode || symbolCode.trim() === '') {
-                                try {
-                                    symbolCode = await fetchSource(dataApiBase, selectedProjectId, symbol.id);
-                                    console.log('[Narrative] Fetched FULL source for symbol:', symbol.id, 'Code length:', symbolCode?.length || 0);
-                                } catch (e) {
-                                    console.warn('[Narrative] Failed to fetch source for symbol:', symbol.id);
-                                }
-                            }
-
-                            contextData.push({
-                                id: symbol.id,
-                                name: symbol.name,
-                                kind: symbol.kind || symbol.type || 'unknown',
-                                code: symbolCode, // FULL code
-                                filePath: symbol._filePath || symbol.filePath || symbol.id,
-                                _isFullFile: true, // Flag to indicate complete file
-                            });
-                        }
-                    }
-
-                    console.log('[Narrative] Query context:', {
-                        query: enhancedQuery.substring(0, 100) + '...',
-                        contextItems: contextData.length,
-                        hasConversationHistory: narrativeMessages.length > 0,
-                        fullCodeFiles: contextData.filter(n => n._isFullFile).length
-                    });
-                }
-            } catch (e) {
-                console.warn('Failed to fetch summary:', e);
-            }
-
-            const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-            const response = await fetchWithTimeout(`${cleanBase}/api/v1/ai/ask`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    project_id: selectedProjectId,
-                    query: enhancedQuery,
-                    context: contextData.length > 0 ? contextData : undefined,
-                }),
+            const aiResponse = await askAI(dataApiBase, selectedProjectId, {
+                task: 'chat',
+                query: fullQuery,
+                data: contextData.length > 0 ? contextData : undefined,
             });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('[Narrative] AI API error:', response.status, errorText);
-                throw new Error(`AI service error: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            const aiResponse = data.answer || data.response || 'No response received.';
-
-            console.log('[Narrative] AI response received, length:', aiResponse.length);
 
             const aiMsg: NarrativeMessage = {
                 role: 'ai',
                 content: aiResponse,
                 timestamp: Date.now(),
-                sections: data.sections ? data.sections.map((s: any) => ({
-                    type: s.type || 'info',
-                    title: s.title || 'Information',
-                    content: s.content || s.text || '',
-                    actionLabel: s.action_label,
-                })) : undefined,
             };
 
             setNarrativeMessages(prev => [...prev, aiMsg]);
@@ -202,20 +96,22 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         } finally {
             setIsNarrativeLoading(false);
         }
-    }, [isNarrativeLoading, dataApiBase, selectedProjectId, selectedNode, narrativeMessages, setNarrativeMessages, setIsNarrativeLoading]);
+    }, [isNarrativeLoading, dataApiBase, selectedProjectId, narrativeMessages, setNarrativeMessages, setIsNarrativeLoading, buildContext]);
 
     const getSectionIcon = (type: string) => {
         switch (type) {
-            case 'summary': return { icon: '●', color: 'text-[#10b981]' };
-            case 'inconsistency': return { icon: '⚠', color: 'text-[#f59e0b]' };
-            case 'gravity': return { icon: '●', color: 'text-slate-500' };
-            default: return { icon: '●', color: 'text-[var(--accent-blue)]' };
+            case 'summary': return { icon: '\u25CF', color: 'text-[#10b981]' };
+            case 'inconsistency': return { icon: '\u26A0', color: 'text-[#f59e0b]' };
+            case 'gravity': return { icon: '\u25CF', color: 'text-slate-500' };
+            default: return { icon: '\u25CF', color: 'text-[var(--accent-blue)]' };
         }
     };
 
     const renderMessage = (msg: NarrativeMessage, idx: number) => {
         const isUser = msg.role === 'user';
-        
+        const displayText = isUser ? (msg.displayContent || msg.content) : msg.content;
+        const isError = !isUser && (msg.sections?.some(s => s.type === 'inconsistency') || msg.content.startsWith('I apologize, but I encountered an error'));
+
         return (
             <div
                 key={idx}
@@ -223,15 +119,14 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                 style={{ animationDelay: `${idx * 80}ms` }}
             >
                 <div className={`max-w-[85%] ${isUser ? 'order-2' : 'order-1'}`}>
-                    {/* Avatar */}
                     <div className={`flex items-center gap-2 mb-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
                         {!isUser && (
-                            <div className="w-6 h-6 rounded-full bg-[var(--accent-blue)]/20 border border-[var(--accent-blue)]/30 flex items-center justify-center">
-                                <i className="fas fa-atom text-[var(--accent-blue)] text-[8px]"></i>
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center ${isError ? 'bg-red-500/20 border border-red-500/30' : 'bg-[var(--accent-blue)]/20 border border-[var(--accent-blue)]/30'}`}>
+                                <i className={`fas ${isError ? 'fa-exclamation-triangle' : 'fa-atom'} text-[8px] ${isError ? 'text-red-400' : 'text-[var(--accent-blue)]'}`}></i>
                             </div>
                         )}
                         <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
-                            {isUser ? 'You' : 'GCA Narrative'}
+                            {isUser ? 'You' : isError ? 'Error' : 'GCA Narrative'}
                         </span>
                         {isUser && (
                             <div className="w-6 h-6 rounded-full bg-[#10b981]/20 border border-[#10b981]/30 flex items-center justify-center">
@@ -240,14 +135,15 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                         )}
                     </div>
 
-                    {/* Message Bubble */}
                     <div className={`rounded-2xl px-5 py-4 ${
                         isUser
                             ? 'bg-[var(--accent-blue)]/10 border border-[var(--accent-blue)]/20'
-                            : 'bg-[#16222a] border border-white/5'
+                            : isError
+                                ? 'bg-red-500/5 border border-red-500/20'
+                                : 'bg-[#16222a] border border-white/5'
                     }`}>
                         {isUser ? (
-                            <p className="text-[13px] text-white leading-relaxed">{msg.content}</p>
+                            <p className="text-[13px] text-white leading-relaxed">{displayText}</p>
                         ) : (
                             <>
                                 {msg.sections && msg.sections.length > 0 ? (
@@ -255,7 +151,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                                         {msg.sections.map((section, sIdx) => {
                                             const { icon, color } = getSectionIcon(section.type);
                                             const isBgCard = section.type === 'inconsistency';
-                                            
+
                                             return (
                                                 <div
                                                     key={sIdx}
@@ -269,12 +165,12 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                                                             <i className="fas fa-cogs"></i>
                                                         </div>
                                                     )}
-                                                    
+
                                                     <div className={`text-[9px] font-black uppercase tracking-[0.25em] ${color} mb-2 flex items-center gap-2`}>
                                                         <span>{icon}</span>
                                                         {section.title}
                                                     </div>
-                                                    
+
                                                     <div className="text-[12px] text-slate-300 leading-relaxed">
                                                         <MarkdownRenderer
                                                             content={section.content}
@@ -282,9 +178,12 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                                                             onSymbolClick={onSymbolClick}
                                                         />
                                                     </div>
-                                                    
+
                                                     {section.actionLabel && (
-                                                        <button className="mt-3 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--accent-blue)] hover:text-[var(--accent-blue)]/80 transition-colors flex items-center gap-2 group">
+                                                        <button
+                                                            aria-label={section.actionLabel}
+                                                            className="mt-3 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--accent-blue)] hover:text-[var(--accent-blue)]/80 transition-colors flex items-center gap-2 group"
+                                                        >
                                                             {section.actionLabel}
                                                             <i className="fas fa-wand-magic-sparkles text-[8px] group-hover:rotate-12 transition-transform"></i>
                                                         </button>
@@ -296,7 +195,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                                 ) : (
                                     <div className="text-[12px] text-slate-300 leading-relaxed">
                                         <MarkdownRenderer
-                                            content={msg.content}
+                                            content={displayText}
                                             onLinkClick={onLinkClick}
                                             onSymbolClick={onSymbolClick}
                                         />
@@ -306,7 +205,6 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                         )}
                     </div>
 
-                    {/* Timestamp */}
                     <div className={`text-[9px] text-slate-600 mt-1 ${isUser ? 'text-right' : 'text-left'}`}>
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
@@ -332,10 +230,10 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                 </div>
 
                 <div className="ml-auto flex items-center gap-3">
-                    {/* New Conversation Button */}
                     {narrativeMessages.length > 0 && !isNarrativeLoading && (
                         <button
                             onClick={startNewConversation}
+                            aria-label="Start new conversation"
                             className="flex items-center gap-2 px-3 py-1.5 bg-[#16222a] border border-white/10 rounded-lg text-[9px] text-slate-400 hover:text-white hover:border-white/20 transition-all"
                             title="Start a new conversation"
                         >
@@ -366,7 +264,6 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
             {/* Conversation Area */}
             <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-6">
                 {narrativeMessages.length === 0 && !isNarrativeLoading ? (
-                    /* Welcome State */
                     <div className="h-full flex flex-col items-center justify-center gap-6 opacity-90">
                         <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[var(--accent-blue)]/20 to-[var(--accent-purple)]/20 border border-white/10 flex items-center justify-center">
                             <i className="fas fa-brain text-4xl text-[var(--accent-blue)]"></i>
@@ -378,32 +275,30 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                                 find patterns, and provide deep insights.
                             </p>
                         </div>
-                        
-                        {/* Quick Start Suggestions */}
+
                         <div className="flex flex-wrap justify-center gap-2 mt-4">
-                            {[
-                                'Trace the authentication flow',
-                                'Explain the main entry point',
-                                'Find all API handlers',
-                                'Show dependency graph',
-                            ].map((suggestion, i) => (
+                            {(contextualSuggestions.length > 0 ? contextualSuggestions : [
+                                { text: 'Trace the authentication flow', icon: 'fa-route' },
+                                { text: 'Explain the main entry point', icon: 'fa-door-open' },
+                                { text: 'Find all API handlers', icon: 'fa-plug' },
+                                { text: 'Show dependency graph', icon: 'fa-diagram-project' },
+                            ]).map((suggestion, i) => (
                                 <button
                                     key={i}
-                                    onClick={() => submitNarrativeQuery(suggestion)}
+                                    onClick={() => submitNarrativeQuery(suggestion.text)}
                                     disabled={isNarrativeLoading}
-                                    className="px-4 py-2 bg-[#16222a] border border-white/10 rounded-lg text-[10px] text-slate-400 hover:text-white hover:border-[var(--accent-blue)]/30 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                                    className="px-4 py-2 bg-[#16222a] border border-white/10 rounded-lg text-[10px] text-slate-400 hover:text-white hover:border-[var(--accent-blue)]/30 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
                                 >
-                                    {suggestion}
+                                    <i className={`fas ${suggestion.icon} text-[9px] opacity-50`}></i>
+                                    {suggestion.text}
                                 </button>
                             ))}
                         </div>
                     </div>
                 ) : (
-                    /* Messages */
                     <div className="max-w-4xl mx-auto">
                         {narrativeMessages.map((msg, idx) => renderMessage(msg, idx))}
-                        
-                        {/* Loading Indicator */}
+
                         {isNarrativeLoading && (
                             <div className="flex justify-start mb-6 section-slide-in">
                                 <div className="max-w-[85%]">
@@ -428,13 +323,12 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                                 </div>
                             </div>
                         )}
-                        
+
                         <div ref={messagesEndRef} />
                     </div>
                 )}
             </div>
 
-            {/* Query Bar */}
             <UnifiedSearchBar
               accentColor="blue"
               suggestions={contextualSuggestions}

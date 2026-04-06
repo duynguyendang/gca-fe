@@ -81,7 +81,7 @@ const ToastContainer: React.FC = () => {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm">
+    <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm" role="alert" aria-live="polite">
       {toasts.map(toast => (
         <div key={toast.id} className={getToastStyles(toast.type)}>
           <span className="text-sm font-medium flex-1">{toast.message}</span>

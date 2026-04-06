@@ -12,6 +12,7 @@ interface AppSidebarProps {
   onProjectChange: (projectId: string) => void;
   dataApiBase: string;
   isDataSyncing: boolean;
+  syncError: string | null;
   astData: FlatGraph | null;
   sandboxFiles: Record<string, any>;
   onNodeSelect: (node: any, isNavigation?: boolean) => void;
@@ -28,6 +29,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
   onProjectChange,
   dataApiBase,
   isDataSyncing,
+  syncError,
   astData,
   sandboxFiles,
   onNodeSelect,
@@ -96,6 +98,32 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
               </p>
             </div>
           )}
+
+          {syncError && (
+            <div className="mt-2 p-2 bg-red-500/10 border border-red-500/20 rounded text-[9px] text-red-400 space-y-2">
+              <div className="flex items-start gap-2">
+                <i className="fas fa-exclamation-circle text-[10px] mt-0.5 shrink-0"></i>
+                <span className="leading-relaxed flex-1 break-all">{syncError}</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={onSyncApi}
+                  className="flex-1 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded text-[8px] font-black uppercase tracking-widest text-red-400 transition-all"
+                >
+                  <i className="fas fa-redo mr-1.5"></i>Retry
+                </button>
+                <button
+                  onClick={() => {
+                    const event = new CustomEvent('gca:open-settings');
+                    window.dispatchEvent(event);
+                  }}
+                  className="flex-1 py-1.5 bg-slate-800/50 hover:bg-slate-700/50 border border-white/10 rounded text-[8px] font-black uppercase tracking-widest text-slate-400 transition-all"
+                >
+                  <i className="fas fa-cog mr-1.5"></i>Settings
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div>
@@ -114,7 +142,18 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
             ))}
             {Object.keys(sourceTree).length === 0 && (
               <div className="px-4 py-8 text-center text-[10px] text-slate-700 italic border border-dashed border-white/5 rounded mx-2">
-                No files indexed.<br />Upload AST or configure API.
+                No files found.<br />Connect to a backend and ingest a project.
+                {!dataApiBase && (
+                  <button
+                    onClick={() => {
+                      const event = new CustomEvent('gca:open-settings');
+                      window.dispatchEvent(event);
+                    }}
+                    className="block mx-auto mt-2 px-3 py-1 text-[9px] text-[var(--accent-teal)] border border-[var(--accent-teal)]/20 rounded hover:bg-[var(--accent-teal)]/10 transition-colors"
+                  >
+                    Configure API
+                  </button>
+                )}
               </div>
             )}
           </div>

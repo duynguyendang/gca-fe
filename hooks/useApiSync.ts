@@ -50,9 +50,25 @@ export const useApiSync = () => {
             }
 
             // Fetch all projects
-            const projectsRes = await fetchWithTimeout(`${cleanBase}/api/v1/projects`);
+            const projectsUrl = `${cleanBase}/api/v1/projects`;
+            logger.log('[Sync] Fetching projects from:', projectsUrl);
+
+            let projectsRes: Response;
+            try {
+                projectsRes = await fetchWithTimeout(projectsUrl);
+            } catch (fetchErr: any) {
+                const msg = fetchErr.name === 'AbortError'
+                    ? `Connection timed out - is the backend running at ${cleanBase}?`
+                    : `Cannot reach backend at ${cleanBase}: ${fetchErr.message}`;
+                logger.error('[Sync] Network error:', msg);
+                setSyncError(msg);
+                setIsDataSyncing(false);
+                return;
+            }
+
             if (!projectsRes.ok) {
-                setSyncError('Failed to fetch projects');
+                const errBody = await projectsRes.text().catch(() => '');
+                setSyncError(`Failed to fetch projects (${projectsRes.status}): ${errBody || projectsRes.statusText}`);
                 setIsDataSyncing(false);
                 return;
             }
@@ -60,10 +76,10 @@ export const useApiSync = () => {
             const projects = await projectsRes.json() as Array<{ id: string; name: string; description?: string }>;
             setAvailableProjects(projects);
 
-            // Require project selection
+            // Require project selection - don't auto-select
             if (!projectId && projects.length > 0) {
-                projectId = projects[0].id;
-                setSelectedProjectId(projectId);
+                setIsDataSyncing(false);
+                return;
             }
 
             if (!projectId) {
@@ -106,7 +122,8 @@ export const useApiSync = () => {
                         end_line: 100,
                         code: '',
                         _filePath: filePath,
-                        _project: projectId
+                        _project: projectId,
+                        _isFile: true
                     });
                 });
 
@@ -155,7 +172,7 @@ export const useApiSync = () => {
 
                             // Otherwise, enrich existing file nodes (keep graph focused on file list)
                             setAstData(prev => {
-                                const enrichedNodes = prev.nodes.map(node => {
+                                const enrichedNodes = (prev.nodes as any[]).map(node => {
                                     const enrichedNode = ast.nodes.find((n: any) => n.id === node.id || n.id === node._filePath);
                                     return enrichedNode ? { ...node, ...enrichedNode, _project: projectId } : { ...node, _project: projectId };
                                 });

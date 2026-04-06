@@ -24,8 +24,8 @@ const CodePanel: React.FC<CodePanelProps> = ({
     const renderCode = () => {
         if (!selectedNode) return (
             <div className="h-full flex items-center justify-center flex-col gap-4 grayscale opacity-20">
-                <i className="fas fa-microchip text-5xl"></i>
-                <p className="text-[9px] uppercase font-black tracking-[0.2em]">Select an Asset to Inspect</p>
+                <i className="fas fa-file-code text-5xl"></i>
+                <p className="text-[10px] uppercase font-black tracking-[0.2em]">Select a Symbol to View Source</p>
             </div>
         );
 
@@ -71,7 +71,7 @@ const CodePanel: React.FC<CodePanelProps> = ({
                 code={code || "// Code snippet missing."}
                 language={language}
                 startLine={selectedNode.start_line || 1}
-                scrollToLine={selectedNode._scrollToLine}
+                scrollToLine={typeof selectedNode._scrollToLine === 'number' ? selectedNode._scrollToLine : undefined}
             />
         );
     };
@@ -91,6 +91,9 @@ const CodePanel: React.FC<CodePanelProps> = ({
             <header
                 className="h-10 px-5 border-b border-[var(--border)] flex items-center justify-between shrink-0 cursor-pointer hover:bg-white/5 transition-colors"
                 onClick={onToggleCollapse}
+                role="button"
+                aria-expanded={!isCollapsed}
+                aria-label={isCollapsed ? 'Expand code panel' : 'Collapse code panel'}
             >
                 <div className="flex items-center gap-3 overflow-hidden mr-4">
                     <button
@@ -100,7 +103,7 @@ const CodePanel: React.FC<CodePanelProps> = ({
                     </button>
                     <i className="fas fa-terminal text-[var(--accent-teal)] text-[10px]"></i>
                     <span className="text-[10px] font-mono text-slate-300 truncate uppercase tracking-tighter">
-                        RAW SOURCE <span className="text-slate-500 lowercase ml-2">{selectedNode?.id || "idle"}</span>
+                        RAW SOURCE <span className="text-slate-500 lowercase ml-2">{selectedNode?.id || "select a symbol"}</span>
                     </span>
                 </div>
             </header>

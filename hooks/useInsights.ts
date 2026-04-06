@@ -30,12 +30,12 @@ export const useInsights = () => {
         // Multi-file analysis: If we have multiple files in view
         const uniqueFiles = new Set<string>();
         fileScopedNodes.forEach(n => {
-            const path = n._filePath || n.filePath || (n.kind === 'file' ? n.id : null);
+            const path = (n as any)._filePath || (n as any).filePath || (n.kind === 'file' ? n.id : null);
             if (path) uniqueFiles.add(path);
         });
 
         // Ensure the selected node's file is included
-        const selectedFile = selectedNode._filePath || selectedNode.filePath || (selectedNode._isFile ? selectedNode.id : null);
+        const selectedFile = (selectedNode as any)._filePath || (selectedNode as any).filePath || (selectedNode._isFile ? selectedNode.id : null);
         if (selectedFile) uniqueFiles.add(selectedFile);
 
         if (uniqueFiles.size > 1) {
@@ -66,10 +66,10 @@ export const useInsights = () => {
                 const currentId = selectedNode.id;
 
                 fileScopedLinks.forEach(link => {
-                    const s = typeof link.source === 'object' ? link.source.id : link.source;
-                    const t = typeof link.target === 'object' ? link.target.id : link.target;
-                    const sName = typeof link.source === 'object' ? link.source.name : link.source.split('/').pop();
-                    const tName = typeof link.target === 'object' ? link.target.name : link.target.split('/').pop();
+                    const s = typeof link.source === 'object' ? (link.source as any).id : link.source;
+                    const t = typeof link.target === 'object' ? (link.target as any).id : link.target;
+                    const sName = typeof link.source === 'object' ? (link.source as any).name : (link.source || '').split('/').pop();
+                    const tName = typeof link.target === 'object' ? (link.target as any).name : (link.target || '').split('/').pop();
 
                     if (t === currentId && s !== currentId) {
                         neighbors.callers.push(`[${sName}](${s})`);

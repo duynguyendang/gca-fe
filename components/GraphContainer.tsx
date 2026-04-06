@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ASTNode, FlatGraph } from '../types';
+import { SubMode } from '../context/AppContext';
 import TreeVisualizer from './TreeVisualizer/index';
 import ClassDiagramCanvas from './ClassDiagramCanvas';
 
-type ViewMode = 'flow' | 'map' | 'discovery' | 'backbone' | 'architecture' | 'narrative';
+type ViewMode = 'map' | 'discovery' | 'architecture' | 'narrative';
 
 interface GraphContainerProps {
   viewMode: ViewMode;
@@ -15,11 +16,10 @@ interface GraphContainerProps {
   codePanelWidth: number;
   selectedNode: any;
   onNodeSelect: (node: any, isNavigation?: boolean) => void;
-  skipFlowZoom: boolean;
   expandedFileIds: Set<string>;
   onToggleFileExpansion: (fileId: string) => void;
   expandingFileId: string | null;
-  activeSubMode: string;
+  activeSubMode: SubMode;
   highlightedNodeId: string | null;
 }
 
@@ -33,21 +33,37 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
   codePanelWidth,
   selectedNode,
   onNodeSelect,
-  skipFlowZoom,
   expandedFileIds,
   onToggleFileExpansion,
   expandingFileId,
   activeSubMode,
   highlightedNodeId,
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+
   const filteredAstData = expandedGraphData || astData;
   const filteredFileScopedData = React.useMemo(() => ({
     nodes: fileScopedNodes,
     links: fileScopedLinks
   }), [fileScopedNodes, fileScopedLinks]);
 
-  const handleClassDiagramNodeClick = React.useCallback((node: any) => {
-    console.log('Class diagram node clicked:', node);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        setDimensions({ width, height });
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  const handleClassDiagramNodeClick = useCallback((node: any) => {
     onNodeSelect(node);
   }, [onNodeSelect]);
 
@@ -59,7 +75,7 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
 
   if (tooManyNodes) {
     return (
-      <div className="flex-1 relative dot-grid overflow-hidden bg-[var(--bg-main)]">
+      <div ref={containerRef} className="flex-1 relative dot-grid overflow-hidden bg-[var(--bg-main)]">
         <div className="absolute inset-0 flex items-center justify-center p-8">
           <div className="text-center max-w-lg">
             <div className="w-20 h-20 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mx-auto mb-6">
@@ -76,11 +92,9 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
             </p>
             <div className="flex flex-col gap-3">
               <button
-                onClick={() => {
-                  // This would trigger clustering - to be implemented with parent callback
-                  console.log('Clustering requested');
-                }}
-                className="px-6 py-3 bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white font-medium rounded-lg hover:shadow-lg hover:shadow-[#f59e0b]/20 transition-all duration-200"
+                disabled
+                title="Clustering is not yet available"
+                className="px-6 py-3 bg-gradient-to-r from-[#f59e0b]/50 to-[#d97706]/50 text-white/50 font-medium rounded-lg cursor-not-allowed"
               >
                 <i className="fas fa-project-diagram mr-2"></i>
                 Use Clustering ({Math.ceil(nodeCount / 50)}-{Math.ceil(nodeCount / 20)} clusters)
@@ -97,16 +111,30 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
   }
 
   return (
-    <div className="flex-1 relative dot-grid overflow-hidden bg-[var(--bg-main)]">
+    <div ref={containerRef} className="flex-1 relative dot-grid overflow-hidden bg-[var(--bg-main)]">
       {viewMode === 'architecture' ? (
         <div className="w-full h-full bg-[var(--bg-surface)] relative z-0">
-          <ClassDiagramCanvas
-            nodes={fileScopedNodes}
-            links={fileScopedLinks}
-            onNodeClick={handleClassDiagramNodeClick}
-            width={window.innerWidth - sidebarWidth - codePanelWidth}
-            height={window.innerHeight - 56}
-          />
+          {fileScopedNodes.length === 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center max-w-sm">
+                <div className="w-16 h-16 rounded-full bg-[var(--accent-purple)]/10 border border-[var(--accent-purple)]/20 flex items-center justify-center mx-auto mb-4">
+                  <i className="fas fa-diagram-project text-2xl text-[var(--accent-purple)]"></i>
+                </div>
+                <h3 className="text-sm font-bold text-white mb-2">No File Selected</h3>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Select a file from the Source Navigator to view its architecture diagram and dependencies.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <ClassDiagramCanvas
+              nodes={fileScopedNodes}
+              links={fileScopedLinks}
+              onNodeClick={handleClassDiagramNodeClick}
+              width={dimensions.width}
+              height={dimensions.height}
+            />
+          )}
         </div>
       ) : (
         <TreeVisualizer
@@ -116,7 +144,6 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
           mode={viewMode}
           selectedId={selectedNode?.id}
           fileScopedData={filteredFileScopedData}
-          skipFlowZoom={skipFlowZoom}
           expandedFileIds={expandedFileIds}
           onToggleFileExpansion={onToggleFileExpansion}
           expandingFileId={expandingFileId}

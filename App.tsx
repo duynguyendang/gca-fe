@@ -14,8 +14,11 @@ import SettingsModal from './components/SettingsModal';
 import GraphContainer from './components/GraphContainer';
 import UnifiedSearchBar from './components/UnifiedSearchBar';
 import { useSessionStorage } from './hooks/useSessionStorage';
+import { useQueryContext } from './hooks/useQueryContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
-import { fetchFileCalls } from './services/graphService';
+import { fetchFileCalls, fetchSource } from './services/graphService';
+import { askAI } from './services/geminiService';
+import { detectLanguage } from './utils/languageUtils';
 import { logger } from './src/logger';
 import './src/prismSetup';
 
@@ -44,11 +47,8 @@ const App: React.FC = () => {
     searchError: ctxSearchError, setSearchError: setCtxSearchError,
     searchStatus: ctxSearchStatus, setSearchStatus: setCtxSearchStatus,
     viewMode, setViewMode,
-    isFlowLoading, setIsFlowLoading,
     fileScopedNodes, setFileScopedNodes,
     fileScopedLinks, setFileScopedLinks,
-    currentFlowFileRef,
-    skipFlowZoom, setSkipFlowZoom,
     expandedFileIds, setExpandedFileIds,
     fileDetailsCache, setFileDetailsCache,
     expandingFileId, setExpandingFileId,
@@ -98,7 +98,6 @@ const App: React.FC = () => {
   }, [activeSubMode]);
 
   // View mode setters
-  const setFlowMode = useCallback(() => setViewMode('flow'), [setViewMode]);
   const setMapMode = useCallback(() => setViewMode('map'), [setViewMode]);
   const setDiscoveryMode = useCallback(() => setViewMode('discovery'), [setViewMode]);
   const setArchitectureMode = useCallback(() => setViewMode('architecture'), [setViewMode]);
@@ -120,6 +119,9 @@ const App: React.FC = () => {
   // Context-aware suggestions
   const { suggestions: contextualSuggestions } = useContextualSuggestions();
 
+  // Shared query context builder
+  const { buildContext } = useQueryContext();
+
   // Insights Hook
   const { generateInsights, clearInsight } = useInsights();
 
@@ -134,12 +136,13 @@ const App: React.FC = () => {
     const project = availableProjects.find((p: { id: string; name: string; description?: string }) => p.id === projectId);
     if (project) {
       setCurrentProject(project.name);
+      setNarrativeMessages([]);
       toast.info(`Loading project: ${project.name}`);
       syncDataFromApi(dataApiBase, projectId, () => {
         toast.success(`Project ${project.name} loaded`);
       });
     }
-  }, [availableProjects, dataApiBase, setCurrentProject, setSelectedProjectId, syncDataFromApi, toast]);
+  }, [availableProjects, dataApiBase, setCurrentProject, setSelectedProjectId, syncDataFromApi, toast, setNarrativeMessages]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -162,7 +165,7 @@ const App: React.FC = () => {
         setSearchTerm('');
       } else if (mod && e.key >= '1' && e.key <= '5') {
         e.preventDefault();
-        const modes = ['narrative', 'flow', 'map', 'discovery', 'architecture'] as const;
+        const modes = ['narrative', 'map', 'discovery', 'architecture'] as const;
         const idx = parseInt(e.key) - 1;
         if (idx < modes.length) setViewMode(modes[idx]);
       }
@@ -171,6 +174,13 @@ const App: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setViewMode, setIsCodeCollapsed, setSelectedNode, setSearchTerm]);
+
+  // Listen for open-settings event from sidebar
+  useEffect(() => {
+    const handleOpenSettings = () => setIsSettingsOpen(true);
+    window.addEventListener('gca:open-settings', handleOpenSettings);
+    return () => window.removeEventListener('gca:open-settings', handleOpenSettings);
+  }, []);
 
   // Auto-sync on mount
   useEffect(() => {
@@ -211,175 +221,32 @@ const App: React.FC = () => {
 
   // Smart search handler - switches to Narrative mode for questions
   const handleSmartSearchWithNarrativeSwitch = useCallback(async (query: string) => {
-    // Switch to Narrative mode for AI-powered explanations
     setViewMode('narrative');
 
-    // Build comprehensive context from current view state
-    let contextData: any[] = [];
-    let enhancedQuery = query;
+    const { enhancedQuery, contextData } = await buildContext();
 
-    // Always include project information
+    let fullQuery = query;
     if (currentProject) {
-      enhancedQuery = `[Analyzing project: ${currentProject}] ${query}`;
+      fullQuery = `[Analyzing project: ${currentProject}] ${query}`;
+    }
+    fullQuery += `\n${enhancedQuery}`;
+
+    if (query === 'Explain this code' && selectedNode) {
+      fullQuery = `Explain the following code:\n\n`;
+      fullQuery += `Selected: "${selectedNode.name}" (${selectedNode.kind || selectedNode.type})\n`;
+      fullQuery += `File: ${selectedNode._filePath || selectedNode.filePath || 'Unknown'}\n`;
+      if (selectedNode.code && selectedNode.code.trim() !== '') {
+        fullQuery += `\nFull Code:\n${selectedNode.code.trim()}\n`;
+      }
+      fullQuery += `\nPlease analyze the code and provide:\n1. What this code does\n2. How components interact\n3. Key patterns\n4. Potential improvements`;
     }
 
-    // Add selected node context with full code
-    if (selectedNode) {
-      let nodeCode = selectedNode.code;
-
-      // If no code, try to fetch it
-      if (!nodeCode || nodeCode.trim() === '') {
-        if (selectedNode.id && dataApiBase && selectedProjectId) {
-          try {
-            const { fetchSource } = await import('./services/graphService');
-            nodeCode = await fetchSource(dataApiBase, selectedProjectId, selectedNode.id);
-            logger.log('[App] Fetched source for selected node:', selectedNode.id, 'Code length:', nodeCode?.length || 0);
-          } catch (e) {
-            logger.error('[App] Failed to fetch source:', e);
-          }
-        }
-      }
-
-      // Include the selected node with full context
-      contextData.push({
-        id: selectedNode.id,
-        name: selectedNode.name,
-        kind: selectedNode.kind || selectedNode.type || 'unknown',
-        code: nodeCode || '// No code available',
-        filePath: selectedNode._filePath || selectedNode.filePath || selectedNode.id,
-        start_line: selectedNode.start_line || 1,
-        end_line: selectedNode.end_line || 100,
-        language: selectedNode.language || detectLanguage(selectedNode._filePath || selectedNode.id),
-      });
-
-      // Add context description for the selected node
-      const nodeInfo = `\nSelected element: ${selectedNode.name} (${selectedNode.kind || selectedNode.type})`;
-      enhancedQuery += nodeInfo;
-    }
-
-    // Add visible graph context - include FULL code for important nodes
-    if (fileScopedNodes && fileScopedNodes.length > 0) {
-      // Include visible nodes in context (up to 30 most relevant) with FULL code
-      const relevantNodes = fileScopedNodes.slice(0, 30);
-
-      for (const node of relevantNodes) {
-        // Skip the selected node to avoid duplicates
-        if (node.id !== selectedNode?.id && contextData.length < 50) {
-          // Try to fetch full code for each important node
-          let nodeCode = node.code;
-
-          // If no code but we have an ID, try to fetch the full source
-          if ((!nodeCode || nodeCode.trim() === '') && node.id && dataApiBase && selectedProjectId) {
-            try {
-              const { fetchSource } = await import('./services/graphService');
-              nodeCode = await fetchSource(dataApiBase, selectedProjectId, node.id);
-              logger.log('[App] Fetched full source for node:', node.id, 'Code length:', nodeCode?.length || 0);
-            } catch (e) {
-              logger.warn('[App] Failed to fetch source for node:', node.id, e);
-            }
-          }
-
-          contextData.push({
-            id: node.id,
-            name: node.name || node.id,
-            kind: node.kind || node.type || 'unknown',
-            code: nodeCode || '', // Send FULL code, not empty
-            filePath: node._filePath || node.filePath || node.id,
-            language: node.language || detectLanguage(node._filePath || node.id),
-          });
-        }
-      }
-
-      enhancedQuery += `\n\nCurrently viewing ${fileScopedNodes.length} elements in ${viewMode} mode.`;
-    }
-
-    // If no graph context, try to include basic project info with FULL code samples
-    if (contextData.length === 0 && astData && 'nodes' in astData) {
-      const totalNodes = (astData.nodes as any[]).length;
-      enhancedQuery += `\n\nProject contains ${totalNodes} analyzed elements.`;
-
-      // Include a few sample nodes with FULL code from the project
-      const sampleNodes = (astData.nodes as any[]).slice(0, 5); // Fewer nodes but with FULL code
-
-      for (const node of sampleNodes) {
-        if (contextData.length < 10) {
-          let nodeCode = node.code;
-
-          // Try to fetch full code
-          if ((!nodeCode || nodeCode.trim() === '') && node.id && dataApiBase && selectedProjectId) {
-            try {
-              const { fetchSource } = await import('./services/graphService');
-              nodeCode = await fetchSource(dataApiBase, selectedProjectId, node.id);
-              logger.log('[App] Fetched full source for sample node:', node.id);
-            } catch (e) {
-              logger.warn('[App] Failed to fetch source for sample node:', node.id);
-            }
-          }
-
-          contextData.push({
-            id: node.id,
-            name: node.name || node.id,
-            kind: node.kind || node.type || 'unknown',
-            code: nodeCode || '',
-            filePath: node._filePath || node.filePath || node.id,
-          });
-        }
-      }
-    }
-
-    // Add view mode context
-    const viewDescriptions = {
-      architecture: 'architecture diagram (showing module relationships)',
-      discovery: 'discovery view (showing code structure)',
-      map: 'code map (showing file relationships)',
-      flow: 'flow view (showing execution flow)',
-      narrative: 'narrative view',
-    };
-
-    const viewDesc = viewDescriptions[viewMode as keyof typeof viewDescriptions] || viewMode;
-    enhancedQuery += `\n\nViewing ${viewDesc}.`;
-
-    // Add conversation context if there's an existing conversation
-    if (narrativeMessages.length > 0) {
-      enhancedQuery += `\n\n[Continuing conversation - ${narrativeMessages.length} messages in history]`;
-      // Include project context from the conversation
-      const lastAIResponse = [...narrativeMessages].reverse().find(m => m.role === 'ai');
-      if (lastAIResponse && lastAIResponse.content) {
-        // The AI should remember what was discussed
-        enhancedQuery += `\n[Context: We were discussing this codebase]`;
-      }
-    }
-
-    // For "Explain this code" specifically, add more detailed context
-    if (query === 'Explain this code') {
-      enhancedQuery = `I'm currently viewing code in ${viewDesc}.\n\n`;
-
-      if (selectedNode) {
-        enhancedQuery += `Selected element: "${selectedNode.name}" (${selectedNode.kind || selectedNode.type})\n`;
-        enhancedQuery += `File: ${selectedNode._filePath || selectedNode.filePath || 'Unknown'}\n`;
-        if (selectedNode.code && selectedNode.code.trim() !== '') {
-          // Send FULL code, not just snippets
-          enhancedQuery += `\nFull Code:\n${selectedNode.code.trim()}\n`;
-        }
-      }
-
-      if (fileScopedNodes && fileScopedNodes.length > 0) {
-        enhancedQuery += `\n\nCurrently viewing ${fileScopedNodes.length} elements:\n`;
-        fileScopedNodes.slice(0, 10).forEach((node: any) => {
-          enhancedQuery += `- ${node.name || node.id} (${node.kind || node.type})\n`;
-        });
-      }
-
-      enhancedQuery += `\n\nPlease analyze the FULL code and provide:\n1. What this code does (complete functionality)\n2. How all components interact\n3. Key patterns and architecture\n4. Any potential improvements`;
-    }
-
-    // Set the search term
     setSearchTerm(query);
 
-    // Create user message
     const userMsg: NarrativeMessage = {
       role: 'user',
-      content: enhancedQuery,
+      content: fullQuery,
+      displayContent: query,
       timestamp: Date.now(),
     };
 
@@ -387,79 +254,31 @@ const App: React.FC = () => {
     setIsNarrativeLoading(true);
 
     try {
-      if (dataApiBase && selectedProjectId) {
-        // Try to get project summary for additional context
-        try {
-          const { fetchSummary } = await import('./services/graphService');
-          const freshSummary = await fetchSummary(dataApiBase, selectedProjectId);
-          if (freshSummary?.top_symbols) {
-            // Add top symbols to context if not already included
-            const existingIds = new Set(contextData.map(n => n.id));
-            const selectedNodeId = selectedNode?.id;
-
-            freshSummary.top_symbols
-              .filter((s: any) => s.id !== selectedNodeId && !existingIds.has(s.id))
-              .slice(0, 15)
-              .forEach((symbol: any) => {
-                contextData.push({
-                  id: symbol.id,
-                  name: symbol.name,
-                  kind: symbol.kind || symbol.type || 'unknown',
-                  code: symbol.code || '',
-                  filePath: symbol._filePath || symbol.filePath || symbol.id,
-                });
-              });
-          }
-        } catch (e) {
-          logger.warn('[App] Failed to fetch summary, continuing without it:', e);
-        }
-
-        const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-        const { fetchWithTimeout } = await import('./utils/fetchWithTimeout');
-
-        logger.log('[App] Sending query with context:', {
-          query: enhancedQuery.substring(0, 100) + '...',
-          contextItems: contextData.length,
-          project: selectedProjectId
-        });
-
-        const response = await fetchWithTimeout(`${cleanBase}/api/v1/ai/ask`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_id: selectedProjectId,
-            query: enhancedQuery,
-            context: contextData.length > 0 ? contextData : undefined,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          logger.error('[App] AI API error:', response.status, errorText);
-          throw new Error(`AI service error: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        const aiResponse = data.answer || data.response || 'No response received.';
-
-        logger.log('[App] AI response received:', aiResponse.substring(0, 100) + '...');
-
-        const aiMsg: NarrativeMessage = {
-          role: 'ai',
-          content: aiResponse,
-          timestamp: Date.now(),
-          sections: data.sections ? data.sections.map((s: any) => ({
-            type: s.type || 'info',
-            title: s.title || 'Information',
-            content: s.content || s.text || '',
-            actionLabel: s.action_label,
-          })) : undefined,
-        };
-
-        setNarrativeMessages(prev => [...prev, aiMsg]);
-      } else {
+      if (!dataApiBase || !selectedProjectId) {
         throw new Error('Not connected to API. Please connect to a project first.');
       }
+
+      logger.log('[App] Sending query with context:', {
+        query: fullQuery.substring(0, 100) + '...',
+        contextItems: contextData.length,
+        project: selectedProjectId
+      });
+
+      const aiResponse = await askAI(dataApiBase, selectedProjectId, {
+        task: 'chat',
+        query: fullQuery,
+        data: contextData.length > 0 ? contextData : undefined,
+      });
+
+      logger.log('[App] AI response received:', aiResponse.substring(0, 100) + '...');
+
+      const aiMsg: NarrativeMessage = {
+        role: 'ai',
+        content: aiResponse,
+        timestamp: Date.now(),
+      };
+
+      setNarrativeMessages(prev => [...prev, aiMsg]);
     } catch (error: any) {
       logger.error('[App] Error:', error);
       const errorMsg: NarrativeMessage = {
@@ -471,28 +290,8 @@ const App: React.FC = () => {
     } finally {
       setIsNarrativeLoading(false);
     }
-  }, [setViewMode, setSearchTerm, selectedNode, dataApiBase, selectedProjectId, setNarrativeMessages, setIsNarrativeLoading, viewMode, fileScopedNodes, astData, currentProject]);
+  }, [setViewMode, setSearchTerm, selectedNode, dataApiBase, selectedProjectId, setNarrativeMessages, setIsNarrativeLoading, currentProject, buildContext]);
 
-  // Helper function to detect language from file path
-  const detectLanguage = (filePath: string): string => {
-    const ext = filePath.split('.').pop()?.toLowerCase();
-    const langMap: Record<string, string> = {
-      'go': 'go',
-      'py': 'python',
-      'js': 'javascript',
-      'jsx': 'javascript',
-      'ts': 'typescript',
-      'tsx': 'typescript',
-      'java': 'java',
-      'cpp': 'cpp',
-      'c': 'c',
-      'cs': 'csharp',
-      'rs': 'rust',
-      'rb': 'ruby',
-      'php': 'php',
-    };
-    return langMap[ext || ''] || 'unknown';
-  };
   const setQueryResultsNull = useCallback(() => setQueryResults(null), [setQueryResults]);
   const setFileScopedNodesEmpty = useCallback(() => setFileScopedNodes([]), [setFileScopedNodes]);
   const setFileScopedLinksEmpty = useCallback(() => setFileScopedLinks([]), [setFileScopedLinks]);
@@ -552,7 +351,7 @@ const App: React.FC = () => {
 
   // Node select handler - fetches file graph data when file is selected
   const handleNodeSelect = useCallback(async (node: any, isNavigation: boolean = false) => {
-    logger.log('Node selected:', node.id, 'isNavigation:', isNavigation);
+    logger.log('Node selected:', node.id, 'isNavigation:', isNavigation, '_isFile:', node._isFile);
     setSelectedNode(node);
 
     // If it's a file navigation, fetch the file's graph data and switch to Architecture view
@@ -560,7 +359,7 @@ const App: React.FC = () => {
       try {
         logger.log('[App] Fetching file calls for:', node._filePath || node.id);
         const fileId = node._filePath || node.id;
-        const graphData = await fetchFileCalls(dataApiBase, selectedProjectId, fileId, 3);
+        const graphData = await fetchFileCalls(dataApiBase, selectedProjectId, fileId, 1);
 
         if (graphData && graphData.nodes) {
           logger.log('[App] File graph loaded:', graphData.nodes.length, 'nodes');
@@ -572,6 +371,8 @@ const App: React.FC = () => {
       } catch (err) {
         logger.error('[App] Failed to fetch file calls:', err);
       }
+    } else {
+      logger.log('[App] Skipping file calls fetch: _isFile=', node._isFile, 'dataApiBase=', !!dataApiBase, 'selectedProjectId=', !!selectedProjectId);
     }
   }, [setSelectedNode, dataApiBase, selectedProjectId, setFileScopedNodes, setFileScopedLinks, setViewMode]);
 
@@ -590,8 +391,9 @@ const App: React.FC = () => {
     
     // Determine the best ID to hydrate
     let hydrateId = nodeId;
-    if (selectedNode._filePath) {
-      hydrateId = selectedNode._filePath;
+    const filePath = (selectedNode as any)._filePath;
+    if (filePath && typeof filePath === 'string') {
+      hydrateId = filePath;
     }
     
     logger.log('[App] Calling hydrateNode with:', hydrateId);
@@ -613,6 +415,9 @@ const App: React.FC = () => {
 
   return (
     <ErrorBoundary>
+      {isLandingView ? (
+        <LandingScreen />
+      ) : (
       <div className="flex h-screen w-screen bg-[var(--bg-main)] text-slate-400 overflow-hidden font-sans">
         <AppSidebar
         width={sidebarWidth}
@@ -623,7 +428,8 @@ const App: React.FC = () => {
         onProjectChange={handleProjectChange}
         dataApiBase={dataApiBase}
         isDataSyncing={isDataSyncing}
-        astData={astData}
+        syncError={syncError}
+        astData={astData as FlatGraph}
         sandboxFiles={sandboxFiles}
         onNodeSelect={handleNodeSelect}
         selectedNode={selectedNode}
@@ -638,9 +444,24 @@ const App: React.FC = () => {
           isSubModeSwitching={isSubModeSwitching}
           openSettings={openSettings}
           isSearching={isSearching}
+          isConnected={!!dataApiBase && availableProjects.length > 0}
+          isDataSyncing={isDataSyncing}
         />
 
           <div className="relative flex-1 flex flex-col min-h-0">
+            {/* Loading overlay during initial data sync */}
+            {isDataSyncing && !('nodes' in astData && Array.isArray(astData.nodes) && astData.nodes.length > 0) && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--bg-main)]/90 backdrop-blur-sm">
+                <div className="text-center">
+                  <div className="w-16 h-16 rounded-full bg-[var(--accent-teal)]/10 border border-[var(--accent-teal)]/20 flex items-center justify-center mx-auto mb-4">
+                    <i className="fas fa-spinner fa-spin text-2xl text-[var(--accent-teal)]"></i>
+                  </div>
+                  <p className="text-sm font-bold text-white mb-1">Loading Project</p>
+                  <p className="text-[10px] text-slate-500">Fetching graph data from backend...</p>
+                </div>
+              </div>
+            )}
+
             {/* Search Bar - moved outside keyed div to prevent remounting on view change */}
             {viewMode !== 'narrative' && (
               <UnifiedSearchBar
@@ -669,7 +490,6 @@ const App: React.FC = () => {
                     codePanelWidth={codePanelWidth}
                     selectedNode={selectedNode}
                     onNodeSelect={handleNodeSelect}
-                    skipFlowZoom={skipFlowZoom}
                     expandedFileIds={expandedFileIds}
                     onToggleFileExpansion={toggleFileExpansion}
                     expandingFileId={expandingFileId}
@@ -688,7 +508,7 @@ const App: React.FC = () => {
           </div>
 
         <AppFooter
-          astData={astData}
+          astData={astData as FlatGraph}
           dataApiBase={dataApiBase}
         />
       </div>
@@ -706,6 +526,7 @@ const App: React.FC = () => {
         onConnect={handleConnect}
       />
       </div>
+      )}
     </ErrorBoundary>
   );
 };

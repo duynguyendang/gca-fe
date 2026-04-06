@@ -27,7 +27,7 @@ interface UseSmartSearchOptions {
 
     availablePredicates: string[];
     manifest: any;
-    onViewModeChange: (mode: 'discovery' | 'flow' | 'architecture') => void;
+    onViewModeChange: (mode: 'discovery' | 'architecture') => void;
     setFileScopedNodes: (nodes: any[]) => void;
     setFileScopedLinks: (links: any[]) => void;
     setSelectedNode: (node: any) => void;

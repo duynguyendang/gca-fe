@@ -16,7 +16,7 @@ export const useGraphData = (data: ASTNode | FlatGraph) => {
       return null;
     }
 
-    logger.log('useGraphData: data.nodes:', data.nodes.length, 'data.links:', data.links?.length);
+    logger.log('useGraphData: data.nodes:', data.nodes.length, 'data.links:', Array.isArray(data.links) ? data.links.length : 0);
 
     const nodeMap = new Map();
     data.nodes.forEach(n => {
@@ -43,7 +43,7 @@ export const useGraphData = (data: ASTNode | FlatGraph) => {
     }).filter((l): l is { source: any, target: any } => l !== null) : [];
 
     logger.log('useGraphData: processed links:', links.length);
-    if (links.length === 0 && data.links?.length > 0) {
+    if (links.length === 0 && Array.isArray(data.links) && data.links.length > 0) {
       console.warn('useGraphData: WARNING - ALL links were dropped! Original count:', data.links.length);
     }
 

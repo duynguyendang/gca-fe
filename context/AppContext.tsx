@@ -33,11 +33,12 @@ export interface NarrativeSection {
 export interface NarrativeMessage {
     role: 'user' | 'ai';
     content: string;
+    displayContent?: string;
     sections?: NarrativeSection[];
     timestamp: number;
 }
 
-export type ViewMode = 'flow' | 'map' | 'discovery' | 'backbone' | 'architecture' | 'narrative';
+export type ViewMode = 'map' | 'discovery' | 'architecture' | 'narrative';
 export type SubMode = 'NARRATIVE' | 'ARCHITECTURE' | 'ENTROPY';
 
 interface AppState {
@@ -97,17 +98,12 @@ interface AppState {
     // View mode
     viewMode: ViewMode;
     setViewMode: React.Dispatch<React.SetStateAction<ViewMode>>;
-    isFlowLoading: boolean;
-    setIsFlowLoading: React.Dispatch<React.SetStateAction<boolean>>;
 
     // File scoped data (for architecture view)
     fileScopedNodes: GraphNode[];
     setFileScopedNodes: React.Dispatch<React.SetStateAction<GraphNode[]>>;
     fileScopedLinks: GraphLink[];
     setFileScopedLinks: React.Dispatch<React.SetStateAction<GraphLink[]>>;
-    currentFlowFileRef: React.MutableRefObject<string | null>;
-    skipFlowZoom: boolean;
-    setSkipFlowZoom: React.Dispatch<React.SetStateAction<boolean>>;
 
     // Progressive expansion
     expandedFileIds: Set<string>;
@@ -218,13 +214,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
     // View mode
     const [viewMode, setViewMode] = useState<ViewMode>('narrative');
-    const [isFlowLoading, setIsFlowLoading] = useState(false);
 
     // File scoped data
     const [fileScopedNodes, setFileScopedNodes] = useState<GraphNode[]>([]);
     const [fileScopedLinks, setFileScopedLinks] = useState<GraphLink[]>([]);
-    const currentFlowFileRef = useRef<string | null>(null);
-    const [skipFlowZoom, setSkipFlowZoom] = useState(false);
 
     // Progressive expansion
     const [expandedFileIds, setExpandedFileIds] = useState<Set<string>>(new Set());
@@ -245,7 +238,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
     const [isLandingView, setIsLandingView] = useState<boolean>(() => {
         // Show landing if no project is selected and it's a fresh session
-        return !sessionStorage.getItem('gca_selected_project_id');
+        return !sessionStorage.getItem('gca_selected_project_v2');
     });
 
     const value: AppState = {
@@ -270,11 +263,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         searchError, setSearchError,
         searchStatus, setSearchStatus,
         viewMode, setViewMode,
-        isFlowLoading, setIsFlowLoading,
         fileScopedNodes, setFileScopedNodes,
         fileScopedLinks, setFileScopedLinks,
-        currentFlowFileRef,
-        skipFlowZoom, setSkipFlowZoom,
         expandedFileIds, setExpandedFileIds,
         fileDetailsCache, setFileDetailsCache,
         expandingFileId, setExpandingFileId,

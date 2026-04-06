@@ -1,6 +1,6 @@
 import React from 'react';
 
-type ViewMode = 'flow' | 'map' | 'discovery' | 'backbone' | 'architecture' | 'narrative';
+type ViewMode = 'map' | 'discovery' | 'architecture' | 'narrative';
 
 interface ViewModeSwitcherProps {
   viewMode: ViewMode;
@@ -18,8 +18,11 @@ const ViewModeSwitcher: React.FC<ViewModeSwitcherProps> = ({ viewMode, onViewMod
   };
 
   return (
-    <div className="view-switcher" style={{ '--glow-color': getGlowColor() } as any}>
+    <div className="view-switcher" role="tablist" aria-label="View mode" style={{ '--glow-color': getGlowColor() } as any}>
       <button
+        role="tab"
+        aria-selected={viewMode === 'narrative'}
+        aria-label="Narrative view"
         className={viewMode === 'narrative' ? 'active' : ''}
         onClick={() => onViewModeChange('narrative')}
       >
@@ -27,18 +30,27 @@ const ViewModeSwitcher: React.FC<ViewModeSwitcherProps> = ({ viewMode, onViewMod
         NARRATIVE
       </button>
       <button
+        role="tab"
+        aria-selected={viewMode === 'architecture'}
+        aria-label="Architecture view"
         className={viewMode === 'architecture' ? 'active' : ''}
         onClick={() => onViewModeChange('architecture')}
       >
         ARCHITECTURE
       </button>
       <button
+        role="tab"
+        aria-selected={viewMode === 'discovery'}
+        aria-label="Discovery view"
         className={viewMode === 'discovery' ? 'active' : ''}
         onClick={() => onViewModeChange('discovery')}
       >
         DISCOVERY
       </button>
       <button
+        role="tab"
+        aria-selected={viewMode === 'map'}
+        aria-label="Map view"
         className={viewMode === 'map' ? 'active' : ''}
         onClick={() => onViewModeChange('map')}
       >

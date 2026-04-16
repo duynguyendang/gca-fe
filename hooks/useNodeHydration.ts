@@ -2,11 +2,12 @@
  * useNodeHydration - Hook for hydrating individual nodes
  * Extracted from App.tsx hydrateNode function
  */
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { FlatGraph } from '../types';
 import { logger } from '../src/logger';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { requestManager } from '../utils/requestManager';
 
 export const useNodeHydration = () => {
     const {
@@ -18,6 +19,9 @@ export const useNodeHydration = () => {
         astData,
         setAstData
     } = useAppContext();
+
+    // Track the current hydration request to handle race conditions
+    const hydrationRequestRef = useRef<string | null>(null);
 
     const hydrateNode = useCallback(async (nodeId: string): Promise<any | null> => {
         // Validate nodeId - skip obviously invalid IDs
@@ -49,6 +53,14 @@ export const useNodeHydration = () => {
             return null;
         }
 
+        // Cancel any in-flight hydration request
+        if (hydrationRequestRef.current) {
+            requestManager.cancelRequest(hydrationRequestRef.current);
+        }
+
+        const requestId = `hydrate-${nodeId}-${Date.now()}`;
+        hydrationRequestRef.current = requestId;
+
         logger.log('[Hydrate] Fetching node from API:', nodeId);
         setHydratingNodeId(nodeId);
 
@@ -57,8 +69,14 @@ export const useNodeHydration = () => {
         if (nodeId && !nodeId.includes('/') && nodeId.includes('.')) {
             try {
                 const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+                const controller = requestManager.startRequest(`${requestId}-pathResolution`);
                 // Fetch file list to resolve path - minimal overhead for single click
-                const filesResp = await fetchWithTimeout(`${cleanBase}/api/v1/files?project=${encodeURIComponent(selectedProjectId)}`);
+                const filesResp = await fetchWithTimeout(
+                    `${cleanBase}/api/v1/files?project=${encodeURIComponent(selectedProjectId)}`,
+                    {},
+                    5000, // Short timeout for path resolution
+                    controller.signal
+                );
                 if (filesResp.ok) {
                     const allFiles = await filesResp.json();
                     const slashPath = nodeId.replace(/\./g, '/');
@@ -73,13 +91,28 @@ export const useNodeHydration = () => {
                     }
                 }
             } catch (e) {
-                console.warn('[Hydrate] Path resolution failed', e);
+                // Ignore abort errors
+                if ((e as Error).name !== 'AbortError') {
+                    console.warn('[Hydrate] Path resolution failed', e);
+                }
             }
         }
 
         try {
             const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-            const response = await fetchWithTimeout(`${cleanBase}/api/v1/hydrate?id=${encodeURIComponent(targetId)}&project=${encodeURIComponent(selectedProjectId)}`);
+            const controller = requestManager.startRequest(requestId);
+            const response = await fetchWithTimeout(
+                `${cleanBase}/api/v1/hydrate?id=${encodeURIComponent(targetId)}&project=${encodeURIComponent(selectedProjectId)}`,
+                {},
+                30000,
+                controller.signal
+            );
+
+            // Check if this request is still valid (not stale)
+            if (hydrationRequestRef.current !== requestId) {
+                logger.log('[Hydrate] Stale response discarded for:', nodeId);
+                return null;
+            }
 
             if (!response.ok) {
                 console.error('[Hydrate] Failed to hydrate node:', response.status, response.statusText);
@@ -105,9 +138,17 @@ export const useNodeHydration = () => {
 
             return hydratedNode;
         } catch (error) {
-            console.error('[Hydrate] Error hydrating node:', error);
+            // Ignore AbortError - expected when request is cancelled
+            if ((error as Error).name === 'AbortError' || (error as Error).message?.includes('aborted')) {
+                logger.log('[Hydrate] Request cancelled for:', nodeId);
+            } else {
+                console.error('[Hydrate] Error hydrating node:', error);
+            }
             return null;
         } finally {
+            if (hydrationRequestRef.current === requestId) {
+                hydrationRequestRef.current = null;
+            }
             setHydratingNodeId(null);
         }
     }, [dataApiBase, selectedProjectId, astData, symbolCache, setHydratingNodeId, setSymbolCache, setAstData]);

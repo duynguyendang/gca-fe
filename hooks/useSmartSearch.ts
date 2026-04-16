@@ -2,7 +2,7 @@
  * useSmartSearch - Hook for semantic search functionality
  * Extracted from App.tsx handleSmartSearch (~250 lines)
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useRef } from 'react';
 import { useManifest } from './useManifest';
 import {
     executeQuery,
@@ -64,7 +64,18 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
     const [searchStatus, setSearchStatus] = useState<string | null>(null);
     const [queryResults, setQueryResults] = useState<any>(null);
 
+    // Track current search request to handle race conditions
+    const searchRequestRef = useRef<string | null>(null);
+
     const handleSmartSearch = useCallback(async (query: string) => {
+        // Cancel any in-flight search request
+        if (searchRequestRef.current) {
+            searchRequestRef.current = null; // Signal cancellation
+        }
+
+        const requestId = `search-${query}-${Date.now()}`;
+        searchRequestRef.current = requestId;
+
         logger.log('=== handleSmartSearch called ===', query);
         setSearchError(null);
         setIsSearching(true);
@@ -77,6 +88,9 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             setSearchStatus(null);
             return;
         }
+
+        // Helper to check if request is still valid before state updates
+        const isRequestStale = () => searchRequestRef.current !== requestId;
 
         try {
             // 0. Ultra-Fast-Path: Simple "what is X?" queries
@@ -377,11 +391,19 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             setIsSearching(false);
 
         } catch (err: any) {
-            console.error("Smart Search Error:", err);
-            setSearchError(err.message || 'Search failed');
-            setNodeInsight("Search failed.");
-            setSearchStatus(null);
-            setIsSearching(false);
+            // Only update state if request is not stale
+            if (!isRequestStale()) {
+                console.error("Smart Search Error:", err);
+                setSearchError(err.message || 'Search failed');
+                setNodeInsight("Search failed.");
+                setSearchStatus(null);
+                setIsSearching(false);
+            }
+        } finally {
+            // Clear request ref when search completes (success or cancelled)
+            if (searchRequestRef.current === requestId) {
+                searchRequestRef.current = null;
+            }
         }
     }, [dataApiBase, selectedProjectId, availablePredicates, manifest, onViewModeChange, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setNodeInsight, setLastExecutedQuery]);
 

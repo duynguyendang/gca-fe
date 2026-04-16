@@ -44,7 +44,7 @@ export const askAI = async (
       context_mode: payload.context_mode || '',
       query_instruction: payload.query_instruction || ''
     })
-  });
+  }, API_CONFIG.TIMEOUT.LONG);
 
   if (!response.ok) {
     const errText = await response.text();
@@ -379,4 +379,86 @@ export const executeAgent = async (
   }
 
   return await response.json();
+};
+
+// --- Unified Ask Endpoint (NL -> Datalog -> LLM Answer) ---
+
+export interface UnifiedAskRequest {
+  project_id: string;
+  query: string;
+  symbol_id?: string;
+  depth?: number;
+  context?: string;
+}
+
+export interface UnifiedAskResponse {
+  answer: string;
+  query: string;
+  intent: string;
+  confidence: number;
+  results: any;
+  summary: string;
+  error?: string;
+}
+
+/**
+ * Unified natural language query endpoint.
+ * Converts NL to Datalog, executes, and synthesizes answer.
+ * POST /api/v1/ask
+ */
+export const unifiedAsk = async (
+  dataApiBase: string,
+  projectId: string,
+  query: string,
+  options?: {
+    symbolId?: string;
+    depth?: number;
+    context?: string;
+  }
+): Promise<UnifiedAskResponse> => {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/ask`;
+
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      project_id: projectId,
+      query: query,
+      symbol_id: options?.symbolId || '',
+      depth: options?.depth || 0,
+      context: options?.context || ''
+    })
+  }, API_CONFIG.TIMEOUT.LONG);
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error('[GeminiService] Unified Ask Error:', response.status, errText);
+    throw new Error(`Unified Ask Error: ${response.statusText}`);
+  }
+
+  const data: UnifiedAskResponse = await response.json();
+  return data;
+};
+
+/**
+ * Convenience wrapper that returns just the answer.
+ */
+export const askQuestion = async (
+  dataApiBase: string,
+  projectId: string,
+  query: string,
+  options?: {
+    symbolId?: string;
+    depth?: number;
+    context?: string;
+  }
+): Promise<string> => {
+  const result = await unifiedAsk(dataApiBase, projectId, query, options);
+  if (result.error) {
+    throw new Error(result.error);
+  }
+  return result.answer;
 };

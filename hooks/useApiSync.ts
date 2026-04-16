@@ -74,24 +74,25 @@ export const useApiSync = () => {
             }
 
             const projects = await projectsRes.json() as Array<{ id: string; name: string; description?: string }>;
+            console.log('[Sync] Projects received:', projects);
             setAvailableProjects(projects);
 
-            // Require project selection - don't auto-select
-            if (!projectId && projects.length > 0) {
-                setIsDataSyncing(false);
-                return;
-            }
+            // Auto-select first project if none specified
+            const targetProjectId = projectId || (projects.length > 0 ? projects[0].id : null);
+            console.log('[Sync] Target project:', targetProjectId, 'from list:', projects.map(p => p.id));
 
-            if (!projectId) {
+            if (!targetProjectId) {
                 setSyncError('No projects available');
                 setIsDataSyncing(false);
                 return;
             }
 
-            setCurrentProject(projects.find(p => p.id === projectId)?.name || projectId);
+            setSelectedProjectId(targetProjectId);
+            console.log('[Sync] Set selectedProjectId to:', targetProjectId);
+            setCurrentProject(projects.find(p => p.id === targetProjectId)?.name || targetProjectId);
 
             // Fetch files for the project
-            const filesUrl = `${cleanBase}/api/v1/files?project=${encodeURIComponent(projectId)}`;
+            const filesUrl = `${cleanBase}/api/v1/files?project=${encodeURIComponent(targetProjectId)}`;
             const filesRes = await fetchWithTimeout(filesUrl);
             if (!filesRes.ok) {
                 setSyncError(`Failed to fetch files: ${filesRes.statusText}`);
@@ -122,7 +123,7 @@ export const useApiSync = () => {
                         end_line: 100,
                         code: '',
                         _filePath: filePath,
-                        _project: projectId,
+                        _project: targetProjectId,
                         _isFile: true
                     });
                 });
@@ -142,7 +143,7 @@ export const useApiSync = () => {
             // Fetch enriched AST from query endpoint
             try {
                 // Change query to 'imports' to get file-to-file dependencies
-                const queryRes = await fetchWithTimeout(`${cleanBase}/api/v1/query?project=${encodeURIComponent(projectId)}&hydrate=true`, {
+                const queryRes = await fetchWithTimeout(`${cleanBase}/api/v1/query?project=${encodeURIComponent(targetProjectId)}&hydrate=true`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ query: 'triples(?s, "imports", ?o)' })
@@ -160,7 +161,7 @@ export const useApiSync = () => {
                             // Clustered graphs usually work best in Map or Architecture mode
                             // Keep narrative view as default - don't force map mode
                             // setViewMode('map');
-                            setFileScopedNodes(ast.nodes.map((n: any) => ({ ...n, _project: projectId })));
+                            setFileScopedNodes(ast.nodes.map((n: any) => ({ ...n, _project: targetProjectId })));
                             setFileScopedLinks(ast.links || []);
                             // Do NOT update astData (keep files for navigator)
                         } else {
@@ -174,7 +175,7 @@ export const useApiSync = () => {
                             setAstData(prev => {
                                 const enrichedNodes = (prev.nodes as any[]).map(node => {
                                     const enrichedNode = ast.nodes.find((n: any) => n.id === node.id || n.id === node._filePath);
-                                    return enrichedNode ? { ...node, ...enrichedNode, _project: projectId } : { ...node, _project: projectId };
+                                    return enrichedNode ? { ...node, ...enrichedNode, _project: targetProjectId } : { ...node, _project: targetProjectId };
                                 });
                                 return { nodes: enrichedNodes, links: ast.links || prev.links };
                             });

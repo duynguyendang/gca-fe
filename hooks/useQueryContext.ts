@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { fetchSource, fetchSummary } from '../services/graphService';
+import { fetchSource, fetchSummary, fetchFiles } from '../services/graphService';
 import { detectLanguage } from '../utils/languageUtils';
 import { GraphNode } from '../types';
 
@@ -55,14 +55,46 @@ export const useQueryContext = () => {
     currentProject,
     viewMode,
     narrativeMessages,
+    sandboxFiles,
   } = useAppContext();
 
-  const buildContext = useCallback(async (): Promise<{ enhancedQuery: string; contextData: ContextNode[] }> => {
+  const buildContext = useCallback(async (userQuery?: string): Promise<{ enhancedQuery: string; contextData: ContextNode[] }> => {
     const contextData: ContextNode[] = [];
     const contextParts: string[] = [];
 
     if (currentProject) {
       contextParts.push(`[Project: ${currentProject}]`);
+    }
+
+    // Include full project file list when query is about project structure
+    const queryLower = (userQuery || '').toLowerCase();
+    const isProjectStructureQuery = queryLower.includes('all test') ||
+      queryLower.includes('test file') ||
+      queryLower.includes('list all') ||
+      queryLower.includes('project structure') ||
+      queryLower.includes('file list') ||
+      queryLower.includes('all file') ||
+      queryLower.includes('find all') ||
+      queryLower.includes('how many file');
+
+    if (isProjectStructureQuery && dataApiBase && selectedProjectId) {
+      try {
+        const files = await fetchFiles(dataApiBase, selectedProjectId);
+        const fileList = Array.isArray(files) ? files : [];
+        contextParts.push(`[Project has ${fileList.length} files]`);
+        if (fileList.length > 0 && fileList.length <= 500) {
+          contextParts.push(`[All files: ${fileList.join(', ')}]`);
+        } else if (fileList.length > 500) {
+          contextParts.push(`[First 100 files: ${fileList.slice(0, 100).join(', ')}]`);
+        }
+      } catch (e) {
+        // Use sandbox files as fallback
+        const sandboxFileList = Array.isArray(sandboxFiles['files.json']) ? sandboxFiles['files.json'] : [];
+        if (sandboxFileList.length > 0) {
+          contextParts.push(`[Project has ${sandboxFileList.length} files]`);
+          contextParts.push(`[Files: ${sandboxFileList.join(', ')}]`);
+        }
+      }
     }
 
     if (selectedNode) {
@@ -193,11 +225,23 @@ export const useQueryContext = () => {
       contextParts.push(`[Continuing conversation - ${narrativeMessages.length} messages]`);
     }
 
+    let enhancedQuery = contextParts.join('\n');
+    const MAX_QUERY_LENGTH = 8000;
+    if (enhancedQuery.length > MAX_QUERY_LENGTH) {
+      enhancedQuery = enhancedQuery.substring(0, MAX_QUERY_LENGTH) + '\n...[shortened]';
+    }
+
+    for (const node of contextData) {
+      if (node.code && node.code.length > 2000) {
+        node.code = node.code.substring(0, 2000) + '\n...[shortened]';
+      }
+    }
+
     return {
-      enhancedQuery: contextParts.join('\n'),
+      enhancedQuery,
       contextData,
     };
-  }, [selectedNode, fileScopedNodes, astData, dataApiBase, selectedProjectId, currentProject, viewMode, narrativeMessages]);
+  }, [selectedNode, fileScopedNodes, astData, dataApiBase, selectedProjectId, currentProject, viewMode, narrativeMessages, sandboxFiles]);
 
   return { buildContext };
 };

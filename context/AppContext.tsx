@@ -178,9 +178,12 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
     // API configuration
     const [dataApiBase, setDataApiBase] = useState<string>(() => {
-        // In production, always prioritize the environment variable (which should be "/api" now)
+        // In production, use the environment variable (which should be "/api" via Firebase rewrites)
         const envBase = import.meta.env.VITE_GCA_API_BASE_URL || import.meta.env.GCA_API_BASE_URL;
-        if (envBase && import.meta.env.PROD) return envBase;
+        // If we have an envBase and it's not localhost, use it (production or remote dev)
+        if (envBase && !envBase.includes('localhost') && !envBase.includes('127.0.0.1')) {
+            return envBase;
+        }
 
         return sessionStorage.getItem('gca_api_base_v2') || envBase || API_CONFIG.DEFAULT_BASE_URL;
     });

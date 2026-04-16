@@ -16,11 +16,56 @@ import UnifiedSearchBar from './components/UnifiedSearchBar';
 import { useSessionStorage } from './hooks/useSessionStorage';
 import { useQueryContext } from './hooks/useQueryContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
-import { fetchFileCalls, fetchSource } from './services/graphService';
+import { fetchFileCalls, fetchSource, fetchWhoCalls, fetchWhatCalls } from './services/graphService';
 import { askAI } from './services/geminiService';
 import { detectLanguage } from './utils/languageUtils';
+import { requestManager } from './utils/requestManager';
 import { logger } from './src/logger';
 import './src/prismSetup';
+
+// Query mode for intent-based routing
+type QueryMode = 'explore' | 'explain' | 'navigate';
+
+// Classify query to determine how to route it
+// explore: show graph visualization (callers/callees)
+// explain: send to AI for narrative explanation
+// navigate: jump to a specific file or symbol
+function classifyQueryMode(query: string): QueryMode {
+  const q = query.toLowerCase();
+
+  // Explore patterns - user wants to see graph
+  const explorePatterns = [
+    /show\s+(me\s+)?(callers|callees|dependencies)/i,
+    /(who|caller|calling)\s+calls/i,
+    /(what|callee|called)\s+calls/i,
+    /trace\s+(the\s+)?(call|code|execution)/i,
+    /call\s+graph/i,
+    /dependencies/i,
+    /upstream|downstream/i,
+    /impact.*analysis/i,
+    /blast.*radius/i,
+  ];
+
+  for (const pattern of explorePatterns) {
+    if (pattern.test(q)) return 'explore';
+  }
+
+  // Navigate patterns - user wants to jump to a file/symbol
+  const navigatePatterns = [
+    /\.(go|ts|tsx|js|jsx|py)$/,  // ends with code extension
+    /\/[a-zA-Z0-9_.-]+$/,  // ends with path segment
+    /^src\//m,
+    /^pkg\//m,
+    /^cmd\//m,
+  ];
+
+  for (const pattern of navigatePatterns) {
+    if (pattern.test(q)) return 'navigate';
+  }
+
+  // Default to explain (send to AI narrative)
+  return 'explain';
+}
 
 const App: React.FC = () => {
   // Global Context
@@ -67,6 +112,9 @@ const App: React.FC = () => {
   // Local State
   const [isSubModeSwitching, setIsSubModeSwitching] = useState(false);
   const [isClustered, setIsClustered] = useState(false);
+
+  // Request cancellation for race condition prevention
+  const nodeSelectRequestRef = useRef<string | null>(null);
 
   // Hooks initialization
   const { manifest } = useManifest(dataApiBase, selectedProjectId);
@@ -219,11 +267,68 @@ const App: React.FC = () => {
   // Clear search helpers
   const setSearchTermWrapper = useCallback((term: string) => setSearchTerm(term), [setSearchTerm]);
 
-  // Smart search handler - switches to Narrative mode for questions
+  // Smart search handler - routes based on query intent
   const handleSmartSearchWithNarrativeSwitch = useCallback(async (query: string) => {
+    const mode = classifyQueryMode(query);
+
+    setSearchTerm(query);
+
+    // EXPLORE mode: show callers/callees graph
+    if (mode === 'explore') {
+      setViewMode('architecture');
+
+      try {
+        if (!dataApiBase || !selectedProjectId) {
+          throw new Error('Not connected to API. Please connect to a project first.');
+        }
+
+        // Determine direction: callers (who-calls) vs callees (what-calls)
+        const q = query.toLowerCase();
+        const isWhoCalls = /callers|caller|calling|who calls/.test(q);
+        const isWhatCalls = /callees|callee|called|what calls/.test(q);
+
+        // Extract potential symbol from query
+        const symbolMatch = query.match(/"([^"]+)"|([A-Z][a-zA-Z0-9]+(?:\.[a-zA-Z0-9]+)+)|([a-zA-Z_][a-zA-Z0-9_]*)/g);
+        const symbol = symbolMatch ? symbolMatch[0].replace(/"/g, '') : query;
+
+        // If no specific symbol, use selected node
+        const targetSymbol = selectedNode ? `${selectedNode._filePath || selectedNode.id}:${selectedNode.name}` : symbol;
+
+        logger.log('[App] Explore mode:', { symbol: targetSymbol, isWhoCalls, isWhatCalls });
+
+        let graphData;
+        if (isWhoCalls) {
+          graphData = await fetchWhoCalls(dataApiBase, selectedProjectId, targetSymbol, 1, true);
+        } else if (isWhatCalls) {
+          graphData = await fetchWhatCalls(dataApiBase, selectedProjectId, targetSymbol, 1, true);
+        } else {
+          // Default: show callers
+          graphData = await fetchWhoCalls(dataApiBase, selectedProjectId, targetSymbol, 1, true);
+        }
+
+        if (graphData && graphData.nodes) {
+          logger.log('[App] Explore graph loaded:', graphData.nodes.length, 'nodes');
+          setFileScopedNodes(graphData.nodes);
+          setFileScopedLinks(graphData.links || []);
+        }
+      } catch (error: any) {
+        logger.error('[App] Explore error:', error);
+        toast.error(`Failed to load graph: ${error.message}`);
+      }
+      return;
+    }
+
+    // NAVIGATE mode: jump to file
+    if (mode === 'navigate') {
+      setViewMode('architecture');
+      toast.info('Navigate to: ' + query);
+      return;
+    }
+
+    // EXPLAIN mode (default): send to AI narrative
     setViewMode('narrative');
 
-    const { enhancedQuery, contextData } = await buildContext();
+    const { enhancedQuery, contextData } = await buildContext(query);
 
     let fullQuery = query;
     if (currentProject) {
@@ -290,7 +395,7 @@ const App: React.FC = () => {
     } finally {
       setIsNarrativeLoading(false);
     }
-  }, [setViewMode, setSearchTerm, selectedNode, dataApiBase, selectedProjectId, setNarrativeMessages, setIsNarrativeLoading, currentProject, buildContext]);
+  }, [setViewMode, setSearchTerm, selectedNode, dataApiBase, selectedProjectId, setNarrativeMessages, setIsNarrativeLoading, currentProject, buildContext, setFileScopedNodes, setFileScopedLinks, toast]);
 
   const setQueryResultsNull = useCallback(() => setQueryResults(null), [setQueryResults]);
   const setFileScopedNodesEmpty = useCallback(() => setFileScopedNodes([]), [setFileScopedNodes]);
@@ -356,10 +461,25 @@ const App: React.FC = () => {
 
     // If it's a file navigation, fetch the file's graph data and switch to Architecture view
     if (isNavigation && node._isFile && dataApiBase && selectedProjectId) {
+      // Cancel any in-flight request for node selection
+      if (nodeSelectRequestRef.current) {
+        requestManager.cancelRequest(nodeSelectRequestRef.current);
+      }
+
+      const requestId = `nodeSelect-${node.id}-${Date.now()}`;
+      nodeSelectRequestRef.current = requestId;
+
       try {
         logger.log('[App] Fetching file calls for:', node._filePath || node.id);
         const fileId = node._filePath || node.id;
-        const graphData = await fetchFileCalls(dataApiBase, selectedProjectId, fileId, 1);
+        const controller = requestManager.startRequest(requestId);
+        const graphData = await fetchFileCalls(dataApiBase, selectedProjectId, fileId, 1, controller.signal);
+
+        // Check if this request is still valid (not stale)
+        if (nodeSelectRequestRef.current !== requestId) {
+          logger.log('[App] Stale response discarded for:', node.id);
+          return;
+        }
 
         if (graphData && graphData.nodes) {
           logger.log('[App] File graph loaded:', graphData.nodes.length, 'nodes');
@@ -368,8 +488,17 @@ const App: React.FC = () => {
           // Automatically switch to Architecture view when a file is selected
           setViewMode('architecture');
         }
-      } catch (err) {
-        logger.error('[App] Failed to fetch file calls:', err);
+      } catch (err: any) {
+        // Ignore AbortError - it's expected when request is cancelled
+        if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+          logger.log('[App] Request was cancelled:', node.id);
+        } else {
+          logger.error('[App] Failed to fetch file calls:', err);
+        }
+      } finally {
+        if (nodeSelectRequestRef.current === requestId) {
+          nodeSelectRequestRef.current = null;
+        }
       }
     } else {
       logger.log('[App] Skipping file calls fetch: _isFile=', node._isFile, 'dataApiBase=', !!dataApiBase, 'selectedProjectId=', !!selectedProjectId);

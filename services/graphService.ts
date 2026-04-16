@@ -427,13 +427,14 @@ export async function fetchFileCalls(
   dataApiBase: string,
   projectId: string,
   fileId: string,
-  depth: number = 3
+  depth: number = 3,
+  signal?: AbortSignal | null
 ): Promise<GraphMapResponse> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/graph/file-calls?id=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}&depth=${depth}`;
 
   console.log('[GraphService] Fetching file calls:', url);
-  const response = await fetchWithTimeout(url);
+  const response = await fetchWithTimeout(url, {}, API_CONFIG.TIMEOUT.LONG, signal);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch file calls: ${response.status} ${response.statusText}`);
@@ -657,5 +658,192 @@ export async function fetchPaginatedGraph(
 
   const data = await response.json();
   console.log('[GraphService] Paginated graph response:', data);
+  return data;
+}
+
+// Cross-Reference Analysis APIs
+
+export interface WhoCallsResponse {
+  nodes: GraphMapNode[];
+  links: GraphMapLink[];
+}
+
+export interface WhatCallsResponse {
+  nodes: GraphMapNode[];
+  links: GraphMapLink[];
+}
+
+export interface ReachabilityResponse {
+  reachable: boolean;
+  from: string;
+  to: string;
+}
+
+export interface CyclesResponse {
+  cycles: string[][];
+  count: number;
+}
+
+export interface LCAResponse {
+  lca: string | null;
+  a: string;
+  b: string;
+}
+
+/**
+ * Find all callers of a symbol (backward slice)
+ * GET /api/v1/graph/who-calls?project={projectId}&symbol={symbol}&depth={depth}&focused={focused}
+ */
+export async function fetchWhoCalls(
+  dataApiBase: string,
+  projectId: string,
+  symbol: string,
+  depth: number = 3,
+  focused: boolean = false
+): Promise<WhoCallsResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  let url = `${cleanBase}/api/v1/graph/who-calls?project=${encodeURIComponent(projectId)}&symbol=${encodeURIComponent(symbol)}&depth=${depth}`;
+  if (focused) {
+    url += '&focused=true';
+  }
+
+  console.log('[GraphService] Fetching who-calls:', url);
+  const response = await fetchWithTimeout(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch who-calls: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] Who-calls response:', data);
+  return data;
+}
+
+/**
+ * Find all callees of a symbol (forward slice)
+ * GET /api/v1/graph/what-calls?project={projectId}&symbol={symbol}&depth={depth}&focused={focused}
+ */
+export async function fetchWhatCalls(
+  dataApiBase: string,
+  projectId: string,
+  symbol: string,
+  depth: number = 3,
+  focused: boolean = false
+): Promise<WhatCallsResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  let url = `${cleanBase}/api/v1/graph/what-calls?project=${encodeURIComponent(projectId)}&symbol=${encodeURIComponent(symbol)}&depth=${depth}`;
+  if (focused) {
+    url += '&focused=true';
+  }
+
+  console.log('[GraphService] Fetching what-calls:', url);
+  const response = await fetchWithTimeout(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch what-calls: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] What-calls response:', data);
+  return data;
+}
+
+/**
+ * Check if symbol A can reach symbol B
+ * GET /api/v1/graph/reachable?project={projectId}&from={from}&to={to}&depth={depth}
+ */
+export async function checkReachability(
+  dataApiBase: string,
+  projectId: string,
+  from: string,
+  to: string,
+  depth: number = 5
+): Promise<ReachabilityResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/graph/reachable?project=${encodeURIComponent(projectId)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&depth=${depth}`;
+
+  console.log('[GraphService] Checking reachability:', url);
+  const response = await fetchWithTimeout(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to check reachability: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] Reachability response:', data);
+  return data;
+}
+
+/**
+ * Detect cycles in the call graph
+ * GET /api/v1/graph/cycles?project={projectId}
+ */
+export async function detectCycles(
+  dataApiBase: string,
+  projectId: string
+): Promise<CyclesResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/graph/cycles?project=${encodeURIComponent(projectId)}`;
+
+  console.log('[GraphService] Detecting cycles:', url);
+  const response = await fetchWithTimeout(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to detect cycles: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] Cycles response:', data);
+  return data;
+}
+
+/**
+ * Find least common ancestor of two symbols
+ * GET /api/v1/graph/lca?project={projectId}&a={a}&b={b}&depth={depth}
+ */
+export async function findLCA(
+  dataApiBase: string,
+  projectId: string,
+  symbolA: string,
+  symbolB: string,
+  depth: number = 10
+): Promise<LCAResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/graph/lca?project=${encodeURIComponent(projectId)}&a=${encodeURIComponent(symbolA)}&b=${encodeURIComponent(symbolB)}&depth=${depth}`;
+
+  console.log('[GraphService] Finding LCA:', url);
+  const response = await fetchWithTimeout(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to find LCA: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] LCA response:', data);
+  return data;
+}
+
+/**
+ * Enrich store with called_by predicates
+ * POST /api/v1/graph/enrich-called-by?project={projectId}
+ */
+export async function enrichCalledBy(
+  dataApiBase: string,
+  projectId: string
+): Promise<{ status: string; predicate: string }> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/graph/enrich-called-by?project=${encodeURIComponent(projectId)}`;
+
+  console.log('[GraphService] Enriching called_by:', url);
+  const response = await fetchWithTimeout(url, {
+    method: 'POST'
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to enrich called_by: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] Enrich called_by response:', data);
   return data;
 }

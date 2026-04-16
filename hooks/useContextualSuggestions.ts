@@ -126,18 +126,23 @@ export const useContextualSuggestions = () => {
         }
       } else {
         // Symbol-specific suggestions (function, struct, etc.)
+        // Include symbol name for proper intent routing
+        const symbolName = selectedNode.name || selectedNode.id?.split(':').pop() || 'this';
+        const parentFile = (selectedNode as any)._filePath || selectedNode.id?.split(':')[0] || '';
+
         if (nodeKind === 'function' || nodeKind === 'func' || nodeKind === 'method') {
-          suggestions.push({ text: 'Show callers of this function', icon: 'fa-code-branch' });
-          suggestions.push({ text: 'Trace execution flow', icon: 'fa-route' });
+          suggestions.push({ text: `Show callers of ${symbolName}`, icon: 'fa-code-branch' });
+          suggestions.push({ text: `Show callees of ${symbolName}`, icon: 'fa-arrow-right' });
+          suggestions.push({ text: `Trace ${symbolName} execution`, icon: 'fa-route' });
         }
 
         if (nodeKind === 'struct' || nodeKind === 'class' || nodeKind === 'interface') {
-          suggestions.push({ text: 'Show where this type is used', icon: 'fa-code-branch' });
+          suggestions.push({ text: `Show callers of ${symbolName}`, icon: 'fa-code-branch' });
           suggestions.push({ text: 'Show type hierarchy', icon: 'fa-sitemap' });
         }
 
         if (nodeKind === 'variable' || nodeKind === 'const') {
-          suggestions.push({ text: 'Find all references', icon: 'fa-search' });
+          suggestions.push({ text: `Find references to ${symbolName}`, icon: 'fa-search' });
         }
       }
     }

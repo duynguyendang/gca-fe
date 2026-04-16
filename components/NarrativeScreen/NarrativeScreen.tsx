@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { useAppContext, NarrativeMessage } from '../../context/AppContext';
 import UnifiedSearchBar from '../UnifiedSearchBar';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
@@ -12,6 +12,98 @@ interface NarrativeScreenProps {
     onLinkClick?: (href: string) => void;
 }
 
+interface Suggestion {
+    text: string;
+    icon: string;
+}
+
+/**
+ * Generate context-aware follow-up suggestions based on:
+ * - Selected node in the graph
+ * - Last AI message content
+ * - Project context
+ */
+const generateFollowUpSuggestions = (
+    selectedNode: any,
+    lastAIMessage: string | null,
+    contextualSuggestions: Suggestion[]
+): Suggestion[] => {
+    const suggestions: Suggestion[] = [];
+
+    // Get the first 3 contextual suggestions (already smart-filtered)
+    const relevantSuggestions = contextualSuggestions.slice(0, 3);
+
+    // If we have contextual suggestions from the hook, use them
+    if (relevantSuggestions.length > 0) {
+        // Add node-specific suggestions first
+        if (selectedNode) {
+            const nodeKind = (selectedNode.kind || selectedNode.type || '').toLowerCase();
+            const isFile = selectedNode._isFile || nodeKind === 'file';
+
+            if (isFile) {
+                suggestions.push({ text: `Explain this file in detail`, icon: 'fa-file-code' });
+                suggestions.push({ text: `Show all functions in this file`, icon: 'fa-code' });
+            } else if (nodeKind === 'function' || nodeKind === 'func') {
+                suggestions.push({ text: `Show callers of ${selectedNode.name}`, icon: 'fa-code-branch' });
+                suggestions.push({ text: `Trace this function's execution`, icon: 'fa-route' });
+            } else if (nodeKind === 'struct' || nodeKind === 'class') {
+                suggestions.push({ text: `Show where this type is used`, icon: 'fa-search' });
+                suggestions.push({ text: `Explain this type's methods`, icon: 'fa-info-circle' });
+            }
+        }
+
+        // Add contextually relevant suggestions
+        for (const s of relevantSuggestions) {
+            if (suggestions.length >= 4) break;
+            // Avoid duplicates
+            if (!suggestions.some(existing => existing.text === s.text)) {
+                suggestions.push(s);
+            }
+        }
+    }
+
+    // Add content-based suggestions if we have the last AI message
+    if (lastAIMessage) {
+        const msg = lastAIMessage.toLowerCase();
+
+        // Detect topics in AI response and suggest relevant follow-ups
+        if (msg.includes('auth') || msg.includes('login') || msg.includes('token')) {
+            suggestions.push({ text: 'Show the authentication flow', icon: 'fa-lock' });
+        }
+        if (msg.includes('api') || msg.includes('endpoint') || msg.includes('handler')) {
+            suggestions.push({ text: 'List all API endpoints', icon: 'fa-plug' });
+        }
+        if (msg.includes('database') || msg.includes('sql') || msg.includes('query')) {
+            suggestions.push({ text: 'Show the database schema', icon: 'fa-database' });
+        }
+        if (msg.includes('error') || msg.includes('exception') || msg.includes('fail')) {
+            suggestions.push({ text: 'What could go wrong here?', icon: 'fa-exclamation-triangle' });
+        }
+        if (msg.includes('depend') || msg.includes('import')) {
+            suggestions.push({ text: 'Show full dependency graph', icon: 'fa-project-diagram' });
+        }
+    }
+
+    // Always have a few diverse options
+    if (suggestions.length < 3) {
+        const fallbacks: Suggestion[] = [
+            { text: 'Explain that in more detail', icon: 'fa-lightbulb' },
+            { text: 'Show the related code', icon: 'fa-code' },
+            { text: 'What are potential issues?', icon: 'fa-exclamation-triangle' },
+            { text: 'Show entry points', icon: 'fa-sign-in-alt' },
+        ];
+
+        for (const f of fallbacks) {
+            if (suggestions.length >= 4) break;
+            if (!suggestions.some(existing => existing.text === f.text)) {
+                suggestions.push(f);
+            }
+        }
+    }
+
+    return suggestions.slice(0, 4);
+};
+
 const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
     onNodeSelect,
     onSymbolClick,
@@ -24,27 +116,53 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         setNarrativeMessages,
         setIsNarrativeLoading,
         dataApiBase,
+        selectedNode,
+        setSelectedNode,
+        setFileScopedNodes,
+        setFileScopedLinks,
     } = useAppContext();
 
     const { suggestions: contextualSuggestions } = useContextualSuggestions();
     const { buildContext } = useQueryContext();
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const [showNewChatModal, setShowNewChatModal] = useState(false);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [narrativeMessages, isNarrativeLoading]);
 
+    // Get the last AI message for context
+    const lastAIMessage = useMemo(() => {
+        const aiMessages = narrativeMessages.filter(m => m.role === 'ai');
+        return aiMessages.length > 0 ? aiMessages[aiMessages.length - 1].content : null;
+    }, [narrativeMessages]);
+
+    // Generate context-aware follow-up suggestions
+    const followUpSuggestions = useMemo(() => {
+        if (isNarrativeLoading || narrativeMessages.length === 0) return [];
+        return generateFollowUpSuggestions(selectedNode, lastAIMessage, contextualSuggestions);
+    }, [selectedNode, lastAIMessage, contextualSuggestions, isNarrativeLoading, narrativeMessages.length]);
+
     const startNewConversation = useCallback(() => {
-        if (narrativeMessages.length > 0 && !window.confirm('Start a new conversation? This will clear your current chat.')) {
-            return;
-        }
         setNarrativeMessages([]);
-    }, [setNarrativeMessages, narrativeMessages.length]);
+        setSelectedNode(null);
+        setFileScopedNodes([]);
+        setFileScopedLinks([]);
+        setShowNewChatModal(false);
+    }, [setNarrativeMessages, setSelectedNode, setFileScopedNodes, setFileScopedLinks]);
+
+    const confirmNewChat = useCallback(() => {
+        if (narrativeMessages.length > 0) {
+            setShowNewChatModal(true);
+        } else {
+            startNewConversation();
+        }
+    }, [narrativeMessages.length, startNewConversation]);
 
     const submitNarrativeQuery = useCallback(async (query: string) => {
         if (!query.trim() || isNarrativeLoading || !dataApiBase || !selectedProjectId) return;
 
-        const { enhancedQuery, contextData } = await buildContext();
+        const { enhancedQuery, contextData } = await buildContext(query);
 
         let fullQuery = query;
         if (narrativeMessages.length > 0) {
@@ -55,6 +173,11 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         }
 
         fullQuery += `\n\n${enhancedQuery}`;
+
+        const MAX_QUERY_LENGTH = 9500;
+        if (fullQuery.length > MAX_QUERY_LENGTH) {
+            fullQuery = fullQuery.substring(0, MAX_QUERY_LENGTH) + '\n...[query shortened]';
+        }
 
         const userMsg: NarrativeMessage = {
             role: 'user',
@@ -82,17 +205,28 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
             setNarrativeMessages(prev => [...prev, aiMsg]);
         } catch (error: any) {
             console.error('Narrative AI Error:', error);
-            const errorMsg: NarrativeMessage = {
+            // Clean up error message for user
+            let userMessage = 'Something went wrong. Please try again.';
+            const errorMsg = error.message || '';
+            if (errorMsg.includes('aborted') || errorMsg.includes('cancelled')) {
+                userMessage = 'Request was cancelled.';
+            } else if (errorMsg.includes('timed out')) {
+                userMessage = 'The request took too long. The backend might be busy.';
+            } else if (errorMsg.includes('network') || errorMsg.includes('fetch')) {
+                userMessage = 'Could not connect to the backend. Please check your connection.';
+            }
+
+            const errorResponseMsg: NarrativeMessage = {
                 role: 'ai',
-                content: `I apologize, but I encountered an error while processing your request: ${error.message || 'Unknown error'}. Please try again.`,
+                content: `I encountered an issue: ${userMessage}`,
                 timestamp: Date.now(),
                 sections: [{
                     type: 'inconsistency',
-                    title: 'Error',
-                    content: error.message || 'Failed to process your request',
+                    title: 'Issue',
+                    content: 'Try rephrasing your question or ask about something else.',
                 }],
             };
-            setNarrativeMessages(prev => [...prev, errorMsg]);
+            setNarrativeMessages(prev => [...prev, errorResponseMsg]);
         } finally {
             setIsNarrativeLoading(false);
         }
@@ -232,7 +366,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                 <div className="ml-auto flex items-center gap-3">
                     {narrativeMessages.length > 0 && !isNarrativeLoading && (
                         <button
-                            onClick={startNewConversation}
+                            onClick={confirmNewChat}
                             aria-label="Start new conversation"
                             className="flex items-center gap-2 px-3 py-1.5 bg-[#16222a] border border-white/10 rounded-lg text-[9px] text-slate-400 hover:text-white hover:border-white/20 transition-all"
                             title="Start a new conversation"
@@ -276,6 +410,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                             </p>
                         </div>
 
+                        {/* Contextual quick-start suggestions */}
                         <div className="flex flex-wrap justify-center gap-2 mt-4">
                             {(contextualSuggestions.length > 0 ? contextualSuggestions : [
                                 { text: 'Trace the authentication flow', icon: 'fa-route' },
@@ -294,10 +429,32 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                                 </button>
                             ))}
                         </div>
+
+                        {/* Help text */}
+                        <p className="text-[10px] text-slate-600 mt-4">
+                            Try clicking a file in the sidebar to get started
+                        </p>
                     </div>
                 ) : (
                     <div className="max-w-4xl mx-auto">
                         {narrativeMessages.map((msg, idx) => renderMessage(msg, idx))}
+
+                        {/* Context-aware follow-up suggestions */}
+                        {!isNarrativeLoading && followUpSuggestions.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-4 pl-4">
+                                <span className="text-[9px] text-slate-600 self-center mr-2">Try:</span>
+                                {followUpSuggestions.map((suggestion, i) => (
+                                    <button
+                                        key={i}
+                                        onClick={() => submitNarrativeQuery(suggestion.text)}
+                                        className="px-3 py-1.5 bg-[var(--accent-blue)]/5 border border-[var(--accent-blue)]/20 rounded-lg text-[9px] text-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/10 transition-all flex items-center gap-1.5"
+                                    >
+                                        <i className={`fas ${suggestion.icon} text-[8px]`}></i>
+                                        {suggestion.text}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
 
                         {isNarrativeLoading && (
                             <div className="flex justify-start mb-6 section-slide-in">
@@ -317,7 +474,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                                                 <div className="w-2 h-2 rounded-full bg-[var(--accent-blue)] animate-bounce" style={{ animationDelay: '150ms' }}></div>
                                                 <div className="w-2 h-2 rounded-full bg-[var(--accent-blue)] animate-bounce" style={{ animationDelay: '300ms' }}></div>
                                             </div>
-                                            <span className="text-[11px] text-slate-400">Analyzing your codebase...</span>
+                                            <span className="text-[11px] text-slate-400">Thinking...</span>
                                         </div>
                                     </div>
                                 </div>
@@ -329,10 +486,42 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                 )}
             </div>
 
+            {/* New Chat Confirmation Modal */}
+            {showNewChatModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="bg-[#1a2332] border border-white/10 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-full bg-[var(--accent-blue)]/20 flex items-center justify-center">
+                                <i className="fas fa-comments text-[var(--accent-blue)]"></i>
+                            </div>
+                            <h3 className="text-base font-bold text-white">Start New Conversation?</h3>
+                        </div>
+                        <p className="text-[12px] text-slate-400 mb-6">
+                            This will clear your current conversation. This action cannot be undone.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowNewChatModal(false)}
+                                className="flex-1 px-4 py-2.5 bg-[#16222a] border border-white/10 rounded-lg text-[11px] text-slate-400 hover:text-white hover:border-white/20 transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={startNewConversation}
+                                className="flex-1 px-4 py-2.5 bg-red-500/20 border border-red-500/30 rounded-lg text-[11px] text-red-400 hover:bg-red-500/30 transition-all"
+                            >
+                                Clear Chat
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <UnifiedSearchBar
               accentColor="blue"
-              suggestions={contextualSuggestions}
+              suggestions={isNarrativeLoading ? [] : contextualSuggestions}
               onSubmit={submitNarrativeQuery}
+              disabled={isNarrativeLoading}
             />
         </div>
     );

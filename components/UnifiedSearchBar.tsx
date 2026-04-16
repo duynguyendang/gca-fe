@@ -45,7 +45,9 @@ const UnifiedSearchBar: React.FC<UnifiedSearchBarProps> = ({
 
   const handleSubmit = () => {
     if (searchTerm.trim() && onSubmit && !disabled) {
-      onSubmit(searchTerm);
+      const query = searchTerm;
+      setSearchTerm('');
+      onSubmit(query);
     }
   };
 
@@ -57,7 +59,7 @@ const UnifiedSearchBar: React.FC<UnifiedSearchBarProps> = ({
 
   const handleSuggestionClick = (text: string) => {
     if (disabled) return;
-    setSearchTerm(text);
+    setSearchTerm('');
     if (onSubmit) {
       onSubmit(text);
     }

@@ -1,6 +1,6 @@
 import React from 'react';
 
-type ViewMode = 'map' | 'discovery' | 'architecture' | 'narrative';
+type ViewMode = 'map' | 'discovery' | 'architecture' | 'narrative' | 'dashboard';
 
 interface ViewModeSwitcherProps {
   viewMode: ViewMode;
@@ -13,12 +13,23 @@ const ViewModeSwitcher: React.FC<ViewModeSwitcherProps> = ({ viewMode, onViewMod
       case 'narrative': return 'var(--accent-blue)';
       case 'architecture': return 'var(--accent-purple)';
       case 'map': return '#f59e0b';
+      case 'dashboard': return 'var(--accent-teal)';
       default: return 'var(--accent-teal)';
     }
   };
 
   return (
     <div className="view-switcher" role="tablist" aria-label="View mode" style={{ '--glow-color': getGlowColor() } as any}>
+      <button
+        role="tab"
+        aria-selected={viewMode === 'dashboard'}
+        aria-label="Dashboard view"
+        className={viewMode === 'dashboard' ? 'active' : ''}
+        onClick={() => onViewModeChange('dashboard')}
+      >
+        <i className="fas fa-chart-pie mr-1.5 opacity-80"></i>
+        DASHBOARD
+      </button>
       <button
         role="tab"
         aria-selected={viewMode === 'narrative'}

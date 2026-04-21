@@ -7,6 +7,7 @@ import { useApiSync, useResizePanels, useSmartSearch, useInsights, useManifest, 
 import { CodePanel } from './components/Layout';
 import { NarrativeScreen } from './components/NarrativeScreen';
 import { LandingScreen } from './components/LandingScreen/LandingScreen';
+import { Dashboard } from './components/Dashboard';
 import AppHeader from './components/AppHeader';
 import AppSidebar from './components/AppSidebar';
 import AppFooter from './components/AppFooter';
@@ -21,6 +22,7 @@ import { askAI } from './services/geminiService';
 import { detectLanguage } from './utils/languageUtils';
 import { requestManager } from './utils/requestManager';
 import { logger } from './src/logger';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import './src/prismSetup';
 
 // Query mode for intent-based routing
@@ -186,11 +188,13 @@ const App: React.FC = () => {
       setCurrentProject(project.name);
       setNarrativeMessages([]);
       toast.info(`Loading project: ${project.name}`);
+      // Always show dashboard when project changes
+      setViewMode('dashboard');
       syncDataFromApi(dataApiBase, projectId, () => {
         toast.success(`Project ${project.name} loaded`);
       });
     }
-  }, [availableProjects, dataApiBase, setCurrentProject, setSelectedProjectId, syncDataFromApi, toast, setNarrativeMessages]);
+  }, [availableProjects, dataApiBase, setCurrentProject, setSelectedProjectId, syncDataFromApi, toast, setNarrativeMessages, setViewMode]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -607,6 +611,8 @@ const App: React.FC = () => {
                   onLinkClick={(href: string) => logger.log('Link clicked:', href)}
                   onSymbolClick={(symbol: string) => logger.log('Symbol clicked:', symbol)}
                 />
+              ) : viewMode === 'dashboard' ? (
+                <Dashboard refreshKey={'dashboard-' + selectedProjectId} />
               ) : (
                 <div className={`flex-1 flex min-h-0 ${isSubModeSwitching ? 'animate-pulse opacity-80' : 'transition-opacity duration-500'}`}>
                   <GraphContainer

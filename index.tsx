@@ -1,6 +1,7 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 
 const rootElement = document.getElementById('root');
@@ -14,10 +15,12 @@ import { ToastProvider } from './context/ToastContext';
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <AppProvider>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
-    </AppProvider>
+    <BrowserRouter>
+      <AppProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </AppProvider>
+    </BrowserRouter>
   </React.StrictMode>
 );

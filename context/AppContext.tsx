@@ -38,7 +38,7 @@ export interface NarrativeMessage {
     timestamp: number;
 }
 
-export type ViewMode = 'map' | 'discovery' | 'architecture' | 'narrative';
+export type ViewMode = 'map' | 'discovery' | 'architecture' | 'narrative' | 'dashboard';
 export type SubMode = 'NARRATIVE' | 'ARCHITECTURE' | 'ENTROPY';
 
 interface AppState {

@@ -824,6 +824,44 @@ export async function findLCA(
 }
 
 /**
+ * Health summary response
+ */
+export interface HealthSummary {
+  overall_score: number;
+  total_smells: number;
+  total_hubs: number;
+  total_entry_points: number;
+  smells: Array<{
+    file: string;
+    smell_type: string;
+    severity: 'High' | 'Medium' | 'Low';
+  }>;
+}
+
+/**
+ * Fetch health summary for a project
+ * GET /api/v1/health/summary?project={projectId}
+ */
+export async function fetchHealthSummary(
+  dataApiBase: string,
+  projectId: string
+): Promise<HealthSummary> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/health/summary?project=${encodeURIComponent(projectId)}`;
+
+  console.log('[GraphService] Fetching health summary:', url);
+  const response = await fetchWithTimeout(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch health summary: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] Health summary response:', data);
+  return data;
+}
+
+/**
  * Enrich store with called_by predicates
  * POST /api/v1/graph/enrich-called-by?project={projectId}
  */

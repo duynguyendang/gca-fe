@@ -1,8 +1,11 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { logger } from '../logger';
 
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
+  /** Component name for better error messages */
+  name?: string;
 }
 
 interface State {
@@ -21,7 +24,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    logger.error(`[ErrorBoundary${this.props.name ? `(${this.props.name})` : ''}] Caught error:`, error.message, errorInfo);
   }
 
   render(): ReactNode {

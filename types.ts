@@ -120,3 +120,31 @@ export interface BackboneFileCluster {
   outgoingLinks: BackboneLink[];
   incomingLinks: BackboneLink[];
 }
+
+// Dashboard V2 Risk Leaderboard types
+export interface FileHealth {
+  file_name: string;
+  total_debt_score: number;
+  security_issues: number;
+  arch_smells: string[];
+}
+
+export interface HealthSummaryV2 {
+  overall_score: number;
+  total_security_alerts: number;
+  total_arch_debt: number;
+  files: FileHealth[];
+}
+
+// Legacy health summary (for backward compatibility)
+export interface HealthSummaryLegacy {
+  overall_score: number;
+  total_smells: number;
+  total_hubs: number;
+  total_entry_points: number;
+  smells: Array<{
+    file: string;
+    smell_type: string;
+    severity: 'High' | 'Medium' | 'Low';
+  }>;
+}

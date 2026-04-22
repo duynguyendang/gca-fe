@@ -144,6 +144,12 @@ interface AppState {
     // Landing View
     isLandingView: boolean;
     setIsLandingView: React.Dispatch<React.SetStateAction<boolean>>;
+
+    // AI Chat Drawer (Dashboard V2)
+    isChatDrawerOpen: boolean;
+    setIsChatDrawerOpen: React.Dispatch<React.SetStateAction<boolean>>;
+    initialChatPrompt: string;
+    setInitialChatPrompt: React.Dispatch<React.SetStateAction<string>>;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -244,6 +250,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         return !sessionStorage.getItem('gca_selected_project_v2');
     });
 
+    // AI Chat Drawer state (Dashboard V2)
+    const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+    const [initialChatPrompt, setInitialChatPrompt] = useState('');
+
     const value: AppState = {
         astData, setAstData,
         sandboxFiles, setSandboxFiles,
@@ -281,6 +291,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         isCodeCollapsed, setIsCodeCollapsed,
         isSynthesisCollapsed, setIsSynthesisCollapsed,
         isLandingView, setIsLandingView,
+        isChatDrawerOpen, setIsChatDrawerOpen,
+        initialChatPrompt, setInitialChatPrompt,
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

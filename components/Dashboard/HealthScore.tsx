@@ -1,12 +1,27 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 
 interface HealthScoreProps {
   score: number;
 }
 
+// Arc geometry constants
+const RADIUS = 40;
+const CENTER = 50;
+const STROKE_WIDTH = 8;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+const MAX_DASH = CIRCUMFERENCE * 0.75; // 270 degrees = 3/4 of circle
+
+// Convert score (0-100) to rotation angle (-135 to 135 degrees, for 270 degree arc)
+const scoreToRotation = (score: number): number => (score / 100) * 270 - 135;
+
+// Calculate arc length based on score (0-100 maps to 0-270 degrees)
+const scoreToArcLength = (score: number): number => (score / 100) * MAX_DASH;
+
 export const HealthScore: React.FC<HealthScoreProps> = ({ score }) => {
-  // Score is 0-100, map to degrees (270 degree arc)
-  const rotation = (score / 100) * 270 - 135; // -135 to 135 degrees
+  const rotation = useMemo(() => scoreToRotation(score), [score]);
+  const arcLength = useMemo(() => scoreToArcLength(score), [score]);
+  const backgroundArc = useMemo(() => MAX_DASH, []);
+  const gapArc = useMemo(() => CIRCUMFERENCE - MAX_DASH, []);
 
   const getScoreColor = () => {
     if (score >= 80) return '#2DD4BF'; // teal - good
@@ -28,29 +43,29 @@ export const HealthScore: React.FC<HealthScoreProps> = ({ score }) => {
         {/* Background arc */}
         <svg className="w-full h-full" viewBox="0 0 100 100">
           <circle
-            cx="50"
-            cy="50"
-            r="40"
+            cx={CENTER}
+            cy={CENTER}
+            r={RADIUS}
             fill="none"
             stroke="rgba(255,255,255,0.08)"
-            strokeWidth="8"
-            strokeDasharray="188.5 62.8"
-            strokeDashoffset="47"
+            strokeWidth={STROKE_WIDTH}
+            strokeDasharray={`${backgroundArc} ${gapArc}`}
+            strokeDashoffset={0}
             strokeLinecap="round"
-            transform="rotate(135 50 50)"
+            transform={`rotate(${rotation + 135} ${CENTER} ${CENTER})`}
           />
           {/* Score arc */}
           <circle
-            cx="50"
-            cy="50"
-            r="40"
+            cx={CENTER}
+            cy={CENTER}
+            r={RADIUS}
             fill="none"
             stroke={getScoreColor()}
-            strokeWidth="8"
-            strokeDasharray={`${(score / 100) * 188.5} 251.3`}
-            strokeDashoffset="47"
+            strokeWidth={STROKE_WIDTH}
+            strokeDasharray={`${arcLength} ${CIRCUMFERENCE - arcLength}`}
+            strokeDashoffset={0}
             strokeLinecap="round"
-            transform="rotate(135 50 50)"
+            transform={`rotate(${rotation + 135} ${CENTER} ${CENTER})`}
             style={{
               filter: `drop-shadow(0 0 8px ${getScoreColor()})`,
               transition: 'stroke-dasharray 0.5s ease'

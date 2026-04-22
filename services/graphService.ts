@@ -823,8 +823,23 @@ export async function findLCA(
   return data;
 }
 
+// Dashboard V2 Risk Leaderboard types
+export interface FileHealth {
+  file_name: string;
+  total_debt_score: number;
+  security_issues: number;
+  arch_smells: string[];
+}
+
+export interface HealthSummaryV2 {
+  overall_score: number;
+  total_security_alerts: number;
+  total_arch_debt: number;
+  files: FileHealth[];
+}
+
 /**
- * Health summary response
+ * Health summary response (legacy)
  */
 export interface HealthSummary {
   overall_score: number;
@@ -858,6 +873,29 @@ export async function fetchHealthSummary(
 
   const data = await response.json();
   console.log('[GraphService] Health summary response:', data);
+  return data;
+}
+
+/**
+ * Fetch health summary V2 (Risk Leaderboard) for a project
+ * GET /api/v1/health/summary?project={projectId}&version=2
+ */
+export async function fetchHealthSummaryV2(
+  dataApiBase: string,
+  projectId: string
+): Promise<HealthSummaryV2> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/health/summary/v2?project=${encodeURIComponent(projectId)}`;
+
+  console.log('[GraphService] Fetching health summary V2:', url);
+  const response = await fetchWithTimeout(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch health summary V2: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('[GraphService] Health summary V2 response:', data);
   return data;
 }
 

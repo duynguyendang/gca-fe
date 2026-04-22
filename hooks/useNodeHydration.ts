@@ -1,6 +1,7 @@
 /**
  * useNodeHydration - Hook for hydrating individual nodes
  * Extracted from App.tsx hydrateNode function
+ * Uses bounded cache to prevent memory leaks
  */
 import { useCallback, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
@@ -8,6 +9,10 @@ import { FlatGraph } from '../types';
 import { logger } from '../src/logger';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { requestManager } from '../utils/requestManager';
+import { TTLBoundedCache } from '../utils/cacheUtils';
+
+const HYDRATION_CACHE_MAX_SIZE = 50;
+const HYDRATION_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export const useNodeHydration = () => {
     const {
@@ -20,6 +25,10 @@ export const useNodeHydration = () => {
         setAstData
     } = useAppContext();
 
+    // Bounded local cache to prevent unbounded growth
+    // Uses TTL to auto-expire stale entries
+    const localCache = useRef(new TTLBoundedCache<string, any>(HYDRATION_CACHE_MAX_SIZE, HYDRATION_CACHE_TTL_MS));
+
     // Track the current hydration request to handle race conditions
     const hydrationRequestRef = useRef<string | null>(null);
 
@@ -30,26 +39,43 @@ export const useNodeHydration = () => {
             nodeId.startsWith('/*') ||
             nodeId.includes('\n') ||
             nodeId.length > 200) {
-            console.warn('[Hydrate] Skipping invalid nodeId:', nodeId?.substring(0, 50));
+            logger.warn('[Hydrate] Skipping invalid nodeId:', nodeId?.substring(0, 50));
             return null;
         }
 
-        // Check cache first
+        // Check local bounded cache first (fast path with auto-eviction)
+        const cached = localCache.current.get(nodeId);
+        if (cached !== undefined) {
+            logger.log('[Hydrate] Cache hit for:', nodeId);
+            return cached;
+        }
+
+        // Check global symbolCache
         if (symbolCache.has(nodeId)) {
             logger.log('[Hydrate] Cache hit for:', nodeId);
-            return symbolCache.get(nodeId);
+            const cachedNode = symbolCache.get(nodeId);
+            // Populate local cache for future lookups
+            localCache.current.set(nodeId, cachedNode);
+            return cachedNode;
         }
 
         // Check if node already has code
         const existingNode = (astData as FlatGraph)?.nodes?.find((n: any) => n.id === nodeId);
         if (existingNode?.code) {
             logger.log('[Hydrate] Node already has code:', nodeId);
-            setSymbolCache(prev => new Map(prev).set(nodeId, existingNode));
+            localCache.current.set(nodeId, existingNode);
+            setSymbolCache(prev => {
+                // Only update global cache if we're under the limit
+                if (prev.size < HYDRATION_CACHE_MAX_SIZE * 2) {
+                    return new Map(prev).set(nodeId, existingNode);
+                }
+                return prev;
+            });
             return existingNode;
         }
 
         if (!dataApiBase || !selectedProjectId) {
-            console.warn('[Hydrate] Missing dataApiBase or selectedProjectId');
+            logger.warn('[Hydrate] Missing dataApiBase or selectedProjectId');
             return null;
         }
 
@@ -93,7 +119,7 @@ export const useNodeHydration = () => {
             } catch (e) {
                 // Ignore abort errors
                 if ((e as Error).name !== 'AbortError') {
-                    console.warn('[Hydrate] Path resolution failed', e);
+                    logger.warn('[Hydrate] Path resolution failed', e);
                 }
             }
         }
@@ -115,15 +141,23 @@ export const useNodeHydration = () => {
             }
 
             if (!response.ok) {
-                console.error('[Hydrate] Failed to hydrate node:', response.status, response.statusText);
+                logger.error('[Hydrate] Failed to hydrate node:', response.status, response.statusText);
                 return null;
             }
 
             const hydratedNode = await response.json();
             logger.log('[Hydrate] Successfully hydrated node:', hydratedNode);
 
-            // Update cache
-            setSymbolCache(prev => new Map(prev).set(nodeId, hydratedNode));
+            // Update local bounded cache (auto-evicts old entries)
+            localCache.current.set(nodeId, hydratedNode);
+
+            // Update global symbolCache only if under size limit
+            setSymbolCache(prev => {
+                if (prev.size < HYDRATION_CACHE_MAX_SIZE * 2) {
+                    return new Map(prev).set(nodeId, hydratedNode);
+                }
+                return prev;
+            });
 
             // Update astData with the hydrated node
             setAstData(prev => {
@@ -142,7 +176,7 @@ export const useNodeHydration = () => {
             if ((error as Error).name === 'AbortError' || (error as Error).message?.includes('aborted')) {
                 logger.log('[Hydrate] Request cancelled for:', nodeId);
             } else {
-                console.error('[Hydrate] Error hydrating node:', error);
+                logger.error('[Hydrate] Error hydrating node:', error);
             }
             return null;
         } finally {

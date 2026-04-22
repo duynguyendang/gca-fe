@@ -1,15 +1,84 @@
 
 /**
  * Gemini Service (Refactored)
- * 
+ *
  * Replaces direct Google GenAI client with calls to the Go Backend Proxy.
  * Endpoint: POST /api/v1/ai/ask
  */
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { API_CONFIG } from '../src/constants';
+import { logger } from '../src/logger';
 
 export interface AIResponse {
   answer: string;
+}
+
+/**
+ * Safely extract JSON from AI response text
+ * Handles cases where AI wraps JSON in markdown code blocks or adds extra text
+ */
+function extractJSON<T>(text: string, fallback: T): T {
+    if (!text || typeof text !== 'string') {
+        return fallback;
+    }
+
+    // Try direct JSON parse first
+    try {
+        return JSON.parse(text);
+    } catch {
+        // Continue with extraction
+    }
+
+    // Remove markdown code blocks
+    let cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
+
+    // Try to find JSON object or array
+    const firstBrace = cleaned.indexOf('{');
+    const firstBracket = cleaned.indexOf('[');
+
+    let jsonStr = cleaned;
+    if (firstBrace >= 0 && firstBracket >= 0) {
+        // Take whichever comes first
+        jsonStr = firstBrace < firstBracket ? cleaned.substring(firstBrace) : cleaned.substring(firstBracket);
+    } else if (firstBrace >= 0) {
+        jsonStr = cleaned.substring(firstBrace);
+    } else if (firstBracket >= 0) {
+        jsonStr = cleaned.substring(firstBracket);
+    }
+
+    // Find matching closing brace/bracket
+    let depth = 0;
+    let end = -1;
+    const startChar = jsonStr[0];
+
+    if (startChar !== '{' && startChar !== '[') {
+        logger.warn('[GeminiService] Failed to extract JSON: no object or array found');
+        return fallback;
+    }
+
+    for (let i = 0; i < jsonStr.length; i++) {
+        const char = jsonStr[i];
+        if (char === '{' || char === '[') {
+            depth++;
+        } else if (char === '}' || char === ']') {
+            depth--;
+            if (depth === 0) {
+                end = i + 1;
+                break;
+            }
+        }
+    }
+
+    if (end > 0) {
+        jsonStr = jsonStr.substring(0, end);
+    }
+
+    try {
+        return JSON.parse(jsonStr);
+    } catch (e) {
+        logger.warn('[GeminiService] Failed to parse extracted JSON:', e);
+        return fallback;
+    }
 }
 
 /**
@@ -48,7 +117,7 @@ export const askAI = async (
 
   if (!response.ok) {
     const errText = await response.text();
-    console.error('[GeminiService] Backend Error:', response.status, errText);
+    logger.error('[GeminiService] Backend Error:', response.status, errText);
     throw new Error(`AI Service Error: ${response.statusText}`);
   }
 
@@ -108,17 +177,9 @@ export const pruneNodesWithAI = async (
   });
 
   try {
-    // Attempt to clean markdown if backend returns it
-    const jsonStr = answer.replace(/`/g, '').replace(/json/g, '').trim();
-    // Use regex to find first { and last }
-    const firstBrace = jsonStr.indexOf('{');
-    const lastBrace = jsonStr.lastIndexOf('}');
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      return JSON.parse(jsonStr.substring(firstBrace, lastBrace + 1));
-    }
-    return JSON.parse(jsonStr);
+    return extractJSON(answer, { selectedIds: nodes.slice(0, 7).map(n => n.id), explanation: "AI parsing failed. Showing top 7." });
   } catch (e) {
-    console.warn("Failed to parse prune JSON:", e);
+    logger.warn('[GeminiService] Failed to parse prune response:', e);
     return { selectedIds: nodes.slice(0, 7).map(n => n.id), explanation: "AI parsing failed. Showing top 7." };
   }
 };
@@ -194,13 +255,7 @@ export const findPathEndpoints = async (
   });
 
   try {
-    const jsonStr = answer.replace(/`/g, '').replace(/json/g, '').trim();
-    const firstBrace = jsonStr.indexOf('{');
-    const lastBrace = jsonStr.lastIndexOf('}');
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      return JSON.parse(jsonStr.substring(firstBrace, lastBrace + 1));
-    }
-    return JSON.parse(jsonStr);
+    return extractJSON<{ from: string; to: string } | null>(answer, null);
   } catch {
     return null;
   }
@@ -435,7 +490,7 @@ export const unifiedAsk = async (
 
   if (!response.ok) {
     const errText = await response.text();
-    console.error('[GeminiService] Unified Ask Error:', response.status, errText);
+    logger.error('[GeminiService] Unified Ask Error:', response.status, errText);
     throw new Error(`Unified Ask Error: ${response.statusText}`);
   }
 

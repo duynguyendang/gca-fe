@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
-import { useAppContext, NarrativeMessage } from '../../context/AppContext';
+import { useNarrativeContext, NarrativeMessage } from '../../context/NarrativeContext';
+import { useSettingsContext } from '../../context/SettingsContext';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
 import { askAI } from '../../services/geminiService';
 import { useQueryContext } from '../../hooks/useQueryContext';
+import { logger } from '../../logger';
 
 interface AIChatDrawerProps {
   isOpen: boolean;
@@ -11,14 +13,8 @@ interface AIChatDrawerProps {
 }
 
 export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, initialPrompt }) => {
-  const {
-    dataApiBase,
-    selectedProjectId,
-    narrativeMessages,
-    setNarrativeMessages,
-    isNarrativeLoading,
-    setIsNarrativeLoading,
-  } = useAppContext();
+  const { dataApiBase, selectedProjectId } = useSettingsContext();
+  const { narrativeMessages, setNarrativeMessages, isNarrativeLoading, setIsNarrativeLoading } = useNarrativeContext();
 
   const { buildContext } = useQueryContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -80,7 +76,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
 
       setNarrativeMessages(prev => [...prev, aiMsg]);
     } catch (error: any) {
-      console.error('AI Chat Error:', error);
+      logger.error('[AIChatDrawer] AI Chat Error:', error);
       let userMessage = 'Something went wrong. Please try again.';
       const errorMsg = error.message || '';
       if (errorMsg.includes('aborted') || errorMsg.includes('cancelled')) {

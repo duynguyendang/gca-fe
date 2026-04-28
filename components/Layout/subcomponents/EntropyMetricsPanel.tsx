@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
-import { useAppContext } from '../../../context/AppContext';
+import { useNarrativeContext } from '../../../context/NarrativeContext';
+import { useGraphContext } from '../../../context/GraphContext';
 import MarkdownRenderer from '../../Synthesis/MarkdownRenderer';
 import { FlatGraph } from '../../../types';
+import { logger } from '../../../logger';
 
 interface EntropyMetricsPanelProps {
     onLinkClick?: (href: string) => void;
@@ -126,7 +128,9 @@ const calculateEntropyMetrics = (astData: FlatGraph | null, selectedNodeId?: str
 };
 
 export const EntropyMetricsPanel: React.FC<EntropyMetricsPanelProps> = ({ onLinkClick, onSymbolClick }) => {
-    const { selectedNode, nodeInsight, isInsightLoading, astData } = useAppContext();
+    const { selectedNode } = useGraphContext();
+    const { nodeInsight, isInsightLoading } = useNarrativeContext();
+    const astData = useGraphContext().astData;
 
     const parsedEntropy = useMemo(() => {
         if (!nodeInsight) return null;
@@ -138,7 +142,7 @@ export const EntropyMetricsPanel: React.FC<EntropyMetricsPanelProps> = ({ onLink
                 if (parsed.entropy) return parsed.entropy;
             }
         } catch (e) {
-            console.warn('[EntropyMetricsPanel] Failed to parse dynamic entropy metrics:', e);
+            logger.warn('[EntropyMetricsPanel] Failed to parse dynamic entropy metrics:', e);
         }
         return null;
     }, [nodeInsight]);

@@ -21,3 +21,10 @@ export const EXTERNAL_URLS = {
   YOUTUBE_DEMO: 'https://www.youtube.com/watch?v=z3oDvCIMDYI',
   NOISE_SVG: 'https://grainy-gradients.vercel.app/noise.svg',
 };
+
+export const CUSTOM_EVENTS = {
+  FOCUS_SEARCH: 'gca:focus-search',
+  OPEN_SETTINGS: 'gca:open-settings',
+  REFRESH_DASHBOARD: 'gca:refresh-dashboard',
+  NODE_SELECTED: 'gca:node-selected',
+} as const;

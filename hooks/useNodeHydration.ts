@@ -4,9 +4,10 @@
  * Uses bounded cache to prevent memory leaks
  */
 import { useCallback, useRef } from 'react';
-import { useAppContext } from '../context/AppContext';
+import { useSettingsContext } from '../context/SettingsContext';
+import { useGraphContext } from '../context/GraphContext';
 import { FlatGraph } from '../types';
-import { logger } from '../src/logger';
+import { logger } from '../logger';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { requestManager } from '../utils/requestManager';
 import { TTLBoundedCache } from '../utils/cacheUtils';
@@ -15,15 +16,8 @@ const HYDRATION_CACHE_MAX_SIZE = 50;
 const HYDRATION_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export const useNodeHydration = () => {
-    const {
-        dataApiBase,
-        selectedProjectId,
-        setHydratingNodeId,
-        symbolCache,
-        setSymbolCache,
-        astData,
-        setAstData
-    } = useAppContext();
+    const { dataApiBase, selectedProjectId } = useSettingsContext();
+    const { setHydratingNodeId, symbolCache, setSymbolCache, astData, setAstData } = useGraphContext();
 
     // Bounded local cache to prevent unbounded growth
     // Uses TTL to auto-expire stale entries

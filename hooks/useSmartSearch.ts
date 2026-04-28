@@ -2,8 +2,9 @@
  * useSmartSearch - Hook for semantic search functionality
  * Extracted from App.tsx handleSmartSearch (~250 lines)
  */
-import { useCallback, useState, useRef } from 'react';
+import { useCallback, useState } from 'react';
 import { useManifest } from './useManifest';
+import { requestManager } from '../utils/requestManager';
 import {
     executeQuery,
     fetchSymbols,
@@ -12,7 +13,7 @@ import {
     fetchSemanticSearch,
     fetchSubgraph
 } from '../services/graphService';
-import { logger } from '../src/logger';
+import { logger } from '../logger';
 import {
     resolveSymbolFromQuery,
     translateNLToDatalog,
@@ -64,17 +65,10 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
     const [searchStatus, setSearchStatus] = useState<string | null>(null);
     const [queryResults, setQueryResults] = useState<any>(null);
 
-    // Track current search request to handle race conditions
-    const searchRequestRef = useRef<string | null>(null);
-
     const handleSmartSearch = useCallback(async (query: string) => {
-        // Cancel any in-flight search request
-        if (searchRequestRef.current) {
-            searchRequestRef.current = null; // Signal cancellation
-        }
-
-        const requestId = `search-${query}-${Date.now()}`;
-        searchRequestRef.current = requestId;
+        requestManager.cancelRequest('smartSearch');
+        const controller = requestManager.startRequest('smartSearch');
+        const signal = controller.signal;
 
         logger.log('=== handleSmartSearch called ===', query);
         setSearchError(null);
@@ -89,21 +83,17 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             return;
         }
 
-        // Helper to check if request is still valid before state updates
-        const isRequestStale = () => searchRequestRef.current !== requestId;
-
         try {
             // 0. Ultra-Fast-Path: Simple "what is X?" queries
             const whatIsMatch = query.match(/^what\s+is\s+(\w+)\??$/i);
             if (whatIsMatch) {
-                const symbolName = whatIsMatch[1];
+                const symbolName = whatIsMatch[1]!;
                 logger.log('[Ultra-Fast-Path] Detected simple lookup:', symbolName);
                 setSearchStatus(`Looking up ${symbolName}...`);
 
-                const symbols = await fetchSymbols(dataApiBase, selectedProjectId, symbolName);
-                if (symbols.length > 0) {
-                    // Found it! Just select the symbol and show it
-                    const symbolId = symbols[0];
+                const symbols = await fetchSymbols(dataApiBase, selectedProjectId, symbolName, undefined, signal);
+                if (!signal.aborted && symbols.length > 0) {
+                    const symbolId = symbols[0]!;
                     logger.log('[Ultra-Fast-Path] Found symbol:', symbolId);
                     setSelectedNode({ id: symbolId });
                     setNodeInsight(`Found symbol: ${symbolName}`);
@@ -114,6 +104,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             }
 
             // 1. Fast-Path: Check Manifest for Exact Match
+            if (signal.aborted) return;
             if (manifest && manifest.S && manifest.F) {
                 const exactMatchId = manifest.S[query.trim()];
                 if (exactMatchId) {
@@ -131,8 +122,9 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                         logger.log('[Fast-Path] Generated Datalog:', fastDatalog);
 
                         setSearchStatus("Executing fast query...");
-                        const result = await executeQuery(dataApiBase, selectedProjectId, fastDatalog);
+                        const result = await executeQuery(dataApiBase, selectedProjectId, fastDatalog, true, signal);
 
+                        if (signal.aborted) return;
                         if (result && result.nodes.length > 0) {
                             setQueryResults(result);
                             setIsSearching(false);
@@ -153,10 +145,12 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             // Datalog generation handles semantic queries better without a pre-selected symbol
 
             // Translate directly to Datalog (with project-specific predicates)
+            if (signal.aborted) return;
             setSearchStatus("Translating to Datalog...");
             const datalogQuery = await translateNLToDatalog(query, null, dataApiBase, selectedProjectId, availablePredicates);
             logger.log('Generated Datalog:', datalogQuery);
 
+            if (signal.aborted) return;
             if (!datalogQuery) {
                 setSearchError("Could not translate query to Datalog.");
                 setSearchStatus(null);
@@ -213,7 +207,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                         }
                     }
                 } catch (fallbackErr) {
-                    console.error("Semantic fallback failed:", fallbackErr);
+                    logger.error('[useSmartSearch] Semantic fallback failed:', fallbackErr);
                 }
 
                 // If semantic search ALSO fails, then show error
@@ -252,6 +246,13 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                         const sourceId = sourceSymbols[0];
                         const targetId = targetSymbols[0];
 
+                        if (!sourceId || !targetId) {
+                            setSearchError("Could not resolve symbol IDs");
+                            setSearchStatus(null);
+                            setIsSearching(false);
+                            return;
+                        }
+
                         logger.log('[Path-Finding] Resolved:', { sourceId, targetId });
                         setSearchStatus(`Tracing path from ${sourceId} to ${targetId}...`);
 
@@ -281,7 +282,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                             const analysis = await analyzePathWithCode(pathGraph, query, dataApiBase, selectedProjectId);
                             setNodeInsight(analysis);
                         } catch (err) {
-                            console.error("Path analysis failed:", err);
+                            logger.error('[useSmartSearch] Path analysis failed:', err);
                             setNodeInsight(`Found interaction path with ${pathGraph.nodes.length} steps.\n\n*AI analysis unavailable*`);
                         }
 
@@ -290,7 +291,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                         return;
                     }
                 } catch (e) {
-                    console.warn("Failed to parse tool call JSON:", e, "Query:", datalogQuery);
+                    logger.warn('[useSmartSearch] Failed to parse tool call JSON:', e, datalogQuery);
                     // Fall through to execute as Datalog
                 }
             }
@@ -343,7 +344,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                         }
                     }
                 } catch (fallbackErr) {
-                    console.error("Semantic fallback failed:", fallbackErr);
+                    logger.error('[useSmartSearch] Semantic fallback failed:', fallbackErr);
                 }
 
                 setSearchError('No results found for this query');
@@ -383,7 +384,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                 });
                 setNodeInsight(analysis || `Found ${results.nodes.length} nodes and ${results.links?.length || 0} relationships.`);
             } catch (aiErr) {
-                console.error("AI analysis failed:", aiErr);
+                logger.error('[useSmartSearch] AI analysis failed:', aiErr);
                 setNodeInsight(`Found ${results.nodes.length} nodes and ${results.links?.length || 0} relationships.`);
             }
 
@@ -391,19 +392,11 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             setIsSearching(false);
 
         } catch (err: any) {
-            // Only update state if request is not stale
-            if (!isRequestStale()) {
-                console.error("Smart Search Error:", err);
-                setSearchError(err.message || 'Search failed');
-                setNodeInsight("Search failed.");
-                setSearchStatus(null);
-                setIsSearching(false);
-            }
-        } finally {
-            // Clear request ref when search completes (success or cancelled)
-            if (searchRequestRef.current === requestId) {
-                searchRequestRef.current = null;
-            }
+            logger.error('[useSmartSearch] Smart Search Error:', err);
+            setSearchError(err.message || 'Search failed');
+            setNodeInsight("Search failed.");
+            setSearchStatus(null);
+            setIsSearching(false);
         }
     }, [dataApiBase, selectedProjectId, availablePredicates, manifest, onViewModeChange, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setNodeInsight, setLastExecutedQuery]);
 

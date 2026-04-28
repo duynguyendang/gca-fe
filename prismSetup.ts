@@ -14,7 +14,4 @@ import 'prismjs/components/prism-c';
 import 'prismjs/components/prism-css';
 import 'prismjs/components/prism-markup';
 
-// Attach to window for backward compatibility with any legacy code
-(window as any).Prism = Prism;
-
 export default Prism;

@@ -1,9 +1,9 @@
 import React from 'react';
-import { useAppContext } from '../../context/AppContext';
-import { EXTERNAL_URLS } from '../../src/constants';
+import { useUIContext } from '../../context/UIContext';
+import { EXTERNAL_URLS } from '../../constants';
 
 export const LandingScreen: React.FC = () => {
-    const { setIsLandingView } = useAppContext();
+    const { setIsLandingView } = useUIContext();
 
     const handleLaunch = () => {
         setIsLandingView(false);

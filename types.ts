@@ -11,7 +11,6 @@ export interface ASTNode {
   children?: ASTNode[];
   value?: JsonValue;
   metadata?: Record<string, string>;
-  [key: string]: JsonValue;
 }
 
 export interface SymbolStub {
@@ -36,16 +35,22 @@ export interface GraphNode {
   kind?: string;
   filePath?: string;
   file_path?: string;
+  _filePath?: string;
   start_line?: number;
   end_line?: number;
   code?: string;
   metadata?: Record<string, string>;
-  [key: string]: JsonValue;
+  _isFile?: boolean;
+  _isMissingCode?: boolean;
+  _scrollToLine?: number;
+  _parentFile?: string;
+  _isExpandedChild?: boolean;
+  _project?: string;
 }
 
 export interface GraphLink {
-  source: string;
-  target: string;
+  source: string | { id: string };
+  target: string | { id: string };
   relation?: string;
   source_type?: 'ast' | 'virtual';
   weight?: number;
@@ -86,7 +91,6 @@ export interface BackboneNode {
   isGateway?: boolean;
   code?: string;
   metadata?: Record<string, string>;
-  [key: string]: JsonValue;
 }
 
 export interface BackboneLink {

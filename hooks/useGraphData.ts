@@ -1,7 +1,7 @@
 
 import { useMemo } from 'react';
-import { ASTNode, FlatGraph } from '../types';
-import { logger } from '../src/logger';
+import { ASTNode, FlatGraph, GraphLink } from '../types';
+import { logger } from '../logger';
 
 export const useGraphData = (data: ASTNode | FlatGraph) => {
   return useMemo(() => {
@@ -18,17 +18,18 @@ export const useGraphData = (data: ASTNode | FlatGraph) => {
 
     logger.log('useGraphData: data.nodes:', data.nodes.length, 'data.links:', Array.isArray(data.links) ? data.links.length : 0);
 
-    const nodeMap = new Map();
+    const nodeMap = new Map<string, any>();
     data.nodes.forEach(n => {
       if (n && n.id) nodeMap.set(n.id, n);
     });
 
     const nodes = Array.from(nodeMap.values());
 
-    const links = Array.isArray(data.links) ? data.links.map(d => {
-      if (!d) return null;
-      const sourceId = typeof d.source === 'object' ? (d.source as any).id : d.source;
-      const targetId = typeof d.target === 'object' ? (d.target as any).id : d.target;
+const links = Array.isArray(data.links) ? data.links
+      .filter((d): d is GraphLink => typeof d === 'object' && d !== null && 'source' in d && 'target' in d)
+      .map(d => {
+        const sourceId = typeof d.source === 'object' ? d.source.id : d.source;
+        const targetId = typeof d.target === 'object' ? d.target.id : d.target;
 
       const source = nodeMap.get(sourceId);
       const target = nodeMap.get(targetId);
@@ -44,18 +45,18 @@ export const useGraphData = (data: ASTNode | FlatGraph) => {
 
     logger.log('useGraphData: processed links:', links.length);
     if (links.length === 0 && Array.isArray(data.links) && data.links.length > 0) {
-      console.warn('useGraphData: WARNING - ALL links were dropped! Original count:', data.links.length);
+      logger.warn('useGraphData: WARNING - ALL links were dropped! Original count:', data.links.length);
     }
 
     const degrees = new Map<string, number>();
     links.forEach(l => {
-      const s = l.source as any;
-      const t = l.target as any;
-      if (s && s.id) {
-        degrees.set(s.id, (degrees.get(s.id) || 0) + 1);
+      const sId = typeof l.source === 'string' ? l.source : (l.source as any).id;
+      const tId = typeof l.target === 'string' ? l.target : (l.target as any).id;
+      if (sId) {
+        degrees.set(sId, (degrees.get(sId) || 0) + 1);
       }
-      if (t && t.id) {
-        degrees.set(t.id, (degrees.get(t.id) || 0) + 1);
+      if (tId) {
+        degrees.set(tId, (degrees.get(tId) || 0) + 1);
       }
     });
 

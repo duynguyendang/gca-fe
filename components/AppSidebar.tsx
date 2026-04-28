@@ -2,6 +2,7 @@ import React from 'react';
 import { FlatGraph, ASTNode } from '../types';
 import FileTreeItem from './FileTreeItem';
 import { stratifyPaths } from '../utils/graphUtils';
+import { CUSTOM_EVENTS } from '../constants';
 
 interface AppSidebarProps {
   width: number;
@@ -114,8 +115,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
                 </button>
                 <button
                   onClick={() => {
-                    const event = new CustomEvent('gca:open-settings');
-                    window.dispatchEvent(event);
+                    window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.OPEN_SETTINGS));
                   }}
                   className="flex-1 py-1.5 bg-slate-800/50 hover:bg-slate-700/50 border border-white/10 rounded text-[8px] font-black uppercase tracking-widest text-slate-400 transition-all"
                 >
@@ -146,8 +146,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
                 {!dataApiBase && (
                   <button
                     onClick={() => {
-                      const event = new CustomEvent('gca:open-settings');
-                      window.dispatchEvent(event);
+                      window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.OPEN_SETTINGS));
                     }}
                     className="block mx-auto mt-2 px-3 py-1 text-[9px] text-[var(--accent-teal)] border border-[var(--accent-teal)]/20 rounded hover:bg-[var(--accent-teal)]/10 transition-colors"
                   >

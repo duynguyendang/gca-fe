@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
-import { useAppContext } from '../../../context/AppContext';
+import { useNarrativeContext } from '../../../context/NarrativeContext';
+import { useGraphContext } from '../../../context/GraphContext';
 import MarkdownRenderer from '../../Synthesis/MarkdownRenderer';
+import { logger } from '../../../logger';
 
 interface ArchitectureOverviewProps {
     onLinkClick?: (href: string) => void;
@@ -8,7 +10,8 @@ interface ArchitectureOverviewProps {
 }
 
 export const ArchitectureOverview: React.FC<ArchitectureOverviewProps> = ({ onLinkClick, onSymbolClick }) => {
-    const { selectedNode, nodeInsight, isInsightLoading } = useAppContext();
+    const { selectedNode } = useGraphContext();
+    const { nodeInsight, isInsightLoading } = useNarrativeContext();
 
     const parsedArch = useMemo(() => {
         if (!nodeInsight) return null;
@@ -20,7 +23,7 @@ export const ArchitectureOverview: React.FC<ArchitectureOverviewProps> = ({ onLi
                 if (parsed.architecture) return parsed.architecture;
             }
         } catch (e) {
-            console.warn('[ArchitectureOverview] Failed to parse dynamic architecture metrics:', e);
+            logger.warn('[ArchitectureOverview] Failed to parse dynamic architecture metrics:', e);
         }
         return null;
     }, [nodeInsight]);
@@ -62,7 +65,7 @@ export const ArchitectureOverview: React.FC<ArchitectureOverviewProps> = ({ onLi
                     <i className="fas fa-microchip mr-2"></i>Design Patterns
                 </h4>
                 <div className="flex flex-wrap gap-2">
-                    {patterns.map((p) => (
+                    {patterns.map((p: any) => (
                         <div key={p.name} className={`px-2.5 py-1.5 rounded border ${p.color} flex items-center gap-2`}>
                             <span className="text-[9px] font-bold text-white/90">{p.name}</span>
                             <span className="text-[8px] font-black text-teal-400/60 tracking-tight">{p.weight}</span>

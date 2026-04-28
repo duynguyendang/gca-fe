@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
-import { UI_CONFIG } from '../src/constants';
-import Prism from '../src/prismSetup';
+import { UI_CONFIG } from '../constants';
+import Prism from '../prismSetup';
+import { logger } from '../logger';
 
 interface HighlightedCodeProps {
     code: string;
@@ -24,7 +25,7 @@ const HighlightedCode = React.forwardRef<HTMLDivElement, HighlightedCodeProps>((
                 try {
                     Prism.highlightElement(codeRef.current);
                 } catch (e) {
-                    console.warn('Prism highlight error:', e);
+                    logger.warn('Prism highlight error:', e);
                 }
             }
         }, 100);

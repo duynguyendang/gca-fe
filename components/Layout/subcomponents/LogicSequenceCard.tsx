@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useAppContext } from '../../../context/AppContext';
+import { useNarrativeContext } from '../../../context/NarrativeContext';
+import { useGraphContext } from '../../../context/GraphContext';
+import { useUIContext } from '../../../context/UIContext';
 import MarkdownRenderer from '../../Synthesis/MarkdownRenderer';
+import { logger } from '../../../logger';
 
 const iconClasses: Record<string, string> = {
     LogIn: 'fa-right-to-bracket',
@@ -26,15 +29,9 @@ interface LogicSequenceCardProps {
 }
 
 export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClick, onSymbolClick }) => {
-    const {
-        nodeInsight,
-        isInsightLoading,
-        setHighlightedNodeId,
-        selectedNode,
-        setSelectedNode,
-        astData,
-        setIsCodeCollapsed
-    } = useAppContext();
+    const { nodeInsight, isInsightLoading } = useNarrativeContext();
+    const { selectedNode, setSelectedNode, astData, setHighlightedNodeId } = useGraphContext();
+    const { isCodeCollapsed, setIsCodeCollapsed } = useUIContext();
 
     const [activeStepId, setActiveStepId] = useState<number | null>(null);
 
@@ -55,7 +52,7 @@ export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClic
                 }
             }
         } catch (e) {
-            console.warn('[LogicSequenceCard] Failed to parse dynamic steps:', e);
+            logger.warn('[LogicSequenceCard] Failed to parse dynamic steps:', e);
         }
 
         // Fallback or legacy markdown parsing
@@ -68,10 +65,10 @@ export const LogicSequenceCard: React.FC<LogicSequenceCardProps> = ({ onLinkClic
             if (match) {
                 fallbackSteps.push({
                     id: counter++,
-                    title: match[2],
+                    title: match[2] ?? '',
                     icon: "Zap",
-                    nodeId: match[3] || "",
-                    description: match[4]
+                    nodeId: match[3] ?? "",
+                    description: match[4] ?? ''
                 });
             }
         }

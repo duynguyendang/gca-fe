@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { ASTNode, FlatGraph } from '../types';
+import { logger } from '../logger';
 
 export const useSessionStorage = (
   astData: ASTNode | FlatGraph | null,
@@ -12,9 +13,9 @@ export const useSessionStorage = (
       sessionStorage.setItem('gca_ast_data', JSON.stringify(astData));
     } catch (e) {
       if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-        console.debug('Session storage quota exceeded, persistence disabled for this session.');
+        logger.debug('Session storage quota exceeded, persistence disabled for this session.');
       } else {
-        console.warn('Failed to save AST data to session storage:', e);
+        logger.warn('Failed to save AST data to session storage:', e);
       }
     }
   }, [astData]);
@@ -24,7 +25,7 @@ export const useSessionStorage = (
     try {
       sessionStorage.setItem('gca_sandbox_files', JSON.stringify(sandboxFiles));
     } catch (e) {
-      console.warn('Failed to save sandbox files to session storage:', e);
+      logger.warn('Failed to save sandbox files to session storage:', e);
     }
   }, [sandboxFiles]);
 

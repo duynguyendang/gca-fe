@@ -1,6 +1,7 @@
 
 import React, { useRef, useEffect } from 'react';
 import * as d3 from 'd3';
+import type { BaseType } from 'd3';
 import dagre from 'dagre';
 
 interface ClassDiagramNode {
@@ -109,8 +110,8 @@ export const ClassDiagramCanvas: React.FC<ClassDiagramCanvasProps> = ({
         const originalNode = nodeMap.get(d);
         if (originalNode) onNodeClick(originalNode);
       })
-      .each(function (this: SVGGElement, d: any) {
-        const nodeData = gGraph.node(d);
+      .each(function (this: SVGGElement | BaseType, d: any) {
+        const nodeData = gGraph.node(d) as any;
         const el = d3.select(this);
         const color = getNodeColor(nodeData.kind || 'func');
         const isStructOrFile = nodeData.kind === 'struct' || nodeData.kind === 'file' || nodeData.kind === 'interface';
@@ -131,7 +132,7 @@ export const ClassDiagramCanvas: React.FC<ClassDiagramCanvasProps> = ({
           .attr('fill', '#f1f5f9')
           .attr('font-size', isStructOrFile ? '11px' : '10px')
           .attr('font-weight', isStructOrFile ? '700' : '500')
-          .text(nodeData.label);
+          .text(nodeData.label ?? '');
       });
 
     const linkGroup = g.append('g').attr('class', 'links');
@@ -246,7 +247,7 @@ export const ClassDiagramCanvas: React.FC<ClassDiagramCanvasProps> = ({
 function hexToRgb(hex: string): string {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   if (!result) return '148,163,184';
-  return `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}`;
+  return `${parseInt(result[1]!, 16)}, ${parseInt(result[2]!, 16)}, ${parseInt(result[3]!, 16)}`;
 }
 
 export default ClassDiagramCanvas;

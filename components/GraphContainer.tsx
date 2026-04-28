@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ASTNode, FlatGraph } from '../types';
-import { SubMode } from '../context/AppContext';
+import { SubMode } from '../context/UIContext';
 import TreeVisualizer from './TreeVisualizer/index';
 import ClassDiagramCanvas from './ClassDiagramCanvas';
 
@@ -138,7 +138,7 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
         </div>
       ) : (
         <TreeVisualizer
-          data={filteredAstData}
+          data={filteredAstData ?? { nodes: [], links: [] }}
           onNodeSelect={onNodeSelect}
           onNodeHover={() => {}}
           mode={viewMode}

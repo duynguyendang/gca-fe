@@ -30,7 +30,7 @@ const TreeMapGraph: React.FC<TreeMapGraphProps> = ({
             .sum((d: any) => d.line_count || d.value || 1)
             .sort((a, b) => (b.value || 0) - (a.value || 0));
 
-        d3.pack().size([width - 40, height - 40]).padding(15)(hierarchy);
+        d3.pack().size([width - 40, height - 40]).padding(15)(hierarchy as any);
 
         // Create layers to ensure text is always on top
         const circleGroup = g.append("g").attr("class", "circles");
@@ -80,12 +80,12 @@ const TreeMapGraph: React.FC<TreeMapGraphProps> = ({
 
         circleSelection.append("circle")
             .attr("r", (d: any) => d.r)
-            .attr("fill", (d: any) => d.children
+            .attr("fill", (d: any) => (d.children
                 ? getFolderColor(d.depth)
-                : (getAccent(d.data.kind, d.data.name) + "33"))
-            .attr("stroke", (d: any) => d.children
+                : ((getAccent(d.data.kind, d.data.name) ?? '#94a3b8') + "33")) as any)
+            .attr("stroke", (d: any) => (d.children
                 ? getFolderStroke(d.depth)
-                : getAccent(d.data.kind, d.data.name))
+                : (getAccent(d.data.kind, d.data.name) ?? '#94a3b8')) as any)
             .attr("stroke-width", (d: any) => d.children ? 1.5 : 2);
 
         // 2. Draw Labels (Foreground Layer - always covers circles)

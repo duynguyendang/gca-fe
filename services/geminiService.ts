@@ -6,8 +6,8 @@
  * Endpoint: POST /api/v1/ai/ask
  */
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
-import { API_CONFIG } from '../src/constants';
-import { logger } from '../src/logger';
+import { API_CONFIG } from '../constants';
+import { logger } from '../logger';
 
 export interface AIResponse {
   answer: string;
@@ -94,7 +94,8 @@ export const askAI = async (
     data?: any;
     context_mode?: string;
     query_instruction?: string;
-  }
+  },
+  signal?: AbortSignal | null
 ): Promise<string> => {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/ai/ask`;
@@ -113,7 +114,7 @@ export const askAI = async (
       context_mode: payload.context_mode || '',
       query_instruction: payload.query_instruction || ''
     })
-  }, API_CONFIG.TIMEOUT.LONG);
+  }, API_CONFIG.TIMEOUT.LONG, signal);
 
   if (!response.ok) {
     const errText = await response.text();

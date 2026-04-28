@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { fetchManifest } from '../services/graphService';
-import { logger } from '../src/logger';
+import { logger } from '../logger';
 
 interface ManifestData {
     F: Record<string, string>;

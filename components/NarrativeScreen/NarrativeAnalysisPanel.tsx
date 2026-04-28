@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useAppContext, NarrativeSection } from '../../context/AppContext';
+import { useNarrativeContext, NarrativeSection } from '../../context/NarrativeContext';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
 
 interface NarrativeAnalysisPanelProps {
@@ -13,7 +13,7 @@ const NarrativeAnalysisPanel: React.FC<NarrativeAnalysisPanelProps> = ({
     onLinkClick,
     onSymbolClick,
 }) => {
-    const { narrativeMessages, isNarrativeLoading } = useAppContext();
+    const { narrativeMessages, isNarrativeLoading } = useNarrativeContext();
     const [activeTab, setActiveTab] = useState<FilterTab>('narrative');
     const scrollRef = useRef<HTMLDivElement>(null);
 

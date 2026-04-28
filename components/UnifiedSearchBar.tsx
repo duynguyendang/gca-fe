@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAppContext } from '../context/AppContext';
+import { useSearchContext } from '../context/SearchContext';
 
 interface Suggestion {
   text: string;
@@ -36,10 +36,7 @@ const UnifiedSearchBar: React.FC<UnifiedSearchBarProps> = ({
   onSubmit,
   disabled = false,
 }) => {
-  const {
-    searchTerm,
-    setSearchTerm,
-  } = useAppContext();
+  const { searchTerm, setSearchTerm } = useSearchContext();
 
   const styles = ACCENT_STYLES[accentColor];
 

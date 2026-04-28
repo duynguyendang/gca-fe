@@ -1,8 +1,12 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { FlatGraph, ASTNode } from './types';
-import { useAppContext, NarrativeMessage } from './context/AppContext';
+import { FlatGraph } from './types';
 import { useToast } from './context/ToastContext';
+import { useGraphContext } from './context/GraphContext';
+import { useSearchContext } from './context/SearchContext';
+import { useNarrativeContext, NarrativeMessage } from './context/NarrativeContext';
+import { useSettingsContext } from './context/SettingsContext';
+import { useUIContext } from './context/UIContext';
 import { useApiSync, useResizePanels, useSmartSearch, useInsights, useManifest, useNodeHydration, useContextualSuggestions } from './hooks';
 import { CodePanel } from './components/Layout';
 import { NarrativeScreen } from './components/NarrativeScreen';
@@ -16,14 +20,13 @@ import GraphContainer from './components/GraphContainer';
 import UnifiedSearchBar from './components/UnifiedSearchBar';
 import { useSessionStorage } from './hooks/useSessionStorage';
 import { useQueryContext } from './hooks/useQueryContext';
-import { ErrorBoundary } from './src/components/ErrorBoundary';
-import { fetchFileCalls, fetchSource, fetchWhoCalls, fetchWhatCalls } from './services/graphService';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { fetchFileCalls, fetchWhoCalls, fetchWhatCalls } from './services/graphService';
 import { askAI } from './services/geminiService';
-import { detectLanguage } from './utils/languageUtils';
+import { logger } from './logger';
 import { requestManager } from './utils/requestManager';
-import { logger } from './src/logger';
-import { Routes, Route, useLocation } from 'react-router-dom';
-import './src/prismSetup';
+import { CUSTOM_EVENTS } from './constants';
+import './prismSetup';
 
 // Query mode for intent-based routing
 type QueryMode = 'explore' | 'explain' | 'navigate';
@@ -70,46 +73,49 @@ function classifyQueryMode(query: string): QueryMode {
 }
 
 const App: React.FC = () => {
-  // Global Context
-  const context = useAppContext();
   const toast = useToast();
+
   const {
-    astData, setAstData,
-    sandboxFiles, setSandboxFiles,
+    astData,
+    selectedNode, setSelectedNode,
+    fileScopedNodes, setFileScopedNodes,
+    fileScopedLinks, setFileScopedLinks,
+    expandedFileIds, setExpandedFileIds,
+    fileDetailsCache,
+    expandingFileId,
+    highlightedNodeId,
+  } = useGraphContext();
+
+  const {
+    searchTerm, setSearchTerm,
+    setLastExecutedQuery,
+  } = useSearchContext();
+
+  const {
+    setNarrativeMessages,
+    setIsNarrativeLoading,
+    setNodeInsight,
+  } = useNarrativeContext();
+
+  const {
     dataApiBase, setDataApiBase,
     currentProject, setCurrentProject,
     availableProjects, setAvailableProjects,
     selectedProjectId, setSelectedProjectId,
-    isDataSyncing, setIsDataSyncing,
-    syncError, setSyncError,
-    selectedNode, setSelectedNode,
-    hydratingNodeId, setHydratingNodeId,
-    symbolCache, setSymbolCache,
-    nodeInsight, setNodeInsight,
-    isInsightLoading, setIsInsightLoading,
-    searchTerm, setSearchTerm,
-    lastExecutedQuery, setLastExecutedQuery,
-    queryResults, setQueryResults,
-    isSearching: ctxIsSearching, setIsSearching: setCtxIsSearching,
-    searchError: ctxSearchError, setSearchError: setCtxSearchError,
-    searchStatus: ctxSearchStatus, setSearchStatus: setCtxSearchStatus,
-    viewMode, setViewMode,
-    fileScopedNodes, setFileScopedNodes,
-    fileScopedLinks, setFileScopedLinks,
-    expandedFileIds, setExpandedFileIds,
-    fileDetailsCache, setFileDetailsCache,
-    expandingFileId, setExpandingFileId,
-    isSettingsOpen, setIsSettingsOpen,
+    isDataSyncing,
+    syncError,
     availablePredicates, setAvailablePredicates,
     enableAutoClustering, setEnableAutoClustering,
-    activeSubMode, setActiveSubMode,
-    highlightedNodeId, setHighlightedNodeId,
+    sandboxFiles,
+  } = useSettingsContext();
+
+  const {
+    viewMode, setViewMode,
+    activeSubMode,
+    isSettingsOpen, setIsSettingsOpen,
     isCodeCollapsed, setIsCodeCollapsed,
-    isSynthesisCollapsed, setIsSynthesisCollapsed,
     isLandingView,
-    narrativeMessages, setNarrativeMessages,
-    isNarrativeLoading, setIsNarrativeLoading,
-  } = context;
+  } = useUIContext();
 
   // Local State
   const [isSubModeSwitching, setIsSubModeSwitching] = useState(false);
@@ -122,6 +128,33 @@ const App: React.FC = () => {
   const { manifest } = useManifest(dataApiBase, selectedProjectId);
   const { syncDataFromApi } = useApiSync();
   const { hydrateNode } = useNodeHydration();
+
+  // SmartSearch hook - handles semantic search with AI insights
+  const {
+    handleSmartSearch,
+    isSearching,
+  } = useSmartSearch({
+    dataApiBase,
+    selectedProjectId,
+    availablePredicates,
+    manifest,
+    onViewModeChange: setViewMode,
+    setFileScopedNodes,
+    setFileScopedLinks,
+    setSelectedNode,
+    setNodeInsight,
+    setLastExecutedQuery,
+    activeSubMode,
+  });
+
+  // Contextual suggestions for search bar
+  const { suggestions: contextualSuggestions } = useContextualSuggestions();
+
+  // Query context builder for AI explanations
+  const { buildContext } = useQueryContext();
+
+  // AI insights generator
+  const { generateInsights } = useInsights();
 
   const {
     startResizeSidebar,
@@ -146,34 +179,6 @@ const App: React.FC = () => {
     const timer = setTimeout(() => setIsSubModeSwitching(false), 800);
     return () => clearTimeout(timer);
   }, [activeSubMode]);
-
-  // View mode setters
-  const setMapMode = useCallback(() => setViewMode('map'), [setViewMode]);
-  const setDiscoveryMode = useCallback(() => setViewMode('discovery'), [setViewMode]);
-  const setArchitectureMode = useCallback(() => setViewMode('architecture'), [setViewMode]);
-  const setNarrativeMode = useCallback(() => setViewMode('narrative'), [setViewMode]);
-
-  // Search Hook
-  const {
-    handleSmartSearch,
-    searchStatus,
-    isSearching,
-    searchError,
-    setSearchError
-  } = useSmartSearch({
-    ...context,
-    manifest,
-    onViewModeChange: setViewMode,
-  });
-
-  // Context-aware suggestions
-  const { suggestions: contextualSuggestions } = useContextualSuggestions();
-
-  // Shared query context builder
-  const { buildContext } = useQueryContext();
-
-  // Insights Hook
-  const { generateInsights, clearInsight } = useInsights();
 
   // Callbacks
   const openSettings = useCallback(() => setIsSettingsOpen(true), []);
@@ -207,8 +212,7 @@ const App: React.FC = () => {
       
       if (mod && e.key === 'k') {
         e.preventDefault();
-        // Focus search - trigger via custom event
-        window.dispatchEvent(new CustomEvent('gca:focus-search'));
+        window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.FOCUS_SEARCH));
       } else if (mod && e.key === 'b') {
         e.preventDefault();
         setIsCodeCollapsed(prev => !prev);
@@ -219,7 +223,7 @@ const App: React.FC = () => {
         e.preventDefault();
         const modes = ['narrative', 'map', 'discovery', 'architecture'] as const;
         const idx = parseInt(e.key) - 1;
-        if (idx < modes.length) setViewMode(modes[idx]);
+        if (idx < modes.length) setViewMode(modes[idx]!);
       }
     };
     
@@ -230,8 +234,8 @@ const App: React.FC = () => {
   // Listen for open-settings event from sidebar
   useEffect(() => {
     const handleOpenSettings = () => setIsSettingsOpen(true);
-    window.addEventListener('gca:open-settings', handleOpenSettings);
-    return () => window.removeEventListener('gca:open-settings', handleOpenSettings);
+    window.addEventListener(CUSTOM_EVENTS.OPEN_SETTINGS, handleOpenSettings);
+    return () => window.removeEventListener(CUSTOM_EVENTS.OPEN_SETTINGS, handleOpenSettings);
   }, []);
 
   // Auto-sync on mount
@@ -267,9 +271,6 @@ const App: React.FC = () => {
   const handleConnect = useCallback(() => {
     syncDataFromApi(dataApiBase);
   }, [dataApiBase, syncDataFromApi]);
-
-  // Clear search helpers
-  const setSearchTermWrapper = useCallback((term: string) => setSearchTerm(term), [setSearchTerm]);
 
   // Smart search handler - routes based on query intent
   const handleSmartSearchWithNarrativeSwitch = useCallback(async (query: string) => {
@@ -400,11 +401,6 @@ const App: React.FC = () => {
       setIsNarrativeLoading(false);
     }
   }, [setViewMode, setSearchTerm, selectedNode, dataApiBase, selectedProjectId, setNarrativeMessages, setIsNarrativeLoading, currentProject, buildContext, setFileScopedNodes, setFileScopedLinks, toast]);
-
-  const setQueryResultsNull = useCallback(() => setQueryResults(null), [setQueryResults]);
-  const setFileScopedNodesEmpty = useCallback(() => setFileScopedNodes([]), [setFileScopedNodes]);
-  const setFileScopedLinksEmpty = useCallback(() => setFileScopedLinks([]), [setFileScopedLinks]);
-  const setNodeInsightNull = useCallback(() => setNodeInsight(null), [setNodeInsight]);
 
   // Expanded graph data computation
   const expandedGraphData = React.useMemo(() => {

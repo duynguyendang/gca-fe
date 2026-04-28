@@ -1,5 +1,8 @@
 import { useMemo, useCallback } from 'react';
-import { useAppContext } from '../context/AppContext';
+import { useGraphContext } from '../context/GraphContext';
+import { useUIContext } from '../context/UIContext';
+import { useSearchContext } from '../context/SearchContext';
+import { useSettingsContext } from '../context/SettingsContext';
 
 interface Suggestion {
   text: string;
@@ -7,24 +10,17 @@ interface Suggestion {
 }
 
 export const useContextualSuggestions = () => {
-  const {
-    astData,
-    sandboxFiles,
-    dataApiBase,
-    selectedProjectId,
-    viewMode,
-    searchTerm,
-    selectedNode,
-    fileScopedNodes,
-    fileScopedLinks,
-  } = useAppContext();
+  const { astData, selectedNode, fileScopedNodes, fileScopedLinks } = useGraphContext();
+  const { viewMode } = useUIContext();
+  const { searchTerm } = useSearchContext();
+  const { sandboxFiles } = useSettingsContext();
 
   const generateSuggestions = useCallback((): Suggestion[] => {
     const suggestions: Suggestion[] = [];
     const filesList = Array.isArray(sandboxFiles['files.json'])
       ? sandboxFiles['files.json']
       : [];
-    const nodes = Array.isArray(astData?.nodes) ? astData.nodes as any[] : [];
+    const nodes = (astData as any)?.nodes ?? [];
 
     // For non-Narrative modes, always suggest "Explain this code" first
     if (viewMode !== 'narrative') {

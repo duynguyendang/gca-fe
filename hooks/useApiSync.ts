@@ -3,26 +3,17 @@
  * Extracted from App.tsx syncDataFromApi function
  */
 import { useCallback } from 'react';
-import { useAppContext } from '../context/AppContext';
-import { logger } from '../src/logger';
+import { useSettingsContext } from '../context/SettingsContext';
+import { useGraphContext } from '../context/GraphContext';
+import { useUIContext } from '../context/UIContext';
+import { logger } from '../logger';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 
 export const useApiSync = () => {
-    const {
-        setIsDataSyncing,
-        setSyncError,
-        setAvailableProjects,
-        setSelectedProjectId,
-        setCurrentProject,
-        setSandboxFiles,
-        setAstData,
-        setFileScopedNodes,
-        setFileScopedLinks,
-        setViewMode,
-        enableAutoClustering,
-        setSelectedNode,
-        setExpandedFileIds,
-    } = useAppContext();
+    const { enableAutoClustering } = useSettingsContext();
+    const { setAstData, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setExpandedFileIds } = useGraphContext();
+    const { setViewMode } = useUIContext();
+    const { setIsDataSyncing, setSyncError, setAvailableProjects, setSelectedProjectId, setCurrentProject, setSandboxFiles, dataApiBase } = useSettingsContext();
 
     const syncDataFromApi = useCallback(async (
         baseUrl: string,
@@ -74,12 +65,12 @@ export const useApiSync = () => {
             }
 
             const projects = await projectsRes.json() as Array<{ id: string; name: string; description?: string }>;
-            console.log('[Sync] Projects received:', projects);
+            logger.log('[Sync] Projects received:', projects);
             setAvailableProjects(projects);
 
             // Auto-select first project if none specified
-            const targetProjectId = projectId || (projects.length > 0 ? projects[0].id : null);
-            console.log('[Sync] Target project:', targetProjectId, 'from list:', projects.map(p => p.id));
+            const targetProjectId = projectId || (projects.length > 0 ? projects[0]!.id : null);
+            logger.log('[Sync] Target project:', targetProjectId, 'from list:', projects.map(p => p.id));
 
             if (!targetProjectId) {
                 setSyncError('No projects available');
@@ -88,7 +79,7 @@ export const useApiSync = () => {
             }
 
             setSelectedProjectId(targetProjectId);
-            console.log('[Sync] Set selectedProjectId to:', targetProjectId);
+            logger.log('[Sync] Set selectedProjectId to:', targetProjectId);
             setCurrentProject(projects.find(p => p.id === targetProjectId)?.name || targetProjectId);
 
             // Fetch files for the project
@@ -132,7 +123,7 @@ export const useApiSync = () => {
                 // If we have > 300 nodes, default to "Map" mode to prevent graph explosion
                 // Note: Narrative view is now default, only switch to map if explicitly needed
                 if (astNodes.length > 300 && enableAutoClustering) {
-                    console.warn(`[Performance] Node count ${astNodes.length} > 300. Forcing Map View.`);
+                    logger.warn(`[Performance] Node count ${astNodes.length} > 300. Forcing Map View.`);
                     // Keep narrative view as default - don't force map mode
                     // setViewMode('map');
                 }
@@ -173,11 +164,14 @@ export const useApiSync = () => {
 
                             // Otherwise, enrich existing file nodes (keep graph focused on file list)
                             setAstData(prev => {
-                                const enrichedNodes = (prev.nodes as any[]).map(node => {
-                                    const enrichedNode = ast.nodes.find((n: any) => n.id === node.id || n.id === node._filePath);
+                                if (!prev || !('nodes' in prev)) return prev;
+                                const astNodes = (ast as any).nodes as any[] || [];
+                                const astLinks = (ast as any).links as any[] || [];
+                                const enrichedNodes = prev.nodes.map((node: any) => {
+                                    const enrichedNode = astNodes.find((n: any) => n.id === node.id || n.id === node._filePath);
                                     return enrichedNode ? { ...node, ...enrichedNode, _project: targetProjectId } : { ...node, _project: targetProjectId };
                                 });
-                                return { nodes: enrichedNodes, links: ast.links || prev.links };
+                                return { nodes: enrichedNodes, links: astLinks.length > 0 ? astLinks : prev.links };
                             });
                         }
                     }
@@ -188,7 +182,7 @@ export const useApiSync = () => {
 
             if (onComplete) onComplete();
         } catch (err: any) {
-            console.error("API Sync Error:", err);
+            logger.error('[useApiSync] API Sync Error:', err);
             setSyncError(err.message || 'Unknown error during sync');
         } finally {
             setIsDataSyncing(false);

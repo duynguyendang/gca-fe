@@ -6,21 +6,17 @@ import { useCallback } from 'react';
 import { fetchSource } from '../services/graphService';
 import { getGeminiInsight, getFileRoleSummary } from '../services/geminiService';
 import { FlatGraph } from '../types';
-import { useAppContext } from '../context/AppContext';
-import { logger } from '../src/logger';
+import { useGraphContext } from '../context/GraphContext';
+import { useNarrativeContext } from '../context/NarrativeContext';
+import { useSettingsContext } from '../context/SettingsContext';
+import { useUIContext } from '../context/UIContext';
+import { logger } from '../logger';
 
 export const useInsights = () => {
-    const {
-        dataApiBase,
-        selectedProjectId,
-        selectedNode,
-        astData,
-        fileScopedNodes,
-        fileScopedLinks,
-        setNodeInsight,
-        setIsInsightLoading,
-        activeSubMode
-    } = useAppContext();
+    const { selectedNode, astData, fileScopedNodes, fileScopedLinks } = useGraphContext();
+    const { setNodeInsight, setIsInsightLoading } = useNarrativeContext();
+    const { dataApiBase, selectedProjectId } = useSettingsContext();
+    const { activeSubMode } = useUIContext();
 
     const generateInsights = useCallback(() => {
         if (!selectedNode) return;
@@ -46,7 +42,7 @@ export const useInsights = () => {
                 getMultiFileInsight(fileList, `Analyze the architectural relationship between ${selectedNode.name} and the other visible files.`, dataApiBase, selectedProjectId)
                     .then(summary => setNodeInsight(summary))
                     .catch(err => {
-                        console.error("Multi-file insight failed:", err);
+                        logger.error('[useInsights] Multi-file insight failed:', err);
                         setNodeInsight("Analysis failed.");
                     })
                     .finally(() => setIsInsightLoading(false));
@@ -87,7 +83,7 @@ export const useInsights = () => {
             }).then(summary => {
                 setNodeInsight(summary);
             }).catch(err => {
-                console.error("Architectural Insight Failed:", err);
+                logger.error('[useInsights] Architectural Insight Failed:', err);
                 setNodeInsight("Analysis failed or source unavailable.");
             }).finally(() => {
                 setIsInsightLoading(false);

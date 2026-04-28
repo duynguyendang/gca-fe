@@ -105,7 +105,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
     const zoom = d3.zoom<SVGSVGElement, any>()
       .scaleExtent([0.1, 8])
       .on("zoom", (e) => g.attr("transform", e.transform));
-    svg.call(zoom);
+    svg.call(zoom as any);
 
     switch (mode) {
       case 'force': renderNetwork(g, width, height, zoom); break;
@@ -165,8 +165,8 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
       .data(nodes)
       .join("g")
       .attr("cursor", "pointer")
-      .on("click", (e, d) => onNodeSelect(d))
-      .on("mouseenter", (e, d) => {
+      .on("click", (e: any, d: any) => onNodeSelect(d))
+      .on("mouseenter", (e: any, d: any) => {
         onNodeHover(d);
         const related = new Set([d.id]);
         links.forEach(l => {
@@ -186,10 +186,10 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
 
     nodeGroup.append("circle")
       .attr("r", (d: any) => Math.sqrt(degrees.get(d.id) || 1) * 8 + 4)
-      .attr("fill", d => getNodeStyle(d).color)
-      .attr("stroke", d => d.id === selectedId ? "#fff" : "#020617")
-      .attr("stroke-width", d => d.id === selectedId ? 3 : 1.5)
-      .style("filter", d => `drop-shadow(0 0 10px ${getNodeStyle(d).glow})`);
+      .attr("fill", (d: any) => getNodeStyle(d).color)
+      .attr("stroke", (d: any) => d.id === selectedId ? "#fff" : "#020617")
+      .attr("stroke-width", (d: any) => d.id === selectedId ? 3 : 1.5)
+      .style("filter", (d: any) => `drop-shadow(0 0 10px ${getNodeStyle(d).glow})`);
 
     // Primary Label: Short Name
     nodeGroup.append("text")
@@ -198,7 +198,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
       .attr("font-size", "10px")
       .attr("font-weight", "700")
       .attr("fill", "#f1f5f9")
-      .text(d => getShortName(d));
+      .text((d: any) => getShortName(d));
 
     // Secondary Label: Full ID Path
     nodeGroup.append("text")
@@ -208,7 +208,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
       .attr("font-weight", "400")
       .attr("fill", "#64748b")
       .style("pointer-events", "none")
-      .text(d => d.id.length > 30 ? '...' + d.id.slice(-27) : d.id);
+      .text((d: any) => d.id.length > 30 ? '...' + d.id.slice(-27) : d.id);
 
     const updatePositions = () => {
       link.attr("d", (d: any) => {
@@ -228,7 +228,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
         .attrTween("transform", (d: any) => {
           const ix = d3.interpolate(d.x || width / 2, d.fx);
           const iy = d3.interpolate(d.y || height / 2, d.fy);
-          return (t) => {
+          return (t: any) => {
             d.x = ix(t); d.y = iy(t);
             updatePositions();
             return `translate(${d.x},${d.y})`;
@@ -257,7 +257,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
       .attr("d", d3.linkRadial<any, any>().angle((d: any) => d.x * Math.PI / 180).radius((d: any) => d.y) as any);
     const node = group.append("g").selectAll("g").data(root.descendants()).join("g")
       .attr("transform", (d: any) => `rotate(${d.x - 90}) translate(${d.y},0)`);
-    node.append("circle").attr("r", 5).attr("fill", (d: any) => getNodeStyle(d.data).color).attr("stroke", (d: any) => d.data.id === selectedId ? "#fff" : "none").on("click", (e, d) => onNodeSelect(d.data));
+    node.append("circle").attr("r", 5).attr("fill", (d: any) => getNodeStyle(d.data).color).attr("stroke", (d: any) => d.data.id === selectedId ? "#fff" : "none").on("click", (e: any, d: any) => onNodeSelect(d.data));
     node.append("text").attr("dy", "0.31em").attr("x", (d: any) => d.x < 180 === !d.children ? 10 : -10).attr("text-anchor", (d: any) => d.x < 180 === !d.children ? "start" : "end").attr("transform", (d: any) => d.x >= 180 ? "rotate(180)" : null).attr("font-size", "10px").attr("fill", "#f1f5f9").text((d: any) => getShortName(d.data));
   };
 
@@ -265,7 +265,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
     if (!processedData) return;
     const root = d3.hierarchy(buildHierarchy(processedData.nodes)).sum(d => d.value || 10).sort((a, b) => b.value! - a.value!);
     d3.pack().size([width, height]).padding(8)(root);
-    const node = g.selectAll("g").data(root.descendants()).join("g").attr("transform", (d: any) => `translate(${d.x},${d.y})`).on("click", (e, d) => onNodeSelect(d.data));
+    const node = g.selectAll("g").data(root.descendants()).join("g").attr("transform", (d: any) => `translate(${d.x},${d.y})`).on("click", (e: any, d: any) => onNodeSelect(d.data));
     node.append("circle").attr("r", (d: any) => d.r).attr("fill", (d: any) => d.children ? "#0f172a" : getNodeStyle(d.data).color).attr("fill-opacity", (d: any) => d.children ? 0.3 : 0.8).attr("stroke", (d: any) => d.data.id === selectedId ? "#fff" : "#1e293b");
     node.filter((d: any) => !d.children && d.r > 20).append("text").attr("text-anchor", "middle").attr("dy", "0.3em").attr("font-size", (d: any) => Math.min(d.r / 3, 12)).attr("fill", "#fff").text((d: any) => getShortName(d.data));
   };
@@ -279,9 +279,9 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({ data, onNodeSelect, onN
     const linksSankey = links.map(d => ({ source: nodesSankey.find(n => n.id === (d.source as any).id), target: nodesSankey.find(n => n.id === (d.target as any).id) })).filter(l => l.source && l.target);
     g.append("g").attr("fill", "none").attr("stroke", "#4f46e5").attr("stroke-opacity", 0.15).selectAll("path").data(linksSankey).join("path")
       .attr("d", (d: any) => { const x0 = d.source.x, y0 = d.source.y, x1 = d.target.x, y1 = d.target.y; return `M${x0},${y0}C${(x0 + x1) / 2},${y0} ${(x0 + x1) / 2},${y1} ${x1},${y1}`; }).attr("stroke-width", 2);
-    const node = g.selectAll("g.sn").data(nodesSankey).join("g").attr("class", "sn").attr("transform", (d: any) => `translate(${d.x},${d.y})`).on("click", (e, d) => onNodeSelect(d));
-    node.append("rect").attr("x", -5).attr("y", -15).attr("width", 10).attr("height", 30).attr("rx", 3).attr("fill", d => getNodeStyle(d).color).attr("stroke", d => d.id === selectedId ? "#fff" : "none");
-    node.append("text").attr("x", 12).attr("dy", "0.35em").attr("font-size", "10px").attr("fill", "#f1f5f9").text(d => getShortName(d));
+    const node = g.selectAll("g.sn").data(nodesSankey).join("g").attr("class", "sn").attr("transform", (d: any) => `translate(${d.x},${d.y})`).on("click", (e: any, d: any) => onNodeSelect(d));
+    node.append("rect").attr("x", -5).attr("y", -15).attr("width", 10).attr("height", 30).attr("rx", 3).attr("fill", (d: any) => getNodeStyle(d).color).attr("stroke", (d: any) => d.id === selectedId ? "#fff" : "none");
+    node.append("text").attr("x", 12).attr("dy", "0.35em").attr("font-size", "10px").attr("fill", "#f1f5f9").text((d: any) => getShortName(d));
   };
 
   return (

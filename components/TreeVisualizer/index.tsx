@@ -3,7 +3,8 @@ import React, { useRef, useEffect, useState } from 'react';
 import * as d3 from 'd3';
 import { ASTNode, FlatGraph } from '../../types';
 import { useGraphData } from '../../hooks/useGraphData';
-import { SubMode } from '../../context/AppContext';
+import { SubMode } from '../../context/UIContext';
+import { logger } from '../../logger';
 import DiscoveryGraph from './graphs/DiscoveryGraph';
 import TreeMapGraph from './graphs/TreeMapGraph';
 
@@ -43,7 +44,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
   activeSubMode = 'NARRATIVE',
   highlightedNodeId
 }) => {
-  console.log('=== TreeVisualizer Render (Start) ===', {
+  logger.log('=== TreeVisualizer Render (Start) ===', {
     mode,
     fileScopedDataInfo: {
       hasData: !!fileScopedData,
@@ -78,16 +79,16 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
   // Initialize Zoom - runs after dimensions are set (which means SVG is rendered)
   useEffect(() => {
     if (!svgRef.current) {
-      console.log('Zoom init: svgRef not ready');
+      logger.log('Zoom init: svgRef not ready');
       return;
     }
 
     if (dimensions.width === 0 || dimensions.height === 0) {
-      console.log('Zoom init: dimensions not ready');
+      logger.log('Zoom init: dimensions not ready');
       return;
     }
 
-    console.log('Zoom init: Creating zoom behavior');
+    logger.log('Zoom init: Creating zoom behavior');
     const svg = d3.select(svgRef.current);
 
     // Create zoom-layer if it doesn't exist
@@ -104,7 +105,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
 
     svg.call(zoom);
     setZoomObj(() => zoom);  // Wrap in function so React doesn't treat zoom as state updater
-    console.log('Zoom init: Zoom object set!');
+    logger.log('Zoom init: Zoom object set!');
 
   }, [dimensions]);
 

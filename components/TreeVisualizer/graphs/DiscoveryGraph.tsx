@@ -16,7 +16,7 @@ import {
     calculateNodeRadius,
     getEntropyColor
 } from '../utils/graphUtils';
-import { SubMode } from '../../../context/AppContext';
+import { SubMode } from '../../../context/UIContext';
 
 interface DiscoveryGraphProps {
     nodes: any[];
@@ -217,7 +217,7 @@ const DiscoveryGraph: React.FC<DiscoveryGraphProps> = ({
             if (isExpandableNode(d) && onToggleFileExpansion) {
                 const buttonGroup = node.append('g')
                     .attr('transform', `translate(${radius * 0.7}, ${-radius * 0.7})`)
-                    .style('opacity', isNodeExpanding(d, expandingFileId) ? 0.5 : 1)
+                    .style('opacity', isNodeExpanding(d, expandingFileId ?? null) ? 0.5 : 1)
                     .on('click', (e: any) => {
                         e.stopPropagation();
                         onToggleFileExpansion(d.id);
@@ -229,7 +229,7 @@ const DiscoveryGraph: React.FC<DiscoveryGraphProps> = ({
 
                 buttonGroup.append('text').attr('text-anchor', 'middle').attr('dy', '0.35em')
                     .attr('fill', 'white').attr('font-size', '8px').attr('font-weight', 'bold')
-                    .text(isNodeExpanding(d, expandingFileId) ? '...' : (isNodeExpanded(d, expandedFileIds) ? '−' : '+'));
+                    .text(isNodeExpanding(d, expandingFileId ?? null) ? '...' : (isNodeExpanded(d, expandedFileIds) ? '−' : '+'));
             }
         });
 

@@ -3,7 +3,8 @@
  * Handles API calls for progressive graph expansion
  */
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
-import { API_CONFIG } from '../src/constants';
+import { API_CONFIG } from '../constants';
+import { logger } from '../logger';
 
 const isValidUrl = (url: string): boolean => {
   try {
@@ -150,11 +151,11 @@ export async function fetchSource(dataApiBase: string, projectId: string, id: st
  * Search symbols
  * GET /api/v1/symbols?project={projectId}&q={query}&p={predicate}
  */
-export async function fetchSymbols(dataApiBase: string, projectId: string, query: string, predicate?: string): Promise<string[]> {
+export async function fetchSymbols(dataApiBase: string, projectId: string, query: string, predicate?: string, signal?: AbortSignal | null): Promise<string[]> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   let url = `${cleanBase}/api/v1/symbols?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query)}`;
   if (predicate) url += `&p=${encodeURIComponent(predicate)}`;
-  const response = await fetchWithTimeout(url);
+  const response = await fetchWithTimeout(url, {}, API_CONFIG.TIMEOUT.DEFAULT, signal);
   if (!response.ok) throw new Error(`Failed to fetch symbols: ${response.statusText}`);
   const data = await response.json();
   return data.symbols || [];
@@ -189,7 +190,7 @@ export async function fetchHydrate(dataApiBase: string, projectId: string, id: s
  * Execute Datalog query
  * POST /api/v1/query
  */
-export async function executeQuery(dataApiBase: string, projectId: string, query: string, hydrate: boolean = true): Promise<any> {
+export async function executeQuery(dataApiBase: string, projectId: string, query: string, hydrate: boolean = true, signal?: AbortSignal | null): Promise<any> {
   if (!isValidUrl(dataApiBase)) throw new Error('Invalid API base URL');
   if (!isValidProjectId(projectId)) throw new Error('Invalid project ID');
   if (!query || typeof query !== 'string') throw new Error('Invalid query');
@@ -202,7 +203,7 @@ export async function executeQuery(dataApiBase: string, projectId: string, query
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query })
-  });
+  }, API_CONFIG.TIMEOUT.LONG, signal);
 
   if (!response.ok) throw new Error(`Failed to execute query: ${response.statusText}`);
 
@@ -213,8 +214,7 @@ export async function executeQuery(dataApiBase: string, projectId: string, query
   } catch (e) {
     // Try minimalist repair if needed, similar to App.tsx logic?
     // For now assume server returns valid JSON.
-    console.error("JSON Parse Error on Query Response", text.substring(0, 100));
-    throw e;
+    throw new Error(`[GraphService] JSON parse failed on query response: ${text.substring(0, 100)}`);
   }
 }
 
@@ -262,7 +262,7 @@ export async function fetchGraphMap(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/graph/map?project=${encodeURIComponent(projectId)}`;
 
-  console.log('[GraphService] Fetching graph map:', url);
+  logger.log('[GraphService] Fetching graph map:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -270,7 +270,7 @@ export async function fetchGraphMap(
   }
 
   const data = await response.json();
-  console.log('[GraphService] Graph map response:', data);
+  logger.log('[GraphService] Graph map response:', data);
   return data;
 }
 
@@ -285,7 +285,7 @@ export async function fetchManifest(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/graph/manifest?project=${encodeURIComponent(projectId)}`;
 
-  console.log('[GraphService] Fetching manifest:', url);
+  logger.log('[GraphService] Fetching manifest:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -308,7 +308,7 @@ export async function fetchFileDetails(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/graph/file-details?file=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}`;
 
-  console.log('[GraphService] Fetching file details:', url);
+  logger.log('[GraphService] Fetching file details:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -316,7 +316,7 @@ export async function fetchFileDetails(
   }
 
   const data = await response.json();
-  console.log('[GraphService] File details response:', data);
+  logger.log('[GraphService] File details response:', data);
   return data;
 }
 
@@ -332,7 +332,7 @@ export async function fetchBackbone(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/graph/backbone?project=${encodeURIComponent(projectId)}&aggregate=${aggregate}`;
 
-  console.log('[GraphService] Fetching backbone graph:', url);
+  logger.log('[GraphService] Fetching backbone graph:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -340,7 +340,7 @@ export async function fetchBackbone(
   }
 
   const data = await response.json();
-  console.log('[GraphService] Backbone response:', data);
+  logger.log('[GraphService] Backbone response:', data);
 
   // Backend returns { nodes: [], links: [] } (D3Graph)
   // Frontend expects BackboneResponse with logic-rich "files" array.
@@ -433,7 +433,7 @@ export async function fetchFileCalls(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/graph/file-calls?id=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}&depth=${depth}`;
 
-  console.log('[GraphService] Fetching file calls:', url);
+  logger.log('[GraphService] Fetching file calls:', url);
   const response = await fetchWithTimeout(url, {}, API_CONFIG.TIMEOUT.LONG, signal);
 
   if (!response.ok) {
@@ -441,7 +441,7 @@ export async function fetchFileCalls(
   }
 
   const data = await response.json();
-  console.log('[GraphService] File calls response:', data);
+  logger.log('[GraphService] File calls response:', data);
   return data;
 }
 
@@ -458,7 +458,7 @@ export async function fetchFlowPath(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/search/flow?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&project=${encodeURIComponent(projectId)}`;
 
-  console.log('[GraphService] Fetching flow path:', url);
+  logger.log('[GraphService] Fetching flow path:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -466,7 +466,7 @@ export async function fetchFlowPath(
   }
 
   const data = await response.json();
-  console.log('[GraphService] Flow path response:', data);
+  logger.log('[GraphService] Flow path response:', data);
   return data;
 }
 
@@ -482,7 +482,7 @@ export async function fetchFileBackbone(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/graph/file-backbone?id=${encodeURIComponent(fileId)}&project=${encodeURIComponent(projectId)}`;
 
-  console.log('[GraphService] Fetching file backbone:', url);
+  logger.log('[GraphService] Fetching file backbone:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -490,7 +490,7 @@ export async function fetchFileBackbone(
   }
 
   const data = await response.json();
-  console.log('[GraphService] File backbone response:', data);
+  logger.log('[GraphService] File backbone response:', data);
   return data;
 }
 
@@ -502,20 +502,21 @@ export async function fetchGraphPath(
   dataApiBase: string,
   projectId: string,
   source: string,
-  target: string
+  target: string,
+  signal?: AbortSignal | null
 ): Promise<GraphMapResponse> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/graph/path?project=${encodeURIComponent(projectId)}&source=${encodeURIComponent(source)}&target=${encodeURIComponent(target)}`;
 
-  console.log('[GraphService] Fetching graph path:', url);
-  const response = await fetchWithTimeout(url);
+  logger.log('[GraphService] Fetching graph path:', url);
+  const response = await fetchWithTimeout(url, {}, API_CONFIG.TIMEOUT.LONG, signal);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch graph path: ${response.status} ${response.statusText}`);
   }
 
   const data = await response.json();
-  console.log('[GraphService] Graph path response:', data);
+  logger.log('[GraphService] Graph path response:', data);
   return data;
 }
 
@@ -533,20 +534,21 @@ export async function fetchSemanticSearch(
   dataApiBase: string,
   projectId: string,
   query: string,
-  k: number = 10
+  k: number = 10,
+  signal?: AbortSignal | null
 ): Promise<SemanticSearchResult[]> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/semantic-search?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query)}&k=${k}`;
 
-  console.log('[GraphService] Fetching semantic search:', url);
-  const response = await fetchWithTimeout(url);
+  logger.log('[GraphService] Fetching semantic search:', url);
+  const response = await fetchWithTimeout(url, {}, API_CONFIG.TIMEOUT.SHORT, signal);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch semantic search: ${response.status} ${response.statusText}`);
   }
 
   const data = await response.json();
-  console.log('[GraphService] Semantic search response:', data);
+  logger.log('[GraphService] Semantic search response:', data);
   return data.results || [];
 }
 
@@ -562,7 +564,7 @@ export async function getClusteredGraph(
   const cleanBase = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
   const url = `${cleanBase}/api/v1/graph/cluster?project=${encodeURIComponent(projectId)}&query=${encodeURIComponent(query)}`;
 
-  console.log('[GraphService] Fetching clustered graph:', url);
+  logger.log('[GraphService] Fetching clustered graph:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -570,7 +572,7 @@ export async function getClusteredGraph(
   }
 
   const data = await response.json();
-  console.log('[GraphService] Cluster response:', data);
+  logger.log('[GraphService] Cluster response:', data);
   return data;
 }
 
@@ -649,7 +651,7 @@ export async function fetchPaginatedGraph(
 
   const url = `${cleanBase}/api/v1/graph/paginated?${params.toString()}`;
 
-  console.log('[GraphService] Fetching paginated graph:', url);
+  logger.log('[GraphService] Fetching paginated graph:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -657,7 +659,7 @@ export async function fetchPaginatedGraph(
   }
 
   const data = await response.json();
-  console.log('[GraphService] Paginated graph response:', data);
+  logger.log('[GraphService] Paginated graph response:', data);
   return data;
 }
 
@@ -707,7 +709,7 @@ export async function fetchWhoCalls(
     url += '&focused=true';
   }
 
-  console.log('[GraphService] Fetching who-calls:', url);
+  logger.log('[GraphService] Fetching who-calls:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -715,7 +717,7 @@ export async function fetchWhoCalls(
   }
 
   const data = await response.json();
-  console.log('[GraphService] Who-calls response:', data);
+  logger.log('[GraphService] Who-calls response:', data);
   return data;
 }
 
@@ -736,7 +738,7 @@ export async function fetchWhatCalls(
     url += '&focused=true';
   }
 
-  console.log('[GraphService] Fetching what-calls:', url);
+  logger.log('[GraphService] Fetching what-calls:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -744,7 +746,7 @@ export async function fetchWhatCalls(
   }
 
   const data = await response.json();
-  console.log('[GraphService] What-calls response:', data);
+  logger.log('[GraphService] What-calls response:', data);
   return data;
 }
 
@@ -762,7 +764,7 @@ export async function checkReachability(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/graph/reachable?project=${encodeURIComponent(projectId)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&depth=${depth}`;
 
-  console.log('[GraphService] Checking reachability:', url);
+  logger.log('[GraphService] Checking reachability:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -770,7 +772,7 @@ export async function checkReachability(
   }
 
   const data = await response.json();
-  console.log('[GraphService] Reachability response:', data);
+  logger.log('[GraphService] Reachability response:', data);
   return data;
 }
 
@@ -785,7 +787,7 @@ export async function detectCycles(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/graph/cycles?project=${encodeURIComponent(projectId)}`;
 
-  console.log('[GraphService] Detecting cycles:', url);
+  logger.log('[GraphService] Detecting cycles:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -793,7 +795,7 @@ export async function detectCycles(
   }
 
   const data = await response.json();
-  console.log('[GraphService] Cycles response:', data);
+  logger.log('[GraphService] Cycles response:', data);
   return data;
 }
 
@@ -811,7 +813,7 @@ export async function findLCA(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/graph/lca?project=${encodeURIComponent(projectId)}&a=${encodeURIComponent(symbolA)}&b=${encodeURIComponent(symbolB)}&depth=${depth}`;
 
-  console.log('[GraphService] Finding LCA:', url);
+  logger.log('[GraphService] Finding LCA:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -819,7 +821,7 @@ export async function findLCA(
   }
 
   const data = await response.json();
-  console.log('[GraphService] LCA response:', data);
+  logger.log('[GraphService] LCA response:', data);
   return data;
 }
 
@@ -864,7 +866,7 @@ export async function fetchHealthSummary(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/health/summary?project=${encodeURIComponent(projectId)}`;
 
-  console.log('[GraphService] Fetching health summary:', url);
+  logger.log('[GraphService] Fetching health summary:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -872,7 +874,7 @@ export async function fetchHealthSummary(
   }
 
   const data = await response.json();
-  console.log('[GraphService] Health summary response:', data);
+  logger.log('[GraphService] Health summary response:', data);
   return data;
 }
 
@@ -887,7 +889,7 @@ export async function fetchHealthSummaryV2(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/health/summary/v2?project=${encodeURIComponent(projectId)}`;
 
-  console.log('[GraphService] Fetching health summary V2:', url);
+  logger.log('[GraphService] Fetching health summary V2:', url);
   const response = await fetchWithTimeout(url);
 
   if (!response.ok) {
@@ -895,7 +897,7 @@ export async function fetchHealthSummaryV2(
   }
 
   const data = await response.json();
-  console.log('[GraphService] Health summary V2 response:', data);
+  logger.log('[GraphService] Health summary V2 response:', data);
   return data;
 }
 
@@ -910,7 +912,7 @@ export async function enrichCalledBy(
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/graph/enrich-called-by?project=${encodeURIComponent(projectId)}`;
 
-  console.log('[GraphService] Enriching called_by:', url);
+  logger.log('[GraphService] Enriching called_by:', url);
   const response = await fetchWithTimeout(url, {
     method: 'POST'
   });
@@ -920,6 +922,6 @@ export async function enrichCalledBy(
   }
 
   const data = await response.json();
-  console.log('[GraphService] Enrich called_by response:', data);
+  logger.log('[GraphService] Enrich called_by response:', data);
   return data;
 }

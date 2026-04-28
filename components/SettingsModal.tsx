@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { API_CONFIG } from '../src/constants';
+import { API_CONFIG } from '../constants';
 
 interface SettingsModalProps {
   isOpen: boolean;

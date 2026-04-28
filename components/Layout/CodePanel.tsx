@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import HighlightedCode from '../HighlightedCode';
-import { useAppContext } from '../../context/AppContext';
+import { useGraphContext } from '../../context/GraphContext';
 
 interface CodePanelProps {
     width: number;
@@ -19,7 +19,7 @@ const CodePanel: React.FC<CodePanelProps> = ({
     onToggleCollapse,
     onStartResize
 }) => {
-    const { selectedNode, hydratingNodeId } = useAppContext();
+    const { selectedNode, hydratingNodeId } = useGraphContext();
 
     const renderCode = () => {
         if (!selectedNode) return (

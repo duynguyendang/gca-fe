@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UI_CONFIG } from '../src/constants';
+import { UI_CONFIG } from '../constants';
 
 interface SearchBarProps {
   searchTerm: string;

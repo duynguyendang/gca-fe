@@ -1,10 +1,14 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
-import { useAppContext, NarrativeMessage } from '../../context/AppContext';
+import { useSearchContext } from '../../context/SearchContext';
+import { useNarrativeContext, NarrativeMessage } from '../../context/NarrativeContext';
+import { useGraphContext } from '../../context/GraphContext';
+import { useSettingsContext } from '../../context/SettingsContext';
 import UnifiedSearchBar from '../UnifiedSearchBar';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
 import { useContextualSuggestions } from '../../hooks/useContextualSuggestions';
 import { useQueryContext } from '../../hooks/useQueryContext';
 import { askAI } from '../../services/geminiService';
+import { logger } from '../../logger';
 
 interface NarrativeScreenProps {
     onNodeSelect: (node: any) => void;
@@ -109,18 +113,9 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
     onSymbolClick,
     onLinkClick,
 }) => {
-    const {
-        narrativeMessages,
-        isNarrativeLoading,
-        selectedProjectId,
-        setNarrativeMessages,
-        setIsNarrativeLoading,
-        dataApiBase,
-        selectedNode,
-        setSelectedNode,
-        setFileScopedNodes,
-        setFileScopedLinks,
-    } = useAppContext();
+    const { selectedNode, setSelectedNode, setFileScopedNodes, setFileScopedLinks } = useGraphContext();
+    const { narrativeMessages, isNarrativeLoading, setNarrativeMessages, setIsNarrativeLoading } = useNarrativeContext();
+    const { selectedProjectId, dataApiBase } = useSettingsContext();
 
     const { suggestions: contextualSuggestions } = useContextualSuggestions();
     const { buildContext } = useQueryContext();
@@ -134,7 +129,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
     // Get the last AI message for context
     const lastAIMessage = useMemo(() => {
         const aiMessages = narrativeMessages.filter(m => m.role === 'ai');
-        return aiMessages.length > 0 ? aiMessages[aiMessages.length - 1].content : null;
+        return aiMessages.length > 0 ? aiMessages[aiMessages.length - 1]!.content : null;
     }, [narrativeMessages]);
 
     // Generate context-aware follow-up suggestions
@@ -204,7 +199,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
 
             setNarrativeMessages(prev => [...prev, aiMsg]);
         } catch (error: any) {
-            console.error('Narrative AI Error:', error);
+            logger.error('[NarrativeScreen] Narrative AI Error:', error);
             // Clean up error message for user
             let userMessage = 'Something went wrong. Please try again.';
             const errorMsg = error.message || '';

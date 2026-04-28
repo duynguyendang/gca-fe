@@ -10,7 +10,7 @@ export const stratifyPaths = (nodes: any[], filePaths: string[] = []) => {
             if (typeof path !== 'string') return;
             const parts = path.split('/');
             let current = root;
-            parts.forEach((part, i) => {
+            parts.forEach((part: string, i: number) => {
                 const isLastPart = i === parts.length - 1;
                 if (!current.children[part]) {
                     current.children[part] = {
@@ -35,7 +35,7 @@ export const stratifyPaths = (nodes: any[], filePaths: string[] = []) => {
             const parts = filePath.split('/');
             let current = root;
 
-            parts.forEach((part, i) => {
+            parts.forEach((part: string, i: number) => {
                 const isLastPart = i === parts.length - 1;
                 if (!current.children[part]) {
                     current.children[part] = {

@@ -4,7 +4,9 @@
  */
 import React from 'react';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
-import { useAppContext } from '../../context/AppContext';
+import { useUIContext } from '../../context/UIContext';
+import { useNarrativeContext } from '../../context/NarrativeContext';
+import { useGraphContext } from '../../context/GraphContext';
 import { LogicSequenceCard } from './subcomponents/LogicSequenceCard';
 import { ArchitectureOverview } from './subcomponents/ArchitectureOverview';
 import { EntropyMetricsPanel } from './subcomponents/EntropyMetricsPanel';
@@ -26,13 +28,9 @@ const SynthesisPanel: React.FC<SynthesisPanelProps> = ({
     onLinkClick,
     onSymbolClick,
 }) => {
-    const {
-        selectedNode,
-        nodeInsight,
-        isInsightLoading,
-        activeSubMode,
-        setActiveSubMode
-    } = useAppContext();
+    const { activeSubMode, setActiveSubMode } = useUIContext();
+    const { nodeInsight, isInsightLoading } = useNarrativeContext();
+    const { selectedNode } = useGraphContext();
 
     const TABS = ['NARRATIVE', 'ARCHITECTURE', 'ENTROPY'] as const;
 

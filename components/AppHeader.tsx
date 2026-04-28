@@ -1,5 +1,5 @@
 import React from 'react';
-import { ViewMode } from '../context/AppContext';
+import { ViewMode } from '../context/UIContext';
 import ViewModeSwitcher from './ViewModeSwitcher';
 
 interface AppHeaderProps {

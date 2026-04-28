@@ -1,5 +1,8 @@
 import { useCallback } from 'react';
-import { useAppContext } from '../context/AppContext';
+import { useGraphContext } from '../context/GraphContext';
+import { useSettingsContext } from '../context/SettingsContext';
+import { useUIContext } from '../context/UIContext';
+import { useNarrativeContext } from '../context/NarrativeContext';
 import { fetchSource, fetchSummary, fetchFiles } from '../services/graphService';
 import { detectLanguage } from '../utils/languageUtils';
 import { GraphNode } from '../types';
@@ -30,6 +33,7 @@ const runWithConcurrencyLimit = async <T>(
 
   for (let i = 0; i < tasks.length; i++) {
     const task = tasks[i];
+    if (!task) continue;
     const p = task().then(result => {
       results[i] = result;
     });
@@ -46,17 +50,11 @@ const runWithConcurrencyLimit = async <T>(
 };
 
 export const useQueryContext = () => {
-  const {
-    selectedNode,
-    fileScopedNodes,
-    astData,
-    dataApiBase,
-    selectedProjectId,
-    currentProject,
-    viewMode,
-    narrativeMessages,
-    sandboxFiles,
-  } = useAppContext();
+  const { selectedNode, fileScopedNodes, astData } = useGraphContext();
+  const { dataApiBase, selectedProjectId, currentProject } = useSettingsContext();
+  const { viewMode } = useUIContext();
+  const { narrativeMessages } = useNarrativeContext();
+  const sandboxFiles = useSettingsContext().sandboxFiles;
 
   const buildContext = useCallback(async (userQuery?: string): Promise<{ enhancedQuery: string; contextData: ContextNode[] }> => {
     const contextData: ContextNode[] = [];

@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { fetchPaginatedGraph, PaginatedGraphOptions, PaginatedGraphResponse } from '../services/graphService';
+import { logger } from '../logger';
 
 interface UsePaginatedGraphResult {
   nodes: any[];
@@ -83,7 +84,7 @@ export function usePaginatedGraph(
       currentCursor.current = response.next_cursor;
     } catch (err: any) {
       setError(err.message || 'Failed to load paginated graph');
-      console.error('[usePaginatedGraph] Error:', err);
+      logger.error('[usePaginatedGraph] Error:', err);
     } finally {
       setLoading(false);
     }
@@ -124,7 +125,7 @@ export function usePaginatedGraph(
       currentCursor.current = response.next_cursor;
     } catch (err: any) {
       setError(err.message || 'Failed to load page');
-      console.error('[usePaginatedGraph] Error:', err);
+      logger.error('[usePaginatedGraph] Error:', err);
     } finally {
       setLoading(false);
     }
@@ -179,7 +180,7 @@ export function useInfiniteScroll(
     }
 
     observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore) {
+      if (entries[0]?.isIntersecting && hasMore) {
         loadMore();
       }
     }, {

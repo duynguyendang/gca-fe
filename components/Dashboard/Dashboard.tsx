@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useAppContext } from '../../context/AppContext';
+import { useSettingsContext } from '../../context/SettingsContext';
 import { fetchHealthSummaryV2, fetchHealthSummary, HealthSummaryV2, FileHealth } from '../../services/graphService';
+import { logger } from '../../logger';
 import HealthScore from './HealthScore';
 import MetricsRadar from './MetricsRadar';
 import RiskLeaderboard from './RiskLeaderboard';
@@ -18,7 +19,7 @@ function nextRequestId(): string {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ refreshKey }) => {
-  const { dataApiBase, selectedProjectId } = useAppContext();
+  const { dataApiBase, selectedProjectId } = useSettingsContext();
 
   const [healthV2, setHealthV2] = useState<HealthSummaryV2 | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -39,7 +40,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ refreshKey }) => {
       setStatus('success');
     } catch (err: any) {
       // V2 not available — fall back to legacy format and derive V2-like view
-      console.warn('[Dashboard] V2 endpoint unavailable, using legacy format:', err.message);
+      logger.warn('[Dashboard] V2 endpoint unavailable, using legacy format:', err.message);
       try {
         const legacy = await fetchHealthSummary(dataApiBase, selectedProjectId);
         // Transform legacy format to V2 shape

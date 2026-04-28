@@ -25,7 +25,7 @@ export const useResizePanels = (config: ResizePanelsConfig = {}) => {
     const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
     const [codePanelWidth, setCodePanelWidth] = useState(initialCodePanelWidth ?? defaultCodePanelWidth);
 
-    // Get collapse states from config (passed from AppContext in App.tsx)
+    // Get collapse states from config (passed from useUIContext in App.tsx)
     const {
         isCodeCollapsed,
         setIsCodeCollapsed,

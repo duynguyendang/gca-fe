@@ -1,4 +1,4 @@
-import { API_CONFIG } from '../src/constants';
+import { API_CONFIG } from '../constants';
 
 /**
  * Fetch wrapper with timeout support using AbortController.

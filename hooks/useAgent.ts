@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { executeAgent, AgentStep, AgentResponse } from '../services/geminiService';
-import { logger } from '../src/logger';
+import { logger } from '../logger';
 
 interface UseAgentOptions {
   dataApiBase: string;

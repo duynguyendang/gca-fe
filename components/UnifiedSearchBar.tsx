@@ -1,5 +1,6 @@
 import React from 'react';
 import { useSearchContext } from '../context/SearchContext';
+import ConversationHistory from './ConversationHistory';
 
 interface Suggestion {
   text: string;
@@ -64,6 +65,16 @@ const UnifiedSearchBar: React.FC<UnifiedSearchBarProps> = ({
 
   return (
     <div className="shrink-0 bg-[var(--bg-main)]/95 backdrop-blur-xl border-t border-[var(--border)] px-6 py-4">
+      {/* Conversation History */}
+      <ConversationHistory
+        accentColor={accentColor}
+        onRerunQuery={(query) => {
+          if (onSubmit) {
+            onSubmit(query);
+          }
+        }}
+      />
+
       {/* Input Area */}
       <div className="flex items-center gap-3">
         <div className="flex-1 relative">

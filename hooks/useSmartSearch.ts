@@ -19,7 +19,8 @@ import {
     translateNLToDatalog,
     generateReactiveNarrative,
     analyzePathWithCode,
-    askAI
+    askAI,
+    ConversationTurn
 } from '../services/geminiService';
 
 interface UseSmartSearchOptions {
@@ -35,6 +36,8 @@ interface UseSmartSearchOptions {
     setNodeInsight: (insight: string | null) => void;
     setLastExecutedQuery: (query: string) => void;
     activeSubMode?: string;
+    conversationHistory: ConversationTurn[];
+    addConversationTurn: (turn: ConversationTurn) => void;
 }
 
 interface SearchState {
@@ -58,6 +61,8 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
         setNodeInsight,
         setLastExecutedQuery,
         activeSubMode = 'NARRATIVE',
+        conversationHistory,
+        addConversationTurn,
     } = options;
 
     const [isSearching, setIsSearching] = useState(false);
@@ -388,6 +393,16 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                 setNodeInsight(`Found ${results.nodes.length} nodes and ${results.links?.length || 0} relationships.`);
             }
 
+            // Track conversation turn for context-aware intent classification
+            addConversationTurn({
+                user_input: query,
+                intent: 'search',
+                datalog_query: datalogQuery,
+                result_count: results.nodes.length,
+                summary: `Found ${results.nodes.length} nodes and ${results.links?.length || 0} relationships`,
+                timestamp: Date.now()
+            });
+
             setSearchStatus(null);
             setIsSearching(false);
 
@@ -398,7 +413,7 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             setSearchStatus(null);
             setIsSearching(false);
         }
-    }, [dataApiBase, selectedProjectId, availablePredicates, manifest, onViewModeChange, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setNodeInsight, setLastExecutedQuery]);
+    }, [dataApiBase, selectedProjectId, availablePredicates, manifest, onViewModeChange, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setNodeInsight, setLastExecutedQuery, conversationHistory, addConversationTurn]);
 
     return {
         handleSmartSearch,

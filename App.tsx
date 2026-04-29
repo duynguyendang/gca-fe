@@ -89,6 +89,8 @@ const App: React.FC = () => {
   const {
     searchTerm, setSearchTerm,
     setLastExecutedQuery,
+    conversationHistory,
+    addConversationTurn,
   } = useSearchContext();
 
   const {
@@ -145,6 +147,8 @@ const App: React.FC = () => {
     setNodeInsight,
     setLastExecutedQuery,
     activeSubMode,
+    conversationHistory,
+    addConversationTurn,
   });
 
   // Contextual suggestions for search bar

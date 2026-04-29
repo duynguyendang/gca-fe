@@ -439,22 +439,32 @@ export const executeAgent = async (
 
 // --- Unified Ask Endpoint (NL -> Datalog -> LLM Answer) ---
 
+export interface ConversationTurn {
+    user_input: string;
+    intent: string;
+    datalog_query: string;
+    result_count: number;
+    summary: string;
+    timestamp: number;
+}
+
 export interface UnifiedAskRequest {
-  project_id: string;
-  query: string;
-  symbol_id?: string;
-  depth?: number;
-  context?: string;
+    project_id: string;
+    query: string;
+    symbol_id?: string;
+    depth?: number;
+    context?: string;
+    conversation_history?: ConversationTurn[];
 }
 
 export interface UnifiedAskResponse {
-  answer: string;
-  query: string;
-  intent: string;
-  confidence: number;
-  results: any;
-  summary: string;
-  error?: string;
+    answer: string;
+    query: string;
+    intent: string;
+    confidence: number;
+    results: any;
+    summary: string;
+    error?: string;
 }
 
 /**
@@ -470,6 +480,7 @@ export const unifiedAsk = async (
     symbolId?: string;
     depth?: number;
     context?: string;
+    conversationHistory?: ConversationTurn[];
   }
 ): Promise<UnifiedAskResponse> => {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
@@ -485,7 +496,8 @@ export const unifiedAsk = async (
       query: query,
       symbol_id: options?.symbolId || '',
       depth: options?.depth || 0,
-      context: options?.context || ''
+      context: options?.context || '',
+      conversation_history: options?.conversationHistory || []
     })
   }, API_CONFIG.TIMEOUT.LONG);
 

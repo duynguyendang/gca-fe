@@ -1,14 +1,16 @@
-# GCA Frontend
+# GCA Explorer
 
 **Interactive Graph-Based Code Explorer** with AI-Powered Analysis
 
-The GCA Frontend is a React application that visualizes code as an interactive knowledge graph, enabling intuitive code exploration through natural language queries and AI-powered insights.
+GCA Explorer is the human interface to GCA (Gem Code Analysis). It visualizes code as an interactive knowledge graph, enabling intuitive code exploration through natural language queries and AI-powered insights.
+
+> GCA Explorer connects to the GCA backend via REST API. The backend powers the knowledge graph; GCA Explorer makes it human-friendly.
 
 ## Features
 
 ### Natural Language Code Exploration
 
-Unlike traditional code browsers that require you to know exactly where code lives, GCA lets you ask questions naturally:
+Unlike traditional code browsers that require you to know exactly where code lives, GCA Explorer lets you ask questions naturally:
 
 - **"Where is authentication handled?"** → Shows all auth-related files and symbols
 - **"What calls this function?"** → Visualizes the entire call graph
@@ -16,7 +18,7 @@ Unlike traditional code browsers that require you to know exactly where code liv
 
 ### Unified Graph + AI Experience
 
-Most tools show you code OR let you ask questions. GCA combines both:
+Most tools show you code OR let you ask questions. GCA Explorer combines both:
 
 - Click any node to see code
 - Ask AI to explain that code in context

@@ -104,7 +104,9 @@ Switch between visualization modes:
 - **Vite** for fast builds and hot reload
 - **Framer Motion** for animations
 - **Lucide React** for icons
-- **React Markdown** for rendering AI responses
+- **React Markdown** with `remark-gfm` for rendering AI responses
+- **Recharts** for radar charts
+- **Vitest** for testing
 
 ## Architecture
 
@@ -112,11 +114,14 @@ Switch between visualization modes:
 
 | Component | Purpose |
 | --------- | ------- |
-| `App.tsx` | Main orchestrator: project/file management, view switching, graph coordination |
+| `App.tsx` (669 lines) | Main orchestrator: project/file management, view switching, graph coordination |
+| `Dashboard/` | HealthScore (SVG), RiskLeaderboard, MetricsRadar (recharts), SmellsList |
 | `TreeVisualizer/` | D3-powered graph with force simulation, zoom/pan, node selection |
 | `NarrativeScreen/` | Chat-style AI interaction with context-aware suggestions |
 | `Layout/` | Code panel, synthesis panel, sidebar navigation |
+| `LandingScreen/` | Initial project selection screen |
 | `SearchBar.tsx` | Natural language query input with history |
+| `ErrorBoundary.tsx` | React error boundary for component crashes |
 
 ### Services
 
@@ -127,13 +132,16 @@ Switch between visualization modes:
 
 ### State Management
 
-Global state via `AppContext`:
+Global state is split across 6 focused contexts (no monolithic AppContext):
 
-- `dataApiBase`: Backend URL
-- `selectedProjectId`: Current project
-- `astData`: Graph nodes/links
-- `viewMode`: Current visualization mode
-- `nodeInsight`: AI analysis text
+- `UIContext`: view mode, panel toggles, drawer state
+- `GraphContext`: graph nodes/links, node selection, caches
+- `SearchContext`: search term, input ref, query results
+- `NarrativeContext`: chat messages, AI insights
+- `SettingsContext`: settings modal state
+- `ToastContext`: toast notifications
+
+All contexts are composed via a single `AppProviders` wrapper. Each context has a dedicated `useXxxContext` hook.
 
 ## Configuration
 
@@ -150,11 +158,13 @@ The API URL can also be configured via:
 1. Settings panel in the UI
 2. `sessionStorage` (persisted between sessions)
 
-## Performance
+### Performance
 
 - **Initial Load**: <2s with auto-connect
 - **Graph Render**: <100ms for 1000 nodes
 - **Auto-Clustering**: Automatically enables Map mode at >300 nodes
+- **Bounded Caches**: Node hydration uses TTLBoundedCache (50 items, 10-min TTL) to prevent memory growth
+- **Test Infrastructure**: Vitest with @testing-library for unit tests; `npm run verify` for full typecheck+build+test
 
 ## Troubleshooting
 

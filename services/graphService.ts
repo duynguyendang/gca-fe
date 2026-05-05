@@ -32,6 +32,7 @@ export interface GraphMapNode {
   filePath?: string;
   start_line?: number;
   end_line?: number;
+  community?: number;
   [key: string]: any;
 }
 
@@ -923,5 +924,107 @@ export async function enrichCalledBy(
 
   const data = await response.json();
   logger.log('[GraphService] Enrich called_by response:', data);
+  return data;
+}
+
+/**
+ * Fetch surprise analysis - ranked list of surprising call edges
+ * GET /api/v1/analysis/surprise?project={projectId}
+ */
+export async function fetchSurpriseAnalysis(
+  dataApiBase: string,
+  projectId: string
+): Promise<import('../types').SurpriseResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/analysis/surprise?project=${encodeURIComponent(projectId)}`;
+
+  if (!isValidUrl(cleanBase)) {
+    throw new Error('Invalid API base URL');
+  }
+  if (!isValidProjectId(projectId)) {
+    throw new Error('Invalid project ID');
+  }
+
+  logger.log('[GraphService] Fetching surprise analysis:', url);
+  const response = await fetchWithTimeout(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch surprise analysis: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  logger.log('[GraphService] Surprise analysis response:', data);
+  return data;
+}
+
+/**
+ * Fetch knowledge gaps analysis
+ * GET /api/v1/analysis/knowledge-gaps?project={projectId}
+ */
+export async function fetchKnowledgeGaps(
+  dataApiBase: string,
+  projectId: string
+): Promise<import('../types').KnowledgeGapsResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/analysis/knowledge-gaps?project=${encodeURIComponent(projectId)}`;
+
+  if (!isValidUrl(cleanBase)) {
+    throw new Error('Invalid API base URL');
+  }
+  if (!isValidProjectId(projectId)) {
+    throw new Error('Invalid project ID');
+  }
+
+  logger.log('[GraphService] Fetching knowledge gaps:', url);
+  const response = await fetchWithTimeout(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch knowledge gaps: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  logger.log('[GraphService] Knowledge gaps response:', data);
+  return data;
+}
+
+/**
+ * Compute graph diff between two snapshots or current state
+ * POST /api/v1/graph/diff
+ */
+export async function fetchGraphDiff(
+  dataApiBase: string,
+  projectId: string,
+  beforeSnapshotPath?: string,
+  afterSnapshotPath?: string,
+  beforeId?: string
+): Promise<import('../types').GraphDiff> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/graph/diff`;
+
+  if (!isValidUrl(cleanBase)) {
+    throw new Error('Invalid API base URL');
+  }
+  if (!isValidProjectId(projectId)) {
+    throw new Error('Invalid project ID');
+  }
+
+  logger.log('[GraphService] Computing graph diff:', url);
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      project_id: projectId,
+      before_snapshot_path: beforeSnapshotPath,
+      after_snapshot_path: afterSnapshotPath,
+      before_id: beforeId,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to compute graph diff: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  logger.log('[GraphService] Graph diff response:', data);
   return data;
 }

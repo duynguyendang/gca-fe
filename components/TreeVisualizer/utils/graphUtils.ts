@@ -67,9 +67,18 @@ export const isVirtualLink = (link: any): boolean => {
     return relation.startsWith('v:');
 };
 
+const CONFIDENCE_COLORS: Record<string, string> = {
+    EXTRACTED: '#22c55e',
+    INFERRED: '#f59e0b',
+    AMBIGUOUS: '#ef4444',
+};
+
 export const getLinkColor = (link: any): string => {
     if (isVirtualLink(link)) {
         return '#a855f7'; // Purple for virtual links
+    }
+    if (link.confidence_tier && CONFIDENCE_COLORS[link.confidence_tier]) {
+        return CONFIDENCE_COLORS[link.confidence_tier];
     }
     return '#475569'; // Default slate color for AST links
 };
@@ -77,6 +86,9 @@ export const getLinkColor = (link: any): string => {
 export const getLinkOpacity = (link: any): number => {
     if (link.weight !== undefined) {
         return 0.2 + (link.weight * 0.8);
+    }
+    if (link.confidence !== undefined) {
+        return 0.2 + (link.confidence * 0.6);
     }
     return isVirtualLink(link) ? 0.6 : 0.7;
 };
@@ -202,4 +214,23 @@ export const calculateNodeRadius = (node: any, lineCount?: number, activeSubMode
     }
 
     return Math.sqrt(lineCountVal) * 3 + 8;
+};
+
+const COMMUNITY_PALETTE = [
+    '#3b82f6', // blue
+    '#22c55e', // green
+    '#f59e0b', // amber
+    '#ef4444', // red
+    '#8b5cf6', // violet
+    '#ec4899', // pink
+    '#06b6d4', // cyan
+    '#f97316', // orange
+    '#6366f1', // indigo
+    '#14b8a6', // teal
+];
+
+export const getCommunityColor = (community: number | string | undefined): string => {
+    if (community === undefined || community === null) return '#94a3b8';
+    const id = typeof community === 'string' ? parseInt(community.replace('cluster_', ''), 10) : community;
+    return COMMUNITY_PALETTE[id % COMMUNITY_PALETTE.length];
 };

@@ -1,11 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useSettingsContext } from '../../context/SettingsContext';
-import { fetchHealthSummaryV2, fetchHealthSummary, HealthSummaryV2, FileHealth } from '../../services/graphService';
+import { fetchHealthSummaryV2, fetchHealthSummary, fetchSurpriseAnalysis, fetchKnowledgeGaps, HealthSummaryV2, FileHealth } from '../../services/graphService';
 import { logger } from '../../logger';
 import HealthScore from './HealthScore';
 import MetricsRadar from './MetricsRadar';
 import RiskLeaderboard from './RiskLeaderboard';
 import AIChatDrawer from './AIChatDrawer';
+import SurprisePanel from './SurprisePanel';
+import KnowledgeGapPanel from './KnowledgeGapPanel';
+import type { SurpriseResponse, KnowledgeGapsResponse } from '../../types';
 
 interface DashboardProps {
   refreshKey?: string;
@@ -22,6 +25,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ refreshKey }) => {
   const { dataApiBase, selectedProjectId } = useSettingsContext();
 
   const [healthV2, setHealthV2] = useState<HealthSummaryV2 | null>(null);
+  const [surpriseData, setSurpriseData] = useState<SurpriseResponse | null>(null);
+  const [knowledgeGaps, setKnowledgeGaps] = useState<KnowledgeGapsResponse | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -33,11 +38,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ refreshKey }) => {
     setStatus('loading');
     setError(null);
 
-    try {
-      // Try V2 endpoint first (Risk Leaderboard format)
-      const data = await fetchHealthSummaryV2(dataApiBase, selectedProjectId);
-      setHealthV2(data);
-      setStatus('success');
+try {
+        // Try V2 endpoint first (Risk Leaderboard format)
+        const data = await fetchHealthSummaryV2(dataApiBase, selectedProjectId);
+        setHealthV2(data);
+        setStatus('success');
+        // Also load surprise analysis in parallel
+        try {
+          const surprise = await fetchSurpriseAnalysis(dataApiBase, selectedProjectId);
+          setSurpriseData(surprise);
+        } catch (surpriseErr: any) {
+          logger.warn('[Dashboard] Surprise analysis unavailable:', surpriseErr.message);
+        }
+        // Also load knowledge gaps
+        try {
+          const gaps = await fetchKnowledgeGaps(dataApiBase, selectedProjectId);
+          setKnowledgeGaps(gaps);
+        } catch (gapsErr: any) {
+          logger.warn('[Dashboard] Knowledge gaps unavailable:', gapsErr.message);
+        }
     } catch (err: any) {
       // V2 not available — fall back to legacy format and derive V2-like view
       logger.warn('[Dashboard] V2 endpoint unavailable, using legacy format:', err.message);
@@ -206,6 +225,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ refreshKey }) => {
               )}
             </div>
           </div>
+
+          {/* Surprise Analysis Panel */}
+          {surpriseData && surpriseData.edges.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">
+                ⚡ Surprise Analysis
+              </h2>
+              <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] overflow-hidden" style={{ maxHeight: '400px' }}>
+                <SurprisePanel edges={surpriseData.edges} />
+              </div>
+            </div>
+          )}
+
+          {/* Knowledge Gaps Panel */}
+          {knowledgeGaps && knowledgeGaps.total_count > 0 && (
+            <div className="mb-6">
+              <h2 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">
+                🧩 Knowledge Gaps
+              </h2>
+              <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] overflow-hidden" style={{ maxHeight: '400px' }}>
+                <KnowledgeGapPanel gaps={knowledgeGaps} />
+              </div>
+            </div>
+          )}
 
           {/* Risk Leaderboard Table */}
           <div>

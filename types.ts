@@ -40,6 +40,7 @@ export interface GraphNode {
   end_line?: number;
   code?: string;
   metadata?: Record<string, string>;
+  community?: number;
   _isFile?: boolean;
   _isMissingCode?: boolean;
   _scrollToLine?: number;
@@ -54,6 +55,8 @@ export interface GraphLink {
   relation?: string;
   source_type?: 'ast' | 'virtual';
   weight?: number;
+  confidence?: number;
+  confidence_tier?: ConfidenceTier;
 }
 
 export interface FlatGraph {
@@ -151,4 +154,101 @@ export interface HealthSummaryLegacy {
     smell_type: string;
     severity: 'High' | 'Medium' | 'Low';
   }>;
+}
+
+// Confidence tier for edge reliability
+export type ConfidenceTier = 'EXTRACTED' | 'INFERRED' | 'AMBIGUOUS';
+
+// Extended graph link with confidence
+export interface GraphLinkExtended extends GraphLink {
+  confidence?: number;
+  confidence_tier?: ConfidenceTier;
+}
+
+// Surprise analysis types
+export interface SurpriseFactor {
+  type: string;
+  score: number;
+}
+
+export interface SurpriseEdge {
+  source: string;
+  target: string;
+  score: number;
+  factors: SurpriseFactor[];
+  src_file?: string;
+  tgt_file?: string;
+}
+
+export interface SurpriseResponse {
+  edges: SurpriseEdge[];
+  total_count: number;
+  high_count: number;
+  medium_count: number;
+  low_count: number;
+}
+
+// Knowledge gap types
+export interface KnowledgeGapItem {
+  symbol: string;
+  gap_type: 'isolated' | 'untested_hotspot' | 'thin_community' | 'single_file_community';
+  severity: 'high' | 'medium' | 'low';
+  detail: string;
+  degree?: number;
+}
+
+export interface KnowledgeGapsResponse {
+  isolated_nodes: KnowledgeGapItem[];
+  untested_hotspots: KnowledgeGapItem[];
+  thin_communities: KnowledgeGapItem[];
+  single_file_clusters: KnowledgeGapItem[];
+  total_count: number;
+}
+
+// Graph diff types
+export interface NodeDiff {
+  id: string;
+  kind: string;
+  file?: string;
+  surprise_score?: number;
+}
+
+export interface EdgeDiff {
+  id: string;
+  source: string;
+  target: string;
+  predicate: string;
+  surprise_score?: number;
+}
+
+export interface CommChange {
+  node: string;
+  before_cluster: number;
+  after_cluster: number;
+}
+
+export interface DiffSummary {
+  nodes_added: number;
+  nodes_removed: number;
+  edges_added: number;
+  edges_removed: number;
+  community_moves: number;
+  before_total_nodes: number;
+  after_total_nodes: number;
+}
+
+export interface GraphDiff {
+  new_nodes: NodeDiff[];
+  removed_nodes: string[];
+  new_edges: EdgeDiff[];
+  removed_edges: string[];
+  community_changes: CommChange[];
+  summary: DiffSummary;
+}
+
+// Community cluster info
+export interface CommunityInfo {
+  cluster_id: number;
+  member_count: number;
+  color?: string;
 }

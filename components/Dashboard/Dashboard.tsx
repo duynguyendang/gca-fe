@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useSettingsContext } from '../../context/SettingsContext';
-import { fetchHealthSummaryV2, fetchHealthSummary, fetchSurpriseAnalysis, fetchKnowledgeGaps, HealthSummaryV2, FileHealth } from '../../services/graphService';
+import { fetchHealthSummaryV2, fetchHealthSummary, fetchSurpriseAnalysis, fetchKnowledgeGaps, createSnapshot, fetchSnapshots, fetchGraphDiff, HealthSummaryV2, FileHealth } from '../../services/graphService';
 import { logger } from '../../logger';
 import HealthScore from './HealthScore';
 import MetricsRadar from './MetricsRadar';
@@ -8,7 +8,8 @@ import RiskLeaderboard from './RiskLeaderboard';
 import AIChatDrawer from './AIChatDrawer';
 import SurprisePanel from './SurprisePanel';
 import KnowledgeGapPanel from './KnowledgeGapPanel';
-import type { SurpriseResponse, KnowledgeGapsResponse } from '../../types';
+import GraphDiffPanel from './GraphDiffPanel';
+import type { SurpriseResponse, KnowledgeGapsResponse, SnapshotInfo, GraphDiff } from '../../types';
 
 interface DashboardProps {
   refreshKey?: string;
@@ -31,6 +32,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ refreshKey }) => {
   const [error, setError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [initialPrompt, setInitialPrompt] = useState('');
+  const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([]);
+  const [selectedBefore, setSelectedBefore] = useState<string>('');
+  const [selectedAfter, setSelectedAfter] = useState<string>('');
+  const [diffResult, setDiffResult] = useState<GraphDiff | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
 
   const loadHealthData = useCallback(async (requestId: string) => {
     if (!selectedProjectId || !dataApiBase) return;
@@ -89,7 +95,36 @@ try {
     const requestId = nextRequestId();
     setStatus('loading');
     loadHealthData(requestId);
+
+    // Load snapshots for graph diff
+    fetchSnapshots(dataApiBase, selectedProjectId)
+      .then(setSnapshots)
+      .catch(err => logger.warn('[Dashboard] Failed to load snapshots:', err.message));
   }, [selectedProjectId, dataApiBase, refreshKey, loadHealthData]);
+
+  const handleCaptureSnapshot = useCallback(async () => {
+    if (!selectedProjectId || !dataApiBase) return;
+    setSnapshotLoading(true);
+    try {
+      const snap = await createSnapshot(dataApiBase, selectedProjectId);
+      setSnapshots(prev => [snap, ...prev]);
+      setSelectedBefore(snap.path);
+    } catch (err: any) {
+      logger.warn('[Dashboard] Failed to capture snapshot:', err.message);
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }, [dataApiBase, selectedProjectId]);
+
+  const handleCompareDiff = useCallback(async () => {
+    if (!selectedProjectId || !dataApiBase || !selectedBefore) return;
+    try {
+      const diff = await fetchGraphDiff(dataApiBase, selectedProjectId, selectedBefore, undefined);
+      setDiffResult(diff);
+    } catch (err: any) {
+      logger.warn('[Dashboard] Failed to compare diff:', err.message);
+    }
+  }, [dataApiBase, selectedProjectId, selectedBefore]);
 
   const handleRetry = useCallback(() => {
     if (!selectedProjectId || !dataApiBase) return;
@@ -227,7 +262,7 @@ try {
           </div>
 
           {/* Surprise Analysis Panel */}
-          {surpriseData && surpriseData.edges.length > 0 && (
+          {surpriseData?.edges && surpriseData.edges.length > 0 && (
             <div className="mb-6">
               <h2 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">
                 ⚡ Surprise Analysis
@@ -249,6 +284,53 @@ try {
               </div>
             </div>
           )}
+
+          {/* Graph Diff Panel */}
+          <div className="mb-6">
+            <h2 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">
+              📊 Graph Diff
+            </h2>
+            <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] overflow-hidden">
+              <div className="p-4">
+                <div className="flex items-center gap-3 mb-3 flex-wrap">
+                  <button
+                    onClick={handleCaptureSnapshot}
+                    disabled={snapshotLoading || !selectedProjectId}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white text-sm rounded-lg transition-colors"
+                  >
+                    {snapshotLoading ? 'Capturing...' : '📸 Capture Snapshot'}
+                  </button>
+                  <select
+                    value={selectedBefore}
+                    onChange={e => setSelectedBefore(e.target.value)}
+                    className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-white"
+                  >
+                    <option value="">Select baseline snapshot</option>
+                    {snapshots.map(snap => (
+                      <option key={snap.id} value={snap.path}>
+                        {snap.id} ({snap.node_count} nodes, {snap.edge_count} edges)
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleCompareDiff}
+                    disabled={!selectedBefore || !selectedProjectId}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white text-sm rounded-lg transition-colors"
+                  >
+                    Compare
+                  </button>
+                </div>
+                {diffResult && (
+                  <div className="mt-4">
+                    <GraphDiffPanel diff={diffResult} />
+                  </div>
+                )}
+                {snapshots.length === 0 && !snapshotLoading && (
+                  <p className="text-sm text-gray-500">Capture a snapshot to track changes over time.</p>
+                )}
+              </div>
+            </div>
+          </div>
 
           {/* Risk Leaderboard Table */}
           <div>

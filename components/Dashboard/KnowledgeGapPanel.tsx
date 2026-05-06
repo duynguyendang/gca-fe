@@ -1,17 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { KnowledgeGapItem } from '../../types';
+import { KnowledgeGapItem, KnowledgeGapsResponse } from '../../types';
 
 interface KnowledgeGapPanelProps {
   gaps: KnowledgeGapsResponse;
   onSymbolClick?: (symbol: string) => void;
-}
-
-interface KnowledgeGapsResponse {
-  isolated_nodes: KnowledgeGapItem[];
-  untested_hotspots: KnowledgeGapItem[];
-  thin_communities: KnowledgeGapItem[];
-  single_file_clusters: KnowledgeGapItem[];
-  total_count: number;
 }
 
 const PAGE_SIZE = 20;

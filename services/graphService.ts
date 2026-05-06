@@ -1028,3 +1028,71 @@ export async function fetchGraphDiff(
   logger.log('[GraphService] Graph diff response:', data);
   return data;
 }
+
+/**
+ * Fetch list of snapshots for a project
+ * GET /api/v1/graph/snapshots?project=...
+ */
+export async function fetchSnapshots(
+  dataApiBase: string,
+  projectId: string
+): Promise<import('../types').SnapshotInfo[]> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/graph/snapshots?project=${encodeURIComponent(projectId)}`;
+
+  if (!isValidUrl(cleanBase)) {
+    throw new Error('Invalid API base URL');
+  }
+  if (!isValidProjectId(projectId)) {
+    throw new Error('Invalid project ID');
+  }
+
+  logger.log('[GraphService] Fetching snapshots:', url);
+  const response = await fetchWithTimeout(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch snapshots: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  logger.log('[GraphService] Snapshots response:', data);
+  return data;
+}
+
+/**
+ * Create a new snapshot for a project
+ * POST /api/v1/graph/snapshots
+ */
+export async function createSnapshot(
+  dataApiBase: string,
+  projectId: string,
+  label?: string
+): Promise<import('../types').SnapshotInfo> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/graph/snapshots`;
+
+  if (!isValidUrl(cleanBase)) {
+    throw new Error('Invalid API base URL');
+  }
+  if (!isValidProjectId(projectId)) {
+    throw new Error('Invalid project ID');
+  }
+
+  logger.log('[GraphService] Creating snapshot:', url);
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      project_id: projectId,
+      label: label || '',
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to create snapshot: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  logger.log('[GraphService] Created snapshot:', data);
+  return data;
+}

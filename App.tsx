@@ -21,7 +21,7 @@ import UnifiedSearchBar from './components/UnifiedSearchBar';
 import { useSessionStorage } from './hooks/useSessionStorage';
 import { useQueryContext } from './hooks/useQueryContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { fetchFileCalls, fetchWhoCalls, fetchWhatCalls } from './services/graphService';
+import { fetchFileCalls, fetchWhoCalls, fetchWhatCalls, fetchSource } from './services/graphService';
 import { askAI } from './services/geminiService';
 import { logger } from './logger';
 import { requestManager } from './utils/requestManager';
@@ -346,11 +346,25 @@ const App: React.FC = () => {
     fullQuery += `\n${enhancedQuery}`;
 
     if (query === 'Explain this code' && selectedNode) {
+      const nodeId = selectedNode.id;
+      const nodeFilePath = selectedNode._filePath || selectedNode.filePath || nodeId;
+      let nodeCode = selectedNode.code;
+
+      if ((!nodeCode || nodeCode.trim() === '') && nodeId && dataApiBase && selectedProjectId) {
+        try {
+          nodeCode = await fetchSource(dataApiBase, selectedProjectId, nodeFilePath) || '';
+        } catch (e) {
+          logger.warn('[App] Failed to fetch source for explain:', e);
+        }
+      }
+
       fullQuery = `Explain the following code:\n\n`;
       fullQuery += `Selected: "${selectedNode.name}" (${selectedNode.kind || selectedNode.type})\n`;
-      fullQuery += `File: ${selectedNode._filePath || selectedNode.filePath || 'Unknown'}\n`;
-      if (selectedNode.code && selectedNode.code.trim() !== '') {
-        fullQuery += `\nFull Code:\n${selectedNode.code.trim()}\n`;
+      fullQuery += `File: ${nodeFilePath}\n`;
+      if (nodeCode && nodeCode.trim() !== '') {
+        fullQuery += `\nFull Code:\n${nodeCode.trim()}\n`;
+      } else {
+        fullQuery += `\n(No code available for this symbol)\n`;
       }
       fullQuery += `\nPlease analyze the code and provide:\n1. What this code does\n2. How components interact\n3. Key patterns\n4. Potential improvements`;
     }

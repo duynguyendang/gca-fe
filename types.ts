@@ -252,3 +252,12 @@ export interface CommunityInfo {
   member_count: number;
   color?: string;
 }
+
+// Snapshot info
+export interface SnapshotInfo {
+  id: string;
+  path: string;
+  timestamp: string;
+  node_count: number;
+  edge_count: number;
+}

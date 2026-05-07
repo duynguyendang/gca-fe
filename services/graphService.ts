@@ -988,6 +988,42 @@ export async function fetchKnowledgeGaps(
 }
 
 /**
+ * Generate integration tests for a symbol or route
+ * POST /api/v1/projects/:projectId/test/generate
+ */
+export async function generateTests(
+  dataApiBase: string,
+  projectId: string,
+  target: string,
+  query: string = 'generate integration tests'
+): Promise<{ answer: string }> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/projects/${encodeURIComponent(projectId)}/test/generate`;
+
+  if (!isValidUrl(cleanBase)) {
+    throw new Error('Invalid API base URL');
+  }
+  if (!isValidProjectId(projectId)) {
+    throw new Error('Invalid project ID');
+  }
+
+  logger.log('[GraphService] Generating tests:', url, { target, query });
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target, query }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to generate tests: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  logger.log('[GraphService] Test generation response:', data);
+  return data;
+}
+
+/**
  * Compute graph diff between two snapshots or current state
  * POST /api/v1/graph/diff
  */

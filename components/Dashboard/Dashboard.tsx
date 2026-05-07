@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useSettingsContext } from '../../context/SettingsContext';
-import { fetchHealthSummaryV2, fetchHealthSummary, fetchSurpriseAnalysis, fetchKnowledgeGaps, createSnapshot, fetchSnapshots, fetchGraphDiff, HealthSummaryV2, FileHealth } from '../../services/graphService';
+import { fetchHealthSummaryV2, fetchHealthSummary, fetchSurpriseAnalysis, fetchKnowledgeGaps, createSnapshot, fetchSnapshots, fetchGraphDiff, generateTests, HealthSummaryV2, FileHealth } from '../../services/graphService';
 import { logger } from '../../logger';
 import HealthScore from './HealthScore';
 import MetricsRadar from './MetricsRadar';
 import RiskLeaderboard from './RiskLeaderboard';
 import AIChatDrawer from './AIChatDrawer';
 import SurprisePanel from './SurprisePanel';
-import KnowledgeGapPanel from './KnowledgeGapPanel';
+import { KnowledgeGapPanel } from './KnowledgeGapPanel';
 import GraphDiffPanel from './GraphDiffPanel';
 import type { SurpriseResponse, KnowledgeGapsResponse, SnapshotInfo, GraphDiff } from '../../types';
 
@@ -143,6 +143,17 @@ try {
     setDrawerOpen(false);
     setInitialPrompt('');
   }, []);
+
+  const handleGenerateTests = useCallback(async (symbol: string) => {
+    if (!dataApiBase || !selectedProjectId) return;
+    try {
+      const result = await generateTests(dataApiBase, selectedProjectId, symbol);
+      setInitialPrompt(`Here are the generated tests for \`${symbol}\`:\n\n\`\`\`go\n${result.answer}\n\`\`\``);
+      setDrawerOpen(true);
+    } catch (err: any) {
+      logger.error('[Dashboard] Failed to generate tests:', err.message);
+    }
+  }, [dataApiBase, selectedProjectId]);
 
   if (!selectedProjectId) {
     return (
@@ -280,7 +291,7 @@ try {
                 🧩 Knowledge Gaps
               </h2>
               <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] overflow-hidden" style={{ maxHeight: '400px' }}>
-                <KnowledgeGapPanel gaps={knowledgeGaps} />
+                <KnowledgeGapPanel gaps={knowledgeGaps} onGenerateTests={handleGenerateTests} />
               </div>
             </div>
           )}

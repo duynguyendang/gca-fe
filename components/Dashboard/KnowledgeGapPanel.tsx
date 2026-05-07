@@ -4,6 +4,7 @@ import { KnowledgeGapItem, KnowledgeGapsResponse } from '../../types';
 interface KnowledgeGapPanelProps {
   gaps: KnowledgeGapsResponse;
   onSymbolClick?: (symbol: string) => void;
+  onGenerateTests?: (symbol: string) => void;
 }
 
 const PAGE_SIZE = 20;
@@ -28,7 +29,7 @@ const gapTypeLabels: Record<string, string> = {
   single_file_community: 'Single-File Clusters',
 };
 
-export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, onSymbolClick }) => {
+export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, onSymbolClick, onGenerateTests }) => {
   const [activeTab, setActiveTab] = useState<string>('isolated');
 
   const tabs = useMemo(() => [
@@ -121,6 +122,18 @@ export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, onSy
                       </div>
                       <div className="text-xs text-gray-500">degree</div>
                     </div>
+                  )}
+                  {onGenerateTests && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onGenerateTests(item.symbol);
+                      }}
+                      className="ml-2 px-2 py-1 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded transition-colors"
+                      title="Generate tests"
+                    >
+                      ⚡ Test
+                    </button>
                   )}
                 </div>
               </div>

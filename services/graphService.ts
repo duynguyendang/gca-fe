@@ -676,6 +676,11 @@ export interface WhatCallsResponse {
   links: GraphMapLink[];
 }
 
+// Extended graph link with line number info (for who-calls/what-calls responses)
+export interface GraphMapLinkWithLine extends GraphMapLink {
+  line?: number;  // Source line number (1-based) for the calling edge
+}
+
 export interface ReachabilityResponse {
   reachable: boolean;
   from: string;
@@ -703,7 +708,7 @@ export async function fetchWhoCalls(
   symbol: string,
   depth: number = 3,
   focused: boolean = false
-): Promise<WhoCallsResponse> {
+): Promise<{ nodes: GraphMapNode[]; links: GraphMapLinkWithLine[] }> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   let url = `${cleanBase}/api/v1/graph/who-calls?project=${encodeURIComponent(projectId)}&symbol=${encodeURIComponent(symbol)}&depth=${depth}`;
   if (focused) {
@@ -732,7 +737,7 @@ export async function fetchWhatCalls(
   symbol: string,
   depth: number = 3,
   focused: boolean = false
-): Promise<WhatCallsResponse> {
+): Promise<{ nodes: GraphMapNode[]; links: GraphMapLinkWithLine[] }> {
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   let url = `${cleanBase}/api/v1/graph/what-calls?project=${encodeURIComponent(projectId)}&symbol=${encodeURIComponent(symbol)}&depth=${depth}`;
   if (focused) {

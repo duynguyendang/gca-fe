@@ -57,6 +57,7 @@ export interface GraphLink {
   weight?: number;
   confidence?: number;
   confidence_tier?: ConfidenceTier;
+  line?: number;  // Source line number (1-based) for the calling edge
 }
 
 export interface FlatGraph {

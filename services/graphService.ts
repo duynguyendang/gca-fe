@@ -350,6 +350,12 @@ export async function fetchBackbone(
   const nodes = data.nodes || [];
   const links = data.links || [];
 
+  // Build O(1) lookup map: node.id → node
+  const nodeById = new Map<string, any>();
+  for (const n of nodes) {
+    nodeById.set(n.id, n);
+  }
+
   // 1. Group nodes by file (using ParentID or splitting ID)
   const fileGroups = new Map<string, { id: string, path: string, nodes: any[] }>();
 
@@ -383,8 +389,8 @@ export async function fetchBackbone(
 
         if (s === node.id) {
           // This node calls something. Is it cross-file?
-          // Check target's file
-          const targetNode = nodes.find((n: any) => n.id === t);
+          // Check target's file — O(1) map lookup instead of O(n) find()
+          const targetNode = nodeById.get(t);
           const targetFile = targetNode?.parentId || (t.includes(':') ? t.split(':')[0] : t);
           if (targetFile && targetFile !== group.path) {
             exitNodes.add(node.id);
@@ -392,7 +398,7 @@ export async function fetchBackbone(
         }
         if (t === node.id) {
           // This node is called. Is it cross-file?
-          const sourceNode = nodes.find((n: any) => n.id === s);
+          const sourceNode = nodeById.get(s);
           const sourceFile = sourceNode?.parentId || (s.includes(':') ? s.split(':')[0] : s);
           if (sourceFile && sourceFile !== group.path) {
             entryNodes.add(node.id);

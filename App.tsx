@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { FlatGraph } from './types';
 import { useToast } from './context/ToastContext';
@@ -7,7 +6,7 @@ import { useSearchContext } from './context/SearchContext';
 import { useNarrativeContext, NarrativeMessage } from './context/NarrativeContext';
 import { useSettingsContext } from './context/SettingsContext';
 import { useUIContext } from './context/UIContext';
-import { useApiSync, useResizePanels, useSmartSearch, useInsights, useManifest, useNodeHydration, useContextualSuggestions } from './hooks';
+import { useApiSync, useResizePanels, useSmartSearch, useInsights, useManifest, useNodeHydration, useContextualSuggestions, useIntentRouter, useExploreGraph } from './hooks';
 import { CodePanel } from './components/Layout';
 import { NarrativeScreen } from './components/NarrativeScreen';
 import { LandingScreen } from './components/LandingScreen/LandingScreen';
@@ -21,56 +20,13 @@ import UnifiedSearchBar from './components/UnifiedSearchBar';
 import { useSessionStorage } from './hooks/useSessionStorage';
 import { useQueryContext } from './hooks/useQueryContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { fetchFileCalls, fetchWhoCalls, fetchWhatCalls, fetchSource } from './services/graphService';
+import { fetchFileCalls, fetchSource } from './services/graphService';
 import { askAI } from './services/geminiService';
 import { logger } from './logger';
 import { requestManager } from './utils/requestManager';
 import { CUSTOM_EVENTS } from './constants';
+import { classifyIntentRoute } from './utils/queryClassifier';
 import './prismSetup';
-
-// Query mode for intent-based routing
-type QueryMode = 'explore' | 'explain' | 'navigate';
-
-// Classify query to determine how to route it
-// explore: show graph visualization (callers/callees)
-// explain: send to AI for narrative explanation
-// navigate: jump to a specific file or symbol
-function classifyQueryMode(query: string): QueryMode {
-  const q = query.toLowerCase();
-
-  // Explore patterns - user wants to see graph
-  const explorePatterns = [
-    /show\s+(me\s+)?(callers|callees|dependencies)/i,
-    /(who|caller|calling)\s+calls/i,
-    /(what|callee|called)\s+calls/i,
-    /trace\s+(the\s+)?(call|code|execution)/i,
-    /call\s+graph/i,
-    /dependencies/i,
-    /upstream|downstream/i,
-    /impact.*analysis/i,
-    /blast.*radius/i,
-  ];
-
-  for (const pattern of explorePatterns) {
-    if (pattern.test(q)) return 'explore';
-  }
-
-  // Navigate patterns - user wants to jump to a file/symbol
-  const navigatePatterns = [
-    /\.(go|ts|tsx|js|jsx|py)$/,  // ends with code extension
-    /\/[a-zA-Z0-9_.-]+$/,  // ends with path segment
-    /^src\//m,
-    /^pkg\//m,
-    /^cmd\//m,
-  ];
-
-  for (const pattern of navigatePatterns) {
-    if (pattern.test(q)) return 'navigate';
-  }
-
-  // Default to explain (send to AI narrative)
-  return 'explain';
-}
 
 const App: React.FC = () => {
   const toast = useToast();
@@ -119,23 +75,14 @@ const App: React.FC = () => {
     isLandingView,
   } = useUIContext();
 
-  // Local State
   const [isSubModeSwitching, setIsSubModeSwitching] = useState(false);
-  const [isClustered, setIsClustered] = useState(false);
-
-  // Request cancellation for race condition prevention
   const nodeSelectRequestRef = useRef<string | null>(null);
 
-  // Hooks initialization
   const { manifest } = useManifest(dataApiBase, selectedProjectId);
   const { syncDataFromApi } = useApiSync();
   const { hydrateNode } = useNodeHydration();
 
-  // SmartSearch hook - handles semantic search with AI insights
-  const {
-    handleSmartSearch,
-    isSearching,
-  } = useSmartSearch({
+  const { handleSmartSearch, isSearching } = useSmartSearch({
     dataApiBase,
     selectedProjectId,
     availablePredicates,
@@ -151,45 +98,47 @@ const App: React.FC = () => {
     addConversationTurn,
   });
 
-  // Contextual suggestions for search bar
   const { suggestions: contextualSuggestions } = useContextualSuggestions();
-
-  // Query context builder for AI explanations
   const { buildContext } = useQueryContext();
 
-  // AI insights generator
-  const { generateInsights } = useInsights();
-
-  const {
-    startResizeSidebar,
-    startResizeCode,
-    sidebarWidth,
-    codePanelWidth,
-    isCodeCollapsed: isCodeCollapsedLocal,
-    setIsCodeCollapsed: setIsCodeCollapsedLocal
-  } = useResizePanels({
+  const { startResizeSidebar, startResizeCode, sidebarWidth, codePanelWidth } = useResizePanels({
     isCodeCollapsed,
     setIsCodeCollapsed
   });
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { handleIntent } = useIntentRouter({
+    dataApiBase,
+    selectedProjectId,
+    setViewMode,
+    setNarrativeMessages,
+    setIsNarrativeLoading,
+    addConversationTurn,
+    toast,
+  });
 
-  // Use session storage hook
+  const { handleExploreIntent, handleNavigateIntent } = useExploreGraph({
+    dataApiBase,
+    selectedProjectId,
+    selectedNode,
+    setViewMode,
+    setFileScopedNodes,
+    setFileScopedLinks,
+    addConversationTurn,
+    toast,
+  });
+
   useSessionStorage(astData, sandboxFiles, dataApiBase);
 
-  // Sub-mode switching animation
   useEffect(() => {
     setIsSubModeSwitching(true);
     const timer = setTimeout(() => setIsSubModeSwitching(false), 800);
     return () => clearTimeout(timer);
   }, [activeSubMode]);
 
-  // Callbacks
   const openSettings = useCallback(() => setIsSettingsOpen(true), []);
   const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
   const syncApi = useCallback(() => syncDataFromApi(dataApiBase), [dataApiBase, syncDataFromApi]);
 
-  // Project change handler
   const handleProjectChange = useCallback((projectId: string) => {
     setSelectedProjectId(projectId);
     const project = availableProjects.find((p: { id: string; name: string; description?: string }) => p.id === projectId);
@@ -197,7 +146,6 @@ const App: React.FC = () => {
       setCurrentProject(project.name);
       setNarrativeMessages([]);
       toast.info(`Loading project: ${project.name}`);
-      // Always show dashboard when project changes
       setViewMode('dashboard');
       syncDataFromApi(dataApiBase, projectId, () => {
         toast.success(`Project ${project.name} loaded`);
@@ -205,15 +153,13 @@ const App: React.FC = () => {
     }
   }, [availableProjects, dataApiBase, setCurrentProject, setSelectedProjectId, syncDataFromApi, toast, setNarrativeMessages, setViewMode]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
       const mod = isMac ? e.metaKey : e.ctrlKey;
-      
-      // Don't trigger shortcuts when typing in inputs
+
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      
+
       if (mod && e.key === 'k') {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.FOCUS_SEARCH));
@@ -230,19 +176,17 @@ const App: React.FC = () => {
         if (idx < modes.length) setViewMode(modes[idx]!);
       }
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setViewMode, setIsCodeCollapsed, setSelectedNode, setSearchTerm]);
 
-  // Listen for open-settings event from sidebar
   useEffect(() => {
     const handleOpenSettings = () => setIsSettingsOpen(true);
     window.addEventListener(CUSTOM_EVENTS.OPEN_SETTINGS, handleOpenSettings);
     return () => window.removeEventListener(CUSTOM_EVENTS.OPEN_SETTINGS, handleOpenSettings);
   }, []);
 
-  // Auto-sync on mount
   useEffect(() => {
     if (dataApiBase && !isDataSyncing && availableProjects.length === 0) {
       logger.log('[Auto-Sync] Connecting to API on mount:', dataApiBase);
@@ -250,7 +194,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Fetch predicates when project changes
   useEffect(() => {
     if (!dataApiBase || !selectedProjectId) return;
 
@@ -265,7 +208,6 @@ const App: React.FC = () => {
     });
   }, [dataApiBase, selectedProjectId]);
 
-  // Settings helpers
   const handleDataApiBaseChange = useCallback((url: string) => {
     setDataApiBase(url);
     setAvailableProjects([]);
@@ -276,65 +218,25 @@ const App: React.FC = () => {
     syncDataFromApi(dataApiBase);
   }, [dataApiBase, syncDataFromApi]);
 
-  // Smart search handler - routes based on query intent
   const handleSmartSearchWithNarrativeSwitch = useCallback(async (query: string) => {
-    const mode = classifyQueryMode(query);
-
+    const intentRoute = classifyIntentRoute(query);
     setSearchTerm(query);
 
-    // EXPLORE mode: show callers/callees graph
-    if (mode === 'explore') {
-      setViewMode('architecture');
-
-      try {
-        if (!dataApiBase || !selectedProjectId) {
-          throw new Error('Not connected to API. Please connect to a project first.');
-        }
-
-        // Determine direction: callers (who-calls) vs callees (what-calls)
-        const q = query.toLowerCase();
-        const isWhoCalls = /callers|caller|calling|who calls/.test(q);
-        const isWhatCalls = /callees|callee|called|what calls/.test(q);
-
-        // Extract potential symbol from query
-        const symbolMatch = query.match(/"([^"]+)"|([A-Z][a-zA-Z0-9]+(?:\.[a-zA-Z0-9]+)+)|([a-zA-Z_][a-zA-Z0-9_]*)/g);
-        const symbol = symbolMatch ? symbolMatch[0].replace(/"/g, '') : query;
-
-        // If no specific symbol, use selected node
-        const targetSymbol = selectedNode ? `${selectedNode._filePath || selectedNode.id}:${selectedNode.name}` : symbol;
-
-        logger.log('[App] Explore mode:', { symbol: targetSymbol, isWhoCalls, isWhatCalls });
-
-        let graphData;
-        if (isWhoCalls) {
-          graphData = await fetchWhoCalls(dataApiBase, selectedProjectId, targetSymbol, 1, true);
-        } else if (isWhatCalls) {
-          graphData = await fetchWhatCalls(dataApiBase, selectedProjectId, targetSymbol, 1, true);
-        } else {
-          // Default: show callers
-          graphData = await fetchWhoCalls(dataApiBase, selectedProjectId, targetSymbol, 1, true);
-        }
-
-        if (graphData && graphData.nodes) {
-          logger.log('[App] Explore graph loaded:', graphData.nodes.length, 'nodes');
-          setFileScopedNodes(graphData.nodes);
-          setFileScopedLinks(graphData.links || []);
-        }
-      } catch (error: any) {
-        logger.error('[App] Explore error:', error);
-        toast.error(`Failed to load graph: ${error.message}`);
-      }
-      return;
+    if (intentRoute === 'explore') {
+      const handled = await handleExploreIntent(query);
+      if (handled) return;
     }
 
-    // NAVIGATE mode: jump to file
-    if (mode === 'navigate') {
-      setViewMode('architecture');
-      toast.info('Navigate to: ' + query);
-      return;
+    if (intentRoute === 'navigate') {
+      const handled = await handleNavigateIntent(query);
+      if (handled) return;
     }
 
-    // EXPLAIN mode (default): send to AI narrative
+    if (intentRoute === 'test' || intentRoute === 'security' || intentRoute === 'refactor' || intentRoute === 'performance') {
+      const handled = await handleIntent(intentRoute, query);
+      if (handled) return;
+    }
+
     setViewMode('narrative');
 
     const { enhancedQuery, contextData } = await buildContext(query);
@@ -368,8 +270,6 @@ const App: React.FC = () => {
       }
       fullQuery += `\nPlease analyze the code and provide:\n1. What this code does\n2. How components interact\n3. Key patterns\n4. Potential improvements`;
     }
-
-    setSearchTerm(query);
 
     const userMsg: NarrativeMessage = {
       role: 'user',
@@ -417,10 +317,10 @@ const App: React.FC = () => {
       setNarrativeMessages(prev => [...prev, errorMsg]);
     } finally {
       setIsNarrativeLoading(false);
+      addConversationTurn({ user_input: query, intent: 'explain', datalog_query: '', result_count: 0, summary: 'Explain query', timestamp: Date.now() });
     }
-  }, [setViewMode, setSearchTerm, selectedNode, dataApiBase, selectedProjectId, setNarrativeMessages, setIsNarrativeLoading, currentProject, buildContext, setFileScopedNodes, setFileScopedLinks, toast]);
+  }, [setViewMode, setSearchTerm, selectedNode, dataApiBase, selectedProjectId, setNarrativeMessages, setIsNarrativeLoading, currentProject, buildContext, toast, addConversationTurn, handleIntent, handleExploreIntent, handleNavigateIntent]);
 
-  // Expanded graph data computation
   const expandedGraphData = React.useMemo(() => {
     if (!astData || !('nodes' in astData)) {
       return astData;
@@ -435,51 +335,34 @@ const App: React.FC = () => {
       const details = fileDetailsCache.get(fileId);
       if (details) {
         details.nodes.forEach((node: any) => {
-          expandedNodes.push({
-            ...node,
-            _parentFile: fileId,
-            _isExpandedChild: true
-          });
+          expandedNodes.push({ ...node, _parentFile: fileId, _isExpandedChild: true });
         });
-
         details.links.forEach((link: any) => {
-          expandedLinks.push({
-            ...link,
-            _parentFile: fileId
-          });
+          expandedLinks.push({ ...link, _parentFile: fileId });
         });
       }
     }
 
-    return {
-      nodes: expandedNodes,
-      links: expandedLinks
-    };
+    return { nodes: expandedNodes, links: expandedLinks };
   }, [astData, expandedFileIds, fileDetailsCache]);
 
-  // Toggle file expansion
   const toggleFileExpansion = useCallback(async (fileId: string) => {
     if (expandedFileIds.has(fileId)) {
-      // Collapse
       setExpandedFileIds(prev => {
         const newSet = new Set(prev);
         newSet.delete(fileId);
         return newSet;
       });
     } else {
-      // Expand - would call expandFile logic here
       logger.log('Expanding file:', fileId);
     }
-  }, [expandedFileIds]);
+  }, [expandedFileIds, setExpandedFileIds]);
 
-  // Node select handler - fetches file graph data when file is selected
   const handleNodeSelect = useCallback(async (node: any, isNavigation: boolean = false) => {
     logger.log('Node selected:', node.id, 'isNavigation:', isNavigation, '_isFile:', node._isFile);
     setSelectedNode(node);
 
-    // If it's a file navigation, fetch the file's graph data and switch to Architecture view
     if (isNavigation && node._isFile && dataApiBase && selectedProjectId) {
-      // Cancel any in-flight request for node selection
       if (nodeSelectRequestRef.current) {
         requestManager.cancelRequest(nodeSelectRequestRef.current);
       }
@@ -493,7 +376,6 @@ const App: React.FC = () => {
         const controller = requestManager.startRequest(requestId);
         const graphData = await fetchFileCalls(dataApiBase, selectedProjectId, fileId, 1, controller.signal);
 
-        // Check if this request is still valid (not stale)
         if (nodeSelectRequestRef.current !== requestId) {
           logger.log('[App] Stale response discarded for:', node.id);
           return;
@@ -503,11 +385,9 @@ const App: React.FC = () => {
           logger.log('[App] File graph loaded:', graphData.nodes.length, 'nodes');
           setFileScopedNodes(graphData.nodes);
           setFileScopedLinks(graphData.links || []);
-          // Automatically switch to Architecture view when a file is selected
           setViewMode('architecture');
         }
       } catch (err: any) {
-        // Ignore AbortError - it's expected when request is cancelled
         if (err.name === 'AbortError' || err.message?.includes('aborted')) {
           logger.log('[App] Request was cancelled:', node.id);
         } else {
@@ -523,28 +403,22 @@ const App: React.FC = () => {
     }
   }, [setSelectedNode, dataApiBase, selectedProjectId, setFileScopedNodes, setFileScopedLinks, setViewMode]);
 
-  // Hydrate selected node when it doesn't have code
-  const selectedNodeRef = React.useRef(selectedNode);
-  selectedNodeRef.current = selectedNode;
-  
   React.useEffect(() => {
     if (!selectedNode || !hydrateNode) return;
-    
+
     const nodeId = selectedNode.id;
     logger.log('[App] selectedNode changed:', nodeId, 'code:', !!selectedNode.code, '_isMissingCode:', selectedNode._isMissingCode);
-    
-    // Skip if already has code or marked as missing
+
     if (selectedNode.code || selectedNode._isMissingCode) return;
-    
-    // Determine the best ID to hydrate
+
     let hydrateId = nodeId;
     const filePath = (selectedNode as any)._filePath;
     if (filePath && typeof filePath === 'string') {
       hydrateId = filePath;
     }
-    
+
     logger.log('[App] Calling hydrateNode with:', hydrateId);
-    
+
     hydrateNode(hydrateId).then(hydrated => {
       logger.log('[App] Hydration result:', hydrated);
       if (hydrated && hydrated.code) {
@@ -567,36 +441,35 @@ const App: React.FC = () => {
       ) : (
       <div className="flex h-screen w-screen bg-[var(--bg-main)] text-slate-400 overflow-hidden font-sans">
         <AppSidebar
-        width={sidebarWidth}
-        onResizeStart={startResizeSidebar}
-        currentProject={currentProject}
-        availableProjects={availableProjects}
-        selectedProjectId={selectedProjectId}
-        onProjectChange={handleProjectChange}
-        dataApiBase={dataApiBase}
-        isDataSyncing={isDataSyncing}
-        syncError={syncError}
-        astData={astData as FlatGraph}
-        sandboxFiles={sandboxFiles}
-        onNodeSelect={handleNodeSelect}
-        selectedNode={selectedNode}
-        onSyncApi={syncApi}
-      />
-
-      <div className="flex-1 flex flex-col min-w-0">
-        <AppHeader
+          width={sidebarWidth}
+          onResizeStart={startResizeSidebar}
           currentProject={currentProject}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          isSubModeSwitching={isSubModeSwitching}
-          openSettings={openSettings}
-          isSearching={isSearching}
-          isConnected={!!dataApiBase && availableProjects.length > 0}
+          availableProjects={availableProjects}
+          selectedProjectId={selectedProjectId}
+          onProjectChange={handleProjectChange}
+          dataApiBase={dataApiBase}
           isDataSyncing={isDataSyncing}
+          syncError={syncError}
+          astData={astData as FlatGraph}
+          sandboxFiles={sandboxFiles}
+          onNodeSelect={handleNodeSelect}
+          selectedNode={selectedNode}
+          onSyncApi={syncApi}
         />
 
+        <div className="flex-1 flex flex-col min-w-0">
+          <AppHeader
+            currentProject={currentProject}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            isSubModeSwitching={isSubModeSwitching}
+            openSettings={openSettings}
+            isSearching={isSearching}
+            isConnected={!!dataApiBase && availableProjects.length > 0}
+            isDataSyncing={isDataSyncing}
+          />
+
           <div className="relative flex-1 flex flex-col min-h-0">
-            {/* Loading overlay during initial data sync */}
             {isDataSyncing && !('nodes' in astData && Array.isArray(astData.nodes) && astData.nodes.length > 0) && (
               <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--bg-main)]/90 backdrop-blur-sm">
                 <div className="text-center">
@@ -609,7 +482,6 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* Search Bar - moved outside keyed div to prevent remounting on view change */}
             {viewMode !== 'narrative' && (
               <UnifiedSearchBar
                 accentColor="teal"

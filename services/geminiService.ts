@@ -530,3 +530,115 @@ export const askQuestion = async (
   }
   return result.answer;
 };
+
+/**
+ * Intent classification result
+ */
+export interface IntentClassification {
+  intent: string;
+  confidence: number;
+}
+
+/**
+ * Classify a query's intent with optional conversation history for context-aware classification.
+ * Uses the /api/v1/ai/classify endpoint for lightweight intent classification.
+ */
+export const classifyIntent = async (
+  dataApiBase: string,
+  projectId: string,
+  query: string,
+  conversationHistory?: ConversationTurn[]
+): Promise<IntentClassification> => {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/ai/classify`;
+
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      project_id: projectId,
+      query,
+      conversation_history: conversationHistory || [],
+    })
+  }, API_CONFIG.TIMEOUT.DEFAULT);
+
+  if (!response.ok) {
+    const errText = await response.text();
+    logger.error('[GeminiService] Intent classification error:', response.status, errText);
+    throw new Error(`Intent classification failed: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return {
+    intent: data.intent || 'chat',
+    confidence: data.confidence || 0.5,
+  };
+};
+
+/**
+ * Generate integration tests for a target symbol or file.
+ */
+export const generateTestsForSymbol = async (
+  dataApiBase: string,
+  projectId: string,
+  target: string,
+  query: string = 'generate integration tests'
+): Promise<string> => {
+  const result = await askAI(dataApiBase, projectId, {
+    task: 'test_generation',
+    query,
+    symbol_id: target,
+  });
+  return result;
+};
+
+/**
+ * Perform security analysis on a target symbol or file.
+ */
+export const analyzeSecurityForSymbol = async (
+  dataApiBase: string,
+  projectId: string,
+  target: string,
+  query: string = 'analyze security vulnerabilities'
+): Promise<string> => {
+  const result = await askAI(dataApiBase, projectId, {
+    task: 'security_audit',
+    query,
+    symbol_id: target,
+  });
+  return result;
+};
+
+/**
+ * Suggest refactoring opportunities for a target symbol or file.
+ */
+export const suggestRefactorForSymbol = async (
+  dataApiBase: string,
+  projectId: string,
+  target: string,
+  query: string = 'suggest refactoring improvements'
+): Promise<string> => {
+  const result = await askAI(dataApiBase, projectId, {
+    task: 'refactor',
+    query,
+    symbol_id: target,
+  });
+  return result;
+};
+
+/**
+ * Analyze performance for a target symbol or file.
+ */
+export const analyzePerformanceForSymbol = async (
+  dataApiBase: string,
+  projectId: string,
+  target: string,
+  query: string = 'analyze performance characteristics'
+): Promise<string> => {
+  const result = await askAI(dataApiBase, projectId, {
+    task: 'performance',
+    query,
+    symbol_id: target,
+  });
+  return result;
+};

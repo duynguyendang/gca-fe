@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import DOMPurify from 'dompurify';
 import styles from './MarkdownRenderer.module.css';
 
 interface MarkdownRendererProps {
@@ -9,32 +10,60 @@ interface MarkdownRendererProps {
     onSymbolClick?: (symbol: string) => void;
 }
 
+const isSafeHref = (href: string | undefined): boolean => {
+    if (!href) return false;
+    const lower = href.toLowerCase();
+    return !lower.startsWith('javascript:') &&
+           !lower.startsWith('data:') &&
+           !lower.startsWith('vbscript:');
+};
+
+const sanitizeHref = (href: string | undefined): string => {
+    if (!href) return '#';
+    if (!isSafeHref(href)) return '#';
+    return href;
+};
+
 /**
  * Renders Markdown content with interactive links and symbols for the Synthesis Panel.
+ * All content is sanitized via DOMPurify to prevent XSS attacks.
  */
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onLinkClick, onSymbolClick }) => {
+    const sanitizedContent = useMemo(() => {
+        return DOMPurify.sanitize(content, {
+            ALLOWED_TAGS: ['p', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                           'ul', 'ol', 'li', 'strong', 'em', 'code', 'pre',
+                           'blockquote', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+            ALLOWED_ATTR: ['href', 'title', 'class'],
+            FORBID_SCRIPTS: true,
+            ADD_ATTR: ['target'],
+        });
+    }, [content]);
+
     return (
         <div className={styles.markdownContainer}>
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                    // Override Link Handling
+                    // Override Link Handling with sanitized href
                     a: ({ node, href, children, ...props }) => {
-                        const isInternal = href?.startsWith('/') || href?.startsWith('[') || href?.match(/\.[a-z]+$/i);
+                        const safeHref = sanitizeHref(href);
 
                         const handleClick = (e: React.MouseEvent) => {
-                            if (href && onLinkClick) {
+                            if (safeHref !== '#' && onLinkClick) {
                                 e.preventDefault();
-                                onLinkClick(href);
+                                onLinkClick(safeHref);
                             }
                         };
 
                         return (
                             <a
-                                href={href}
+                                href={safeHref}
                                 className={styles.link}
                                 onClick={handleClick}
                                 title={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 {...props}
                             >
                                 {children}

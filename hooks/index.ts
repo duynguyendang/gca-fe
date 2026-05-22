@@ -9,3 +9,5 @@ export { useSessionStorage } from './useSessionStorage';
 export { useAgent } from './useAgent';
 export { useContextualSuggestions } from './useContextualSuggestions';
 export { useQueryContext } from './useQueryContext';
+export { useIntentRouter } from './useIntentRouter';
+export { useExploreGraph } from './useExploreGraph';

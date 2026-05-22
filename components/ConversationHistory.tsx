@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
 import { useSearchContext } from '../context/SearchContext';
 import { ConversationTurn } from '../services/geminiService';
+import { INTENT_COLORS } from '../constants';
 
 interface ConversationHistoryProps {
   accentColor?: 'blue' | 'teal';
   maxItems?: number;
   onRerunQuery?: (query: string) => void;
 }
+
+const getIntentDisplay = (intent: string): { bg: string; text: string; label: string } => {
+  return INTENT_COLORS[intent] || INTENT_COLORS['chat'];
+};
 
 export const ConversationHistory: React.FC<ConversationHistoryProps> = ({
   accentColor = 'teal',
@@ -65,12 +70,8 @@ export const ConversationHistory: React.FC<ConversationHistoryProps> = ({
                 </span>
               </div>
               <div className="flex items-center gap-2 mt-1">
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                  turn.intent === 'search'
-                    ? 'bg-teal-500/20 text-teal-400'
-                    : 'bg-blue-500/20 text-blue-400'
-                }`}>
-                  {turn.intent}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${getIntentDisplay(turn.intent).bg} ${getIntentDisplay(turn.intent).text}`}>
+                  {getIntentDisplay(turn.intent).label}
                 </span>
                 <span className="text-[10px] text-slate-500">
                   {turn.result_count} results

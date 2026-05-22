@@ -394,9 +394,20 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
             }
 
             // Track conversation turn for context-aware intent classification
+            // Try to get actual intent from backend if available
+            let detectedIntent = 'search';
+            try {
+                const { classifyIntent } = await import('../services/geminiService');
+                const classification = await classifyIntent(dataApiBase, selectedProjectId, query, conversationHistory);
+                detectedIntent = classification.intent;
+                logger.log('[useSmartSearch] Detected intent:', detectedIntent, 'confidence:', classification.confidence);
+            } catch (e) {
+                logger.warn('[useSmartSearch] Intent classification failed, using default:', e);
+            }
+
             addConversationTurn({
                 user_input: query,
-                intent: 'search',
+                intent: detectedIntent,
                 datalog_query: datalogQuery,
                 result_count: results.nodes.length,
                 summary: `Found ${results.nodes.length} nodes and ${results.links?.length || 0} relationships`,

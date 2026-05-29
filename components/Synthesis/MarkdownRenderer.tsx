@@ -98,7 +98,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onLinkClic
                     }
                 }}
             >
-                {content}
+                {sanitizedContent}
             </ReactMarkdown>
         </div>
     );

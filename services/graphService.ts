@@ -203,7 +203,7 @@ export async function executeQuery(dataApiBase: string, projectId: string, query
   const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query })
+    body: JSON.stringify({ query: sanitizedQuery })
   }, API_CONFIG.TIMEOUT.LONG, signal);
 
   if (!response.ok) throw new Error(`Failed to execute query: ${response.statusText}`);

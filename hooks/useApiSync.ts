@@ -5,14 +5,12 @@
 import { useCallback } from 'react';
 import { useSettingsContext } from '../context/SettingsContext';
 import { useGraphContext } from '../context/GraphContext';
-import { useUIContext } from '../context/UIContext';
 import { logger } from '../logger';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 
 export const useApiSync = () => {
     const { enableAutoClustering } = useSettingsContext();
     const { setAstData, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setExpandedFileIds } = useGraphContext();
-    const { setViewMode } = useUIContext();
     const { setIsDataSyncing, setSyncError, setAvailableProjects, setSelectedProjectId, setCurrentProject, setSandboxFiles, dataApiBase } = useSettingsContext();
 
     const syncDataFromApi = useCallback(async (
@@ -187,7 +185,7 @@ export const useApiSync = () => {
         } finally {
             setIsDataSyncing(false);
         }
-    }, [setIsDataSyncing, setSyncError, setAvailableProjects, setSelectedProjectId, setCurrentProject, setSandboxFiles, setAstData]);
+    }, [setIsDataSyncing, setSyncError, setAvailableProjects, setSelectedProjectId, setCurrentProject, setSandboxFiles, setAstData, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setExpandedFileIds, enableAutoClustering]);
 
     return { syncDataFromApi };
 };

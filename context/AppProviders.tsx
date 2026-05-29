@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, ReactNode } from 'react';
 import { GraphProvider } from './GraphContext';
 import { SearchProvider } from './SearchContext';
 import { NarrativeProvider } from './NarrativeContext';
@@ -24,14 +24,14 @@ interface AppProvidersProps {
 
 const AppProvidersContent: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { selectedProjectId } = useSettingsContext();
-  const [currentProjectId] = useState<string | null>(selectedProjectId || null);
+  const currentProjectId = selectedProjectId || null;
 
   return (
     <ProjectContext.Provider value={{ currentProjectId }}>
       <ToastProvider>
         <UIProvider>
           <GraphProvider>
-            <SearchProvider projectId={currentProjectId}>
+            <SearchProvider projectId={currentProjectId ?? undefined}>
               <NarrativeProvider>
                 {children}
               </NarrativeProvider>

@@ -10,9 +10,9 @@ interface KnowledgeGapPanelProps {
 const PAGE_SIZE = 20;
 
 const severityColors = {
-  high: { bg: 'bg-red-900/30', border: 'border-red-500/50', text: 'text-red-400', badge: 'bg-red-500/20 text-red-300' },
-  medium: { bg: 'bg-amber-900/30', border: 'border-amber-500/50', text: 'text-amber-400', badge: 'bg-amber-500/20 text-amber-300' },
-  low: { bg: 'bg-blue-900/30', border: 'border-blue-500/50', text: 'text-blue-400', badge: 'bg-blue-500/20 text-blue-300' },
+  high: { bg: 'bg-red-900/30', border: 'border-red-500/50', text: 'text-red-400', badge: 'bg-red-500/20 text-red-300', cssColor: '#f87171' },
+  medium: { bg: 'bg-amber-900/30', border: 'border-amber-500/50', text: 'text-amber-400', badge: 'bg-amber-500/20 text-amber-300', cssColor: '#fbbf24' },
+  low: { bg: 'bg-blue-900/30', border: 'border-blue-500/50', text: 'text-blue-400', badge: 'bg-blue-500/20 text-blue-300', cssColor: '#60a5fa' },
 };
 
 const gapTypeIcons: Record<string, string> = {
@@ -117,7 +117,7 @@ export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, onSy
                   </div>
                   {item.degree !== undefined && (
                     <div className="text-right">
-                      <div className="text-lg font-bold tabular-nums" style={{ color: colors.text.replace('text-', '') }}>
+                      <div className="text-lg font-bold tabular-nums" style={{ color: colors.cssColor }}>
                         {item.degree}
                       </div>
                       <div className="text-xs text-gray-500">degree</div>

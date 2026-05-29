@@ -22,7 +22,7 @@ import {
     askAI,
     ConversationTurn
 } from '../services/geminiService';
-import { isIntrospectionQuery } from '../services/datalogQueries';
+import { isIntrospectionQuery, isValidIntrospectionQuery } from '../services/datalogQueries';
 
 interface UseSmartSearchOptions {
     dataApiBase: string;
@@ -86,6 +86,13 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
         if (!dataApiBase || !selectedProjectId || !query || query.length < 1) {
             setIsSearching(false);
             setSearchStatus(null);
+            return;
+        }
+
+        if (isIntrospectionQuery(query) && !isValidIntrospectionQuery(query)) {
+            setSearchError("Please enter a valid question about the codebase. For example: \"List all API endpoints\" or \"Show me all functions\".");
+            setSearchStatus(null);
+            setIsSearching(false);
             return;
         }
 

@@ -9,7 +9,7 @@ import { useContextualSuggestions } from '../../hooks/useContextualSuggestions';
 import { useQueryContext } from '../../hooks/useQueryContext';
 import { askAI } from '../../services/geminiService';
 import { logger } from '../../logger';
-import { isIntrospectionQuery } from '../../services/datalogQueries';
+import { isIntrospectionQuery, isValidIntrospectionQuery } from '../../services/datalogQueries';
 
 interface NarrativeScreenProps {
     onNodeSelect: (node: any) => void;
@@ -158,6 +158,24 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
 
     const submitNarrativeQuery = useCallback(async (query: string) => {
         if (!query.trim() || isLoadingRef.current || !dataApiBase || !selectedProjectId) return;
+
+        if (isIntrospectionQuery(query) && !isValidIntrospectionQuery(query)) {
+            const userMsg: NarrativeMessage = {
+                role: 'user',
+                content: query,
+                displayContent: query,
+                timestamp: Date.now(),
+            };
+            setNarrativeMessages(prev => [...prev, userMsg]);
+
+            const errorResponseMsg: NarrativeMessage = {
+                role: 'ai',
+                content: 'Please enter a valid question about the codebase. For example: "List all API endpoints" or "Show me all functions in this project".',
+                timestamp: Date.now(),
+            };
+            setNarrativeMessages(prev => [...prev, errorResponseMsg]);
+            return;
+        }
 
         isLoadingRef.current = true;
         setIsNarrativeLoading(true);

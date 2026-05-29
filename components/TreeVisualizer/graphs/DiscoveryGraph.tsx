@@ -45,7 +45,7 @@ const DiscoveryGraph: React.FC<DiscoveryGraphProps> = ({
     onToggleFileExpansion,
     expandingFileId,
     activeSubMode = 'NARRATIVE',
-    highlightedNodeId
+    highlightedNodeId,
 }) => {
     const gRef = useRef<SVGGElement>(null);
 

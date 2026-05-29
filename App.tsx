@@ -8,6 +8,7 @@ import { useSettingsContext } from './context/SettingsContext';
 import { useUIContext } from './context/UIContext';
 import { useApiSync, useResizePanels, useSmartSearch, useInsights, useManifest, useNodeHydration, useContextualSuggestions, useIntentRouter, useExploreGraph } from './hooks';
 import { CodePanel } from './components/Layout';
+import TestScreen from './components/TestScreen/TestScreen';
 import { NarrativeScreen } from './components/NarrativeScreen';
 import { LandingScreen } from './components/LandingScreen/LandingScreen';
 import { Dashboard } from './components/Dashboard';
@@ -499,6 +500,8 @@ const App: React.FC = () => {
                 />
               ) : viewMode === 'dashboard' ? (
                 <Dashboard refreshKey={'dashboard-' + selectedProjectId} />
+              ) : viewMode === 'test' ? (
+                <TestScreen preSelectedNodeId={selectedNode?.id} />
               ) : (
                 <div className={`flex-1 flex min-h-0 ${isSubModeSwitching ? 'animate-pulse opacity-80' : 'transition-opacity duration-500'}`}>
                   <GraphContainer

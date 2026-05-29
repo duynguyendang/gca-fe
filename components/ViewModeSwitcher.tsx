@@ -1,6 +1,6 @@
 import React from 'react';
 
-type ViewMode = 'map' | 'discovery' | 'architecture' | 'narrative' | 'dashboard';
+type ViewMode = 'map' | 'discovery' | 'architecture' | 'narrative' | 'test' | 'dashboard';
 
 interface ViewModeSwitcherProps {
   viewMode: ViewMode;
@@ -11,6 +11,7 @@ const ViewModeSwitcher: React.FC<ViewModeSwitcherProps> = ({ viewMode, onViewMod
   const getGlowColor = () => {
     switch (viewMode) {
       case 'narrative': return 'var(--accent-blue)';
+      case 'test': return 'var(--accent-purple)';
       case 'architecture': return 'var(--accent-purple)';
       case 'map': return '#f59e0b';
       case 'dashboard': return 'var(--accent-teal)';
@@ -39,6 +40,16 @@ const ViewModeSwitcher: React.FC<ViewModeSwitcherProps> = ({ viewMode, onViewMod
       >
         <i className="fas fa-brain mr-1.5 opacity-80"></i>
         NARRATIVE
+      </button>
+      <button
+        role="tab"
+        aria-selected={viewMode === 'test'}
+        aria-label="Test generation view"
+        className={viewMode === 'test' ? 'active' : ''}
+        onClick={() => onViewModeChange('test')}
+      >
+        <i className="fas fa-vial mr-1.5 opacity-80"></i>
+        TEST
       </button>
       <button
         role="tab"

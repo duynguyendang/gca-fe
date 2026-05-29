@@ -22,6 +22,7 @@ import {
     askAI,
     ConversationTurn
 } from '../services/geminiService';
+import { isIntrospectionQuery } from '../services/datalogQueries';
 
 interface UseSmartSearchOptions {
     dataApiBase: string;
@@ -89,6 +90,23 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
         }
 
         try {
+            // Datalog introspection via LLM
+            if (isIntrospectionQuery(query)) {
+                setSearchStatus("Querying via LLM...");
+                try {
+                    const answer = await askAI(dataApiBase, selectedProjectId, {
+                        task: 'datalog',
+                        query: query,
+                    });
+                    setNodeInsight(answer);
+                    setSearchStatus(null);
+                    setIsSearching(false);
+                    return;
+                } catch (dqErr: any) {
+                    logger.warn('[useSmartSearch] Datalog LLM path failed:', dqErr.message);
+                }
+            }
+
             // 0. Ultra-Fast-Path: Simple "what is X?" queries
             const whatIsMatch = query.match(/^what\s+is\s+(\w+)\??$/i);
             if (whatIsMatch) {

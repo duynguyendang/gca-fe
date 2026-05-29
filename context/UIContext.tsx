@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 
-export type ViewMode = 'map' | 'discovery' | 'architecture' | 'narrative' | 'dashboard';
+export type ViewMode = 'map' | 'discovery' | 'architecture' | 'narrative' | 'test' | 'dashboard';
 export type SubMode = 'NARRATIVE' | 'ARCHITECTURE' | 'ENTROPY';
 
 interface UIState {

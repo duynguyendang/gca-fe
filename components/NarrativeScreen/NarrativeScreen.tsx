@@ -9,6 +9,7 @@ import { useContextualSuggestions } from '../../hooks/useContextualSuggestions';
 import { useQueryContext } from '../../hooks/useQueryContext';
 import { askAI } from '../../services/geminiService';
 import { logger } from '../../logger';
+import { isIntrospectionQuery } from '../../services/datalogQueries';
 
 interface NarrativeScreenProps {
     onNodeSelect: (node: any) => void;
@@ -121,6 +122,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
     const { buildContext } = useQueryContext();
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const [showNewChatModal, setShowNewChatModal] = useState(false);
+    const isLoadingRef = useRef(false);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -155,7 +157,63 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
     }, [narrativeMessages.length, startNewConversation]);
 
     const submitNarrativeQuery = useCallback(async (query: string) => {
-        if (!query.trim() || isNarrativeLoading || !dataApiBase || !selectedProjectId) return;
+        if (!query.trim() || isLoadingRef.current || !dataApiBase || !selectedProjectId) return;
+
+        isLoadingRef.current = true;
+        setIsNarrativeLoading(true);
+
+        if (isIntrospectionQuery(query)) {
+            const userMsg: NarrativeMessage = {
+                role: 'user',
+                content: query,
+                displayContent: query,
+                timestamp: Date.now(),
+            };
+            setNarrativeMessages(prev => [...prev, userMsg]);
+
+            try {
+                const answer = await askAI(dataApiBase, selectedProjectId, {
+                    task: 'datalog',
+                    query: query,
+                });
+                const aiMsg: NarrativeMessage = {
+                    role: 'ai',
+                    content: answer,
+                    timestamp: Date.now(),
+                };
+                setNarrativeMessages(prev => [...prev, aiMsg]);
+            } catch (error: any) {
+                logger.error('[NarrativeScreen] Datalog error:', error);
+                try {
+                    const answer = await askAI(dataApiBase, selectedProjectId, {
+                        task: 'chat',
+                        query: query,
+                    });
+                    const aiMsg: NarrativeMessage = {
+                        role: 'ai',
+                        content: answer,
+                        timestamp: Date.now(),
+                    };
+                    setNarrativeMessages(prev => [...prev, aiMsg]);
+                } catch (fallbackErr: any) {
+                    const errorResponseMsg: NarrativeMessage = {
+                        role: 'ai',
+                        content: 'Could not answer query. Try rephrasing.',
+                        timestamp: Date.now(),
+                        sections: [{
+                            type: 'inconsistency',
+                            title: 'Issue',
+                            content: 'Try rephrasing your question or ask about something else.',
+                        }],
+                    };
+                    setNarrativeMessages(prev => [...prev, errorResponseMsg]);
+                }
+            } finally {
+                setIsNarrativeLoading(false);
+                isLoadingRef.current = false;
+            }
+            return;
+        }
 
         const { enhancedQuery, contextData } = await buildContext(query);
 
@@ -180,9 +238,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
             displayContent: query,
             timestamp: Date.now(),
         };
-
         setNarrativeMessages(prev => [...prev, userMsg]);
-        setIsNarrativeLoading(true);
 
         try {
             const aiResponse = await askAI(dataApiBase, selectedProjectId, {
@@ -200,7 +256,6 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
             setNarrativeMessages(prev => [...prev, aiMsg]);
         } catch (error: any) {
             logger.error('[NarrativeScreen] Narrative AI Error:', error);
-            // Clean up error message for user
             let userMessage = 'Something went wrong. Please try again.';
             const errorMsg = error.message || '';
             if (errorMsg.includes('aborted') || errorMsg.includes('cancelled')) {
@@ -224,8 +279,9 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
             setNarrativeMessages(prev => [...prev, errorResponseMsg]);
         } finally {
             setIsNarrativeLoading(false);
+            isLoadingRef.current = false;
         }
-    }, [isNarrativeLoading, dataApiBase, selectedProjectId, narrativeMessages, setNarrativeMessages, setIsNarrativeLoading, buildContext]);
+    }, [dataApiBase, selectedProjectId, narrativeMessages, setNarrativeMessages, setIsNarrativeLoading, buildContext]);
 
     const getSectionIcon = (type: string) => {
         switch (type) {

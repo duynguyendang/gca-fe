@@ -42,7 +42,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
   focusModeEnabled = false,
   criticalPathNodeIds = new Set(),
   activeSubMode = 'NARRATIVE',
-  highlightedNodeId
+  highlightedNodeId,
 }) => {
   logger.log('=== TreeVisualizer Render (Start) ===', {
     mode,

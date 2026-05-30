@@ -95,7 +95,7 @@ export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, onSy
       {/* Items list */}
       <div className="flex-1 overflow-auto p-4 space-y-2">
         {activeItems.length === 0 ? (
-          <div className="text-center text-gray-500 py-8">No {gapTypeLabels[activeTab].toLowerCase()} found</div>
+          <div className="text-center text-gray-500 py-8">No {(gapTypeLabels[activeTab] ?? activeTab).toLowerCase()} found</div>
         ) : (
           activeItems.map((item, i) => {
             const colors = severityColors[item.severity] || severityColors.low;

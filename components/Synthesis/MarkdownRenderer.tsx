@@ -35,7 +35,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onLinkClic
                            'ul', 'ol', 'li', 'strong', 'em', 'code', 'pre',
                            'blockquote', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
             ALLOWED_ATTR: ['href', 'title', 'class'],
-            FORBID_SCRIPTS: true,
+            FORBID_TAGS: ['script'],
             ADD_ATTR: ['target'],
         });
     }, [content]);

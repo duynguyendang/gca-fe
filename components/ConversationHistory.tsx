@@ -10,7 +10,7 @@ interface ConversationHistoryProps {
 }
 
 const getIntentDisplay = (intent: string): { bg: string; text: string; label: string } => {
-  return INTENT_COLORS[intent] || INTENT_COLORS['chat'];
+  return INTENT_COLORS[intent] ?? INTENT_COLORS['chat']!;
 };
 
 export const ConversationHistory: React.FC<ConversationHistoryProps> = ({

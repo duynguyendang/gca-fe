@@ -77,8 +77,9 @@ export const getLinkColor = (link: any): string => {
     if (isVirtualLink(link)) {
         return '#a855f7'; // Purple for virtual links
     }
-    if (link.confidence_tier && CONFIDENCE_COLORS[link.confidence_tier]) {
-        return CONFIDENCE_COLORS[link.confidence_tier];
+    if (link.confidence_tier) {
+        const color = CONFIDENCE_COLORS[link.confidence_tier];
+        if (color) return color;
     }
     return '#475569'; // Default slate color for AST links
 };
@@ -232,5 +233,6 @@ const COMMUNITY_PALETTE = [
 export const getCommunityColor = (community: number | string | undefined): string => {
     if (community === undefined || community === null) return '#94a3b8';
     const id = typeof community === 'string' ? parseInt(community.replace('cluster_', ''), 10) : community;
-    return COMMUNITY_PALETTE[id % COMMUNITY_PALETTE.length];
+    if (isNaN(id)) return '#94a3b8';
+    return COMMUNITY_PALETTE[id % COMMUNITY_PALETTE.length] ?? '#94a3b8';
 };

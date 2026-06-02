@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { fetchPaginatedGraph, PaginatedGraphOptions, PaginatedGraphResponse } from '../services/graphService';
 import { logger } from '../logger';
 
@@ -42,6 +42,11 @@ export function usePaginatedGraph(
 
   const currentCursor = useRef<string | undefined>(undefined);
   const allLoadedData = useRef<{ nodes: any[]; links: any[] }>({ nodes: [], links: [] });
+
+  useEffect(() => {
+    currentCursor.current = undefined;
+    allLoadedData.current = { nodes: [], links: [] };
+  }, [query, projectId]);
 
   /**
    * Load the next page of data using cursor-based pagination

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useMemo, ReactNode } from 'react';
 import { API_CONFIG } from '../constants';
 
 interface ProjectInfo {
@@ -39,6 +39,9 @@ export const useSettingsContext = () => {
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [dataApiBase, setDataApiBase] = useState<string>(() => {
     const envBase = import.meta.env.VITE_GCA_API_BASE_URL || import.meta.env.GCA_API_BASE_URL;
+    // In dev mode, use empty string (relative URL) so Vite proxy handles /api and /v1 requests.
+    // This avoids CORS issues and works even if backend is on a different port.
+    if (import.meta.env.DEV) return '';
     if (envBase && !envBase.includes('localhost') && !envBase.includes('127.0.0.1')) {
       return envBase;
     }
@@ -59,18 +62,20 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     } catch { return {}; }
   });
 
+  const value = useMemo(() => ({
+    dataApiBase, setDataApiBase,
+    currentProject, setCurrentProject,
+    availableProjects, setAvailableProjects,
+    selectedProjectId, setSelectedProjectId,
+    isDataSyncing, setIsDataSyncing,
+    syncError, setSyncError,
+    availablePredicates, setAvailablePredicates,
+    enableAutoClustering, setEnableAutoClustering,
+    sandboxFiles, setSandboxFiles,
+  }), [dataApiBase, currentProject, availableProjects, selectedProjectId, isDataSyncing, syncError, availablePredicates, enableAutoClustering, sandboxFiles]);
+
   return (
-    <SettingsContext.Provider value={{
-      dataApiBase, setDataApiBase,
-      currentProject, setCurrentProject,
-      availableProjects, setAvailableProjects,
-      selectedProjectId, setSelectedProjectId,
-      isDataSyncing, setIsDataSyncing,
-      syncError, setSyncError,
-      availablePredicates, setAvailablePredicates,
-      enableAutoClustering, setEnableAutoClustering,
-      sandboxFiles, setSandboxFiles,
-    }}>
+    <SettingsContext.Provider value={value}>
       {children}
     </SettingsContext.Provider>
   );

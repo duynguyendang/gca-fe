@@ -15,13 +15,23 @@ import { TTLBoundedCache } from '../utils/cacheUtils';
 const HYDRATION_CACHE_MAX_SIZE = 50;
 const HYDRATION_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+// Module-scoped cache that survives mount/unmount cycles.
+// Keyed by (projectId, nodeId) to avoid cross-project cache poisoning.
+const hydrationCache = new Map<string, TTLBoundedCache<string, any>>();
+
+function getOrCreateCache(projectId: string): TTLBoundedCache<string, any> {
+    if (!hydrationCache.has(projectId)) {
+        hydrationCache.set(projectId, new TTLBoundedCache<string, any>(HYDRATION_CACHE_MAX_SIZE, HYDRATION_CACHE_TTL_MS));
+    }
+    return hydrationCache.get(projectId)!;
+}
+
 export const useNodeHydration = () => {
     const { dataApiBase, selectedProjectId } = useSettingsContext();
     const { setHydratingNodeId, symbolCache, setSymbolCache, astData, setAstData } = useGraphContext();
 
-    // Bounded local cache to prevent unbounded growth
-    // Uses TTL to auto-expire stale entries
-    const localCache = useRef(new TTLBoundedCache<string, any>(HYDRATION_CACHE_MAX_SIZE, HYDRATION_CACHE_TTL_MS));
+    // Project-scoped cache that survives mount/unmount cycles
+    const localCache = useRef(getOrCreateCache(selectedProjectId ?? 'default'));
 
     // Track the current hydration request to handle race conditions
     const hydrationRequestRef = useRef<string | null>(null);

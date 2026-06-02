@@ -6,6 +6,7 @@
  * Endpoint: POST /api/v1/ai/ask
  */
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { readSSEStream } from '../utils/sseStream';
 import { API_CONFIG } from '../constants';
 import { logger } from '../logger';
 
@@ -32,53 +33,33 @@ function extractJSON<T>(text: string, fallback: T): T {
     // Remove markdown code blocks
     let cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
 
-    // Try to find JSON object or array
-    const firstBrace = cleaned.indexOf('{');
-    const firstBracket = cleaned.indexOf('[');
-
-    let jsonStr = cleaned;
-    if (firstBrace >= 0 && firstBracket >= 0) {
-        // Take whichever comes first
-        jsonStr = firstBrace < firstBracket ? cleaned.substring(firstBrace) : cleaned.substring(firstBracket);
-    } else if (firstBrace >= 0) {
-        jsonStr = cleaned.substring(firstBrace);
-    } else if (firstBracket >= 0) {
-        jsonStr = cleaned.substring(firstBracket);
-    }
-
-    // Find matching closing brace/bracket
+    // State machine: string-aware brace matching
+    let firstBrace = -1;
     let depth = 0;
-    let end = -1;
-    const startChar = jsonStr[0];
-
-    if (startChar !== '{' && startChar !== '[') {
-        logger.warn('[GeminiService] Failed to extract JSON: no object or array found');
-        return fallback;
-    }
-
-    for (let i = 0; i < jsonStr.length; i++) {
-        const char = jsonStr[i];
-        if (char === '{' || char === '[') {
-            depth++;
-        } else if (char === '}' || char === ']') {
-            depth--;
+    let inString = false;
+    let escaped = false;
+    for (let i = 0; i < cleaned.length; i++) {
+        const ch = cleaned[i];
+        if (firstBrace === -1) {
+            if (ch === '{') firstBrace = i;
+            continue;
+        }
+        if (escaped) { escaped = false; continue; }
+        if (ch === '\\') { escaped = true; continue; }
+        if (ch === '"') { inString = !inString; continue; }
+        if (inString) continue;
+        if (ch === '{') depth++;
+        if (ch === '}') {
             if (depth === 0) {
-                end = i + 1;
-                break;
+                const candidate = cleaned.slice(firstBrace, i + 1);
+                try { return JSON.parse(candidate); } catch { return fallback; }
             }
+            depth--;
         }
     }
 
-    if (end > 0) {
-        jsonStr = jsonStr.substring(0, end);
-    }
-
-    try {
-        return JSON.parse(jsonStr);
-    } catch (e) {
-        logger.warn('[GeminiService] Failed to parse extracted JSON:', e);
-        return fallback;
-    }
+    logger.warn('[GeminiService] Failed to extract JSON: no complete object found');
+    return fallback;
 }
 
 /**
@@ -100,20 +81,41 @@ export const askAI = async (
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
   const url = `${cleanBase}/api/v1/ai/ask`;
 
+  // Truncate context data to prevent oversized requests
+  let contextData = payload.data;
+  if (Array.isArray(contextData)) {
+    const MAX_CONTEXT_ITEMS = 15;
+    const MAX_CODE_PER_ITEM = 1500;
+    if (contextData.length > MAX_CONTEXT_ITEMS) {
+      logger.warn(`[GeminiService] Truncating context from ${contextData.length} to ${MAX_CONTEXT_ITEMS} items`);
+      contextData = contextData.slice(0, MAX_CONTEXT_ITEMS);
+    }
+    contextData = contextData.map((item: any) => {
+      if (item.code && item.code.length > MAX_CODE_PER_ITEM) {
+        return { ...item, code: item.code.substring(0, MAX_CODE_PER_ITEM) + '\n...[truncated]' };
+      }
+      return item;
+    });
+  }
+
+  const body = JSON.stringify({
+    project_id: projectId,
+    task: payload.task || 'chat',
+    query: payload.query || '',
+    symbol_id: payload.symbol_id || '',
+    data: contextData || null,
+    context_mode: payload.context_mode || '',
+    query_instruction: payload.query_instruction || ''
+  });
+
+  logger.log(`[GeminiService] POST ${url} (${(body.length / 1024).toFixed(1)}KB body)`);
+
   const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      project_id: projectId,
-      task: payload.task || 'chat',
-      query: payload.query || '',
-      symbol_id: payload.symbol_id || '',
-      data: payload.data || null,
-      context_mode: payload.context_mode || '',
-      query_instruction: payload.query_instruction || ''
-    })
+    body,
   }, API_CONFIG.TIMEOUT.LONG, signal);
 
   if (!response.ok) {
@@ -124,6 +126,78 @@ export const askAI = async (
 
   const data: AIResponse = await response.json();
   return data.answer || "No response from AI.";
+};
+
+/**
+ * Streaming variant of askAI. Delivers each SSE token delta via onChunk,
+ * then returns the full accumulated text. Reads /api/v1/ai/ask as SSE.
+ */
+export const askAIStream = async (
+  dataApiBase: string,
+  projectId: string,
+  payload: {
+    task?: string;
+    query?: string;
+    symbol_id?: string;
+    data?: any;
+    context_mode?: string;
+    query_instruction?: string;
+  },
+  onChunk: (delta: string) => void,
+  signal?: AbortSignal | null
+): Promise<string> => {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/ai/ask`;
+
+  let contextData = payload.data;
+  if (Array.isArray(contextData)) {
+    const MAX_CONTEXT_ITEMS = 15;
+    const MAX_CODE_PER_ITEM = 1500;
+    if (contextData.length > MAX_CONTEXT_ITEMS) {
+      logger.warn(`[GeminiService] Truncating context from ${contextData.length} to ${MAX_CONTEXT_ITEMS} items`);
+      contextData = contextData.slice(0, MAX_CONTEXT_ITEMS);
+    }
+    contextData = contextData.map((item: any) => {
+      if (item.code && item.code.length > MAX_CODE_PER_ITEM) {
+        return { ...item, code: item.code.substring(0, MAX_CODE_PER_ITEM) + '\n...[truncated]' };
+      }
+      return item;
+    });
+  }
+
+  const body = JSON.stringify({
+    project_id: projectId,
+    task: payload.task || 'chat',
+    query: payload.query || '',
+    symbol_id: payload.symbol_id || '',
+    data: contextData || null,
+    context_mode: payload.context_mode || '',
+    query_instruction: payload.query_instruction || ''
+  });
+
+  logger.log(`[GeminiService] POST ${url} (streaming, ${(body.length / 1024).toFixed(1)}KB body)`);
+
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    },
+    body,
+  }, API_CONFIG.TIMEOUT.LONG, signal);
+
+  if (!response.ok) {
+    const errText = await response.text();
+    logger.error('[GeminiService] Backend Stream Error:', response.status, errText);
+    throw new Error(`AI Service Error: ${response.statusText}`);
+  }
+
+  let full = '';
+  for await (const delta of readSSEStream(response, signal)) {
+    full += delta;
+    onChunk(delta);
+  }
+  return full || "No response from AI.";
 };
 
 // --- Legacy Function Mappers ---

@@ -8,6 +8,7 @@ interface MarkdownRendererProps {
     content: string;
     onLinkClick?: (href: string) => void;
     onSymbolClick?: (symbol: string) => void;
+    isStreaming?: boolean;
 }
 
 const isSafeHref = (href: string | undefined): boolean => {
@@ -28,7 +29,15 @@ const sanitizeHref = (href: string | undefined): string => {
  * Renders Markdown content with interactive links and symbols for the Synthesis Panel.
  * All content is sanitized via DOMPurify to prevent XSS attacks.
  */
-const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onLinkClick, onSymbolClick }) => {
+const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onLinkClick, onSymbolClick, isStreaming = false }) => {
+    if (isStreaming) {
+        return (
+            <pre className={`${styles.markdownContainer} whitespace-pre-wrap`}>
+                {content}
+            </pre>
+        );
+    }
+
     const sanitizedContent = useMemo(() => {
         return DOMPurify.sanitize(content, {
             ALLOWED_TAGS: ['p', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',

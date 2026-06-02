@@ -7,7 +7,7 @@ import UnifiedSearchBar from '../UnifiedSearchBar';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
 import { useContextualSuggestions } from '../../hooks/useContextualSuggestions';
 import { useQueryContext } from '../../hooks/useQueryContext';
-import { askAI } from '../../services/geminiService';
+import { askAI, askAIStream } from '../../services/geminiService';
 import { logger } from '../../logger';
 import { isIntrospectionQuery, isValidIntrospectionQuery } from '../../services/datalogQueries';
 
@@ -123,6 +123,9 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const [showNewChatModal, setShowNewChatModal] = useState(false);
     const isLoadingRef = useRef(false);
+    const rafRef = useRef<number | null>(null);
+    const narrativeMessagesRef = useRef(narrativeMessages);
+    narrativeMessagesRef.current = narrativeMessages;
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -149,12 +152,12 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
     }, [setNarrativeMessages, setSelectedNode, setFileScopedNodes, setFileScopedLinks]);
 
     const confirmNewChat = useCallback(() => {
-        if (narrativeMessages.length > 0) {
+        if (narrativeMessagesRef.current.length > 0) {
             setShowNewChatModal(true);
         } else {
             startNewConversation();
         }
-    }, [narrativeMessages.length, startNewConversation]);
+    }, [startNewConversation]);
 
     const submitNarrativeQuery = useCallback(async (query: string) => {
         if (!query.trim() || isLoadingRef.current || !dataApiBase || !selectedProjectId) return;
@@ -235,9 +238,10 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
 
         const { enhancedQuery, contextData } = await buildContext(query);
 
+        const msgs = narrativeMessagesRef.current;
         let fullQuery = query;
-        if (narrativeMessages.length > 0) {
-            const lastUserMessage = [...narrativeMessages].reverse().find(m => m.role === 'user');
+        if (msgs.length > 0) {
+            const lastUserMessage = [...msgs].reverse().find(m => m.role === 'user');
             if (lastUserMessage && lastUserMessage.displayContent !== query) {
                 fullQuery = `Follow-up: ${query}`;
             }
@@ -259,19 +263,50 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         setNarrativeMessages(prev => [...prev, userMsg]);
 
         try {
-            const aiResponse = await askAI(dataApiBase, selectedProjectId, {
+            // Push empty AI message immediately for streaming
+            const placeholderMsg: NarrativeMessage = {
+                role: 'ai',
+                content: '',
+                timestamp: Date.now(),
+            };
+            setNarrativeMessages(prev => [...prev, placeholderMsg]);
+
+            let fullResponse = '';
+            const scheduleUpdate = () => {
+                if (rafRef.current !== null) return;
+                rafRef.current = requestAnimationFrame(() => {
+                    rafRef.current = null;
+                    setNarrativeMessages(prev => {
+                        const next = [...prev];
+                        const last = next[next.length - 1];
+                        if (last && last.role === 'ai') {
+                            next[next.length - 1] = { ...last, content: fullResponse };
+                        }
+                        return next;
+                    });
+                });
+            };
+            await askAIStream(dataApiBase, selectedProjectId, {
                 task: 'chat',
                 query: fullQuery,
                 data: contextData.length > 0 ? contextData : undefined,
+            }, (_delta) => {
+                fullResponse += _delta;
+                scheduleUpdate();
+            }, undefined);
+            // Final update after stream ends
+            if (rafRef.current !== null) {
+                cancelAnimationFrame(rafRef.current);
+                rafRef.current = null;
+            }
+            setNarrativeMessages(prev => {
+                const next = [...prev];
+                const last = next[next.length - 1];
+                if (last && last.role === 'ai') {
+                    next[next.length - 1] = { ...last, content: fullResponse };
+                }
+                return next;
             });
-
-            const aiMsg: NarrativeMessage = {
-                role: 'ai',
-                content: aiResponse,
-                timestamp: Date.now(),
-            };
-
-            setNarrativeMessages(prev => [...prev, aiMsg]);
         } catch (error: any) {
             logger.error('[NarrativeScreen] Narrative AI Error:', error);
             let userMessage = 'Something went wrong. Please try again.';
@@ -288,18 +323,20 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                 role: 'ai',
                 content: `I encountered an issue: ${userMessage}`,
                 timestamp: Date.now(),
-                sections: [{
-                    type: 'inconsistency',
-                    title: 'Issue',
-                    content: 'Try rephrasing your question or ask about something else.',
-                }],
             };
-            setNarrativeMessages(prev => [...prev, errorResponseMsg]);
+            setNarrativeMessages(prev => {
+                const next = [...prev];
+                const last = next[next.length - 1];
+                if (last && last.role === 'ai' && last.content === '') {
+                    next[next.length - 1] = errorResponseMsg;
+                    return next;
+                }
+                return [...next, errorResponseMsg];
+            });
         } finally {
             setIsNarrativeLoading(false);
-            isLoadingRef.current = false;
         }
-    }, [dataApiBase, selectedProjectId, narrativeMessages, setNarrativeMessages, setIsNarrativeLoading, buildContext]);
+    }, [dataApiBase, selectedProjectId, setNarrativeMessages, setIsNarrativeLoading, buildContext]);
 
     const getSectionIcon = (type: string) => {
         switch (type) {
@@ -401,6 +438,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                                             content={displayText}
                                             onLinkClick={onLinkClick}
                                             onSymbolClick={onSymbolClick}
+                                            isStreaming={isNarrativeLoading && msg.role === 'ai' && idx === narrativeMessages.length - 1}
                                         />
                                     </div>
                                 )}

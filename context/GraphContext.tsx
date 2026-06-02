@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useMemo, ReactNode } from 'react';
 import { ASTNode, FlatGraph, GraphNode, GraphLink } from '../types';
 import { FileDetailsResponse } from '../services/graphService';
 
@@ -52,19 +52,21 @@ export const GraphProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [hydratingNodeId, setHydratingNodeId] = useState<string | null>(null);
   const [symbolCache, setSymbolCache] = useState<Map<string, GraphNode>>(new Map());
 
+  const value = useMemo(() => ({
+    astData, setAstData,
+    fileScopedNodes, setFileScopedNodes,
+    fileScopedLinks, setFileScopedLinks,
+    expandedFileIds, setExpandedFileIds,
+    fileDetailsCache, setFileDetailsCache,
+    expandingFileId, setExpandingFileId,
+    highlightedNodeId, setHighlightedNodeId,
+    selectedNode, setSelectedNode,
+    hydratingNodeId, setHydratingNodeId,
+    symbolCache, setSymbolCache,
+  }), [astData, fileScopedNodes, fileScopedLinks, expandedFileIds, fileDetailsCache, expandingFileId, highlightedNodeId, selectedNode, hydratingNodeId, symbolCache]);
+
   return (
-    <GraphContext.Provider value={{
-      astData, setAstData,
-      fileScopedNodes, setFileScopedNodes,
-      fileScopedLinks, setFileScopedLinks,
-      expandedFileIds, setExpandedFileIds,
-      fileDetailsCache, setFileDetailsCache,
-      expandingFileId, setExpandingFileId,
-      highlightedNodeId, setHighlightedNodeId,
-      selectedNode, setSelectedNode,
-      hydratingNodeId, setHydratingNodeId,
-      symbolCache, setSymbolCache,
-    }}>
+    <GraphContext.Provider value={value}>
       {children}
     </GraphContext.Provider>
   );

@@ -33,7 +33,13 @@ export async function fetchWithTimeout(
     if (err.name === 'AbortError') {
       throw new Error(`Request timed out after ${timeoutMs}ms`);
     }
-    throw err;
+    // Enhance the raw browser error with context
+    const method = options.method || 'GET';
+    const bodySize = options.body ? (typeof options.body === 'string' ? options.body.length : 0) : 0;
+    throw new Error(
+      `${method} ${url} failed: ${err.message || 'network error'}` +
+      (bodySize > 0 ? ` (body: ${(bodySize / 1024).toFixed(1)}KB)` : '')
+    );
   } finally {
     clearTimeout(timer);
   }

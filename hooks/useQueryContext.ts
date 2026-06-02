@@ -29,7 +29,7 @@ const runWithConcurrencyLimit = async <T>(
   limit: number
 ): Promise<T[]> => {
   const results: T[] = [];
-  const executing: Promise<void>[] = [];
+  const running = new Set<Promise<void>>();
 
   for (let i = 0; i < tasks.length; i++) {
     const task = tasks[i];
@@ -37,15 +37,15 @@ const runWithConcurrencyLimit = async <T>(
     const p = task().then(result => {
       results[i] = result;
     });
-    executing.push(p);
+    running.add(p);
+    p.finally(() => running.delete(p));
 
-    if (executing.length >= limit) {
-      await Promise.race(executing.filter(Boolean));
-      executing.splice(executing.findIndex(Boolean), 1);
+    if (running.size >= limit) {
+      await Promise.race(running);
     }
   }
 
-  await Promise.all(executing);
+  await Promise.all(running);
   return results;
 };
 
@@ -191,7 +191,7 @@ export const useQueryContext = () => {
           const existingIds = new Set(contextData.map(n => n.id));
           const selectedNodeId = selectedNode?.id;
 
-          for (const symbol of freshSummary.top_symbols.slice(0, 10)) {
+          for (const symbol of freshSummary.top_symbols.slice(0, 5)) {
             if (symbol.id !== selectedNodeId && !existingIds.has(symbol.id) && contextData.length < 50) {
               let symbolCode = symbol.code || '';
 

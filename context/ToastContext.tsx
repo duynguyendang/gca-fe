@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo, ReactNode } from 'react';
 
 export interface Toast {
   id: string;
@@ -21,19 +21,35 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Clean up all timers on unmount
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current.clear();
+    };
+  }, []);
 
   const addToast = useCallback((message: string, type: Toast['type'], duration = 4000) => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts(prev => [...prev, { id, message, type, duration }]);
     
     if (duration > 0) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         setToasts(prev => prev.filter(t => t.id !== id));
+        timersRef.current.delete(id);
       }, duration);
+      timersRef.current.set(id, timer);
     }
   }, []);
 
   const removeToast = useCallback((id: string) => {
+    const timer = timersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      timersRef.current.delete(id);
+    }
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
@@ -42,8 +58,12 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const info = useCallback((message: string) => addToast(message, 'info'), [addToast]);
   const warning = useCallback((message: string) => addToast(message, 'warning'), [addToast]);
 
+  const value = useMemo(() => ({
+    toasts, addToast, removeToast, success, error, info, warning,
+  }), [toasts, addToast, removeToast, success, error, info, warning]);
+
   return (
-    <ToastContext.Provider value={{ toasts, addToast, removeToast, success, error, info, warning }}>
+    <ToastContext.Provider value={value}>
       {children}
       <ToastContainer />
     </ToastContext.Provider>

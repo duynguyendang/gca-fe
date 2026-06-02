@@ -2,7 +2,7 @@
  * useApiSync - Hook for syncing data from API
  * Extracted from App.tsx syncDataFromApi function
  */
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useSettingsContext } from '../context/SettingsContext';
 import { useGraphContext } from '../context/GraphContext';
 import { logger } from '../logger';
@@ -12,6 +12,15 @@ export const useApiSync = () => {
     const { enableAutoClustering } = useSettingsContext();
     const { setAstData, setFileScopedNodes, setFileScopedLinks, setSelectedNode, setExpandedFileIds } = useGraphContext();
     const { setIsDataSyncing, setSyncError, setAvailableProjects, setSelectedProjectId, setCurrentProject, setSandboxFiles, dataApiBase } = useSettingsContext();
+
+    // AbortController to cancel in-flight requests on project switch or unmount
+    const abortRef = useRef<AbortController | null>(null);
+
+    useEffect(() => {
+        return () => {
+            abortRef.current?.abort();
+        };
+    }, []);
 
     const syncDataFromApi = useCallback(async (
         baseUrl: string,
@@ -26,6 +35,12 @@ export const useApiSync = () => {
         // For now, let's just handle the "Explosion" case.
 
         const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+
+        // Cancel any in-flight request before starting a new one
+        abortRef.current?.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
+        const signal = controller.signal;
 
         try {
             // Clear existing project data before fetching new ones
@@ -44,7 +59,7 @@ export const useApiSync = () => {
 
             let projectsRes: Response;
             try {
-                projectsRes = await fetchWithTimeout(projectsUrl);
+                projectsRes = await fetchWithTimeout(projectsUrl, {}, 30000, signal);
             } catch (fetchErr: any) {
                 const msg = fetchErr.name === 'AbortError'
                     ? `Connection timed out - is the backend running at ${cleanBase}?`
@@ -82,7 +97,7 @@ export const useApiSync = () => {
 
             // Fetch files for the project
             const filesUrl = `${cleanBase}/api/v1/files?project=${encodeURIComponent(targetProjectId)}`;
-            const filesRes = await fetchWithTimeout(filesUrl);
+            const filesRes = await fetchWithTimeout(filesUrl, {}, 30000, signal);
             if (!filesRes.ok) {
                 setSyncError(`Failed to fetch files: ${filesRes.statusText}`);
                 setIsDataSyncing(false);
@@ -136,7 +151,7 @@ export const useApiSync = () => {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ query: 'triples(?s, "imports", ?o)' })
-                });
+                }, 30000, signal);
 
                 if (queryRes.ok) {
                     const ast = await queryRes.json();

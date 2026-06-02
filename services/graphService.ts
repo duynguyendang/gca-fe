@@ -24,6 +24,44 @@ const isValidProjectId = (projectId: string): boolean => {
   return /^[a-zA-Z0-9_-]{1,100}$/.test(projectId);
 };
 
+const cleanBase = (url: string): string => url.endsWith('/') ? url.slice(0, -1) : url;
+
+// Internal request helper — single fetch+validate+error path for all API calls.
+async function request<T>(
+  baseUrl: string,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  options?: {
+    body?: unknown;
+    params?: Record<string, string>;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    headers?: Record<string, string>;
+  }
+): Promise<T> {
+  const base = cleanBase(baseUrl);
+  let url = `${base}${path}`;
+  if (options?.params) {
+    const qs = new URLSearchParams(options.params).toString();
+    url += (url.includes('?') ? '&' : '?') + qs;
+  }
+  const fetchOpts: RequestInit = {
+    method,
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    signal: options?.signal,
+  };
+  if (options?.body !== undefined) {
+    fetchOpts.body = JSON.stringify(options.body);
+  }
+  const response = await fetchWithTimeout(url, fetchOpts, options?.timeoutMs ?? API_CONFIG.TIMEOUT.DEFAULT, options?.signal);
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '');
+    throw new Error(`API Error ${response.status} [${method} ${path}]: ${errBody || response.statusText}`);
+  }
+  const data = await response.json();
+  return data as T;
+}
+
 export interface GraphMapNode {
   id: string;
   name: string;
@@ -94,12 +132,8 @@ export interface ProjectSummary {
  * Fetch list of projects
  * GET /api/v1/projects
  */
-export async function fetchProjects(dataApiBase: string): Promise<ProjectMetadata[]> {
-  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/api/v1/projects`;
-  const response = await fetchWithTimeout(url);
-  if (!response.ok) throw new Error(`Failed to fetch projects: ${response.statusText}`);
-  return await response.json();
+export async function fetchProjects(dataApiBase: string, signal?: AbortSignal): Promise<ProjectMetadata[]> {
+  return request<ProjectMetadata[]>(dataApiBase, 'GET', '/api/v1/projects', { signal });
 }
 
 /**

@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, ReactNode } from 'react';
 import { FlatGraph } from '../types';
 import { ConversationTurn } from '../services/geminiService';
+import { logger } from '../logger';
 
 const CONVERSATION_HISTORIES_KEY = 'gca-conversation-histories';
 
@@ -39,7 +40,7 @@ const loadHistories = (): ConversationHistories => {
       return JSON.parse(stored) as ConversationHistories;
     }
   } catch (e) {
-    console.warn('Failed to load conversation histories:', e);
+    logger.warn('Failed to load conversation histories:', e);
   }
   return {};
 };
@@ -48,7 +49,7 @@ const saveHistories = (histories: ConversationHistories) => {
   try {
     localStorage.setItem(CONVERSATION_HISTORIES_KEY, JSON.stringify(histories));
   } catch (e) {
-    console.warn('Failed to save conversation histories:', e);
+    logger.warn('Failed to save conversation histories:', e);
   }
 };
 
@@ -96,18 +97,20 @@ export const SearchProvider: React.FC<SearchProviderProps> = ({ children, projec
     }
   }, [projectId, histories]);
 
+  const value = useMemo(() => ({
+    searchTerm, setSearchTerm,
+    lastExecutedQuery, setLastExecutedQuery,
+    queryResults, setQueryResults,
+    isSearching, setIsSearching,
+    searchError, setSearchError,
+    searchStatus, setSearchStatus,
+    conversationHistory: currentHistory,
+    addConversationTurn,
+    clearConversationHistory,
+  }), [searchTerm, lastExecutedQuery, queryResults, isSearching, searchError, searchStatus, currentHistory, addConversationTurn, clearConversationHistory]);
+
   return (
-    <SearchContext.Provider value={{
-      searchTerm, setSearchTerm,
-      lastExecutedQuery, setLastExecutedQuery,
-      queryResults, setQueryResults,
-      isSearching, setIsSearching,
-      searchError, setSearchError,
-      searchStatus, setSearchStatus,
-      conversationHistory: currentHistory,
-      addConversationTurn,
-      clearConversationHistory,
-    }}>
+    <SearchContext.Provider value={value}>
       {children}
     </SearchContext.Provider>
   );

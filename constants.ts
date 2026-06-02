@@ -3,7 +3,7 @@ export const API_CONFIG = {
   TIMEOUT: {
     DEFAULT: 30000,
     SHORT: 5000,
-    LONG: 60000,
+    LONG: 35000,
   },
 };
 

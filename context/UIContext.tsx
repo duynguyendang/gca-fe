@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useMemo, ReactNode } from 'react';
 
 export type ViewMode = 'map' | 'discovery' | 'architecture' | 'narrative' | 'test' | 'dashboard';
 export type SubMode = 'NARRATIVE' | 'ARCHITECTURE' | 'ENTROPY';
@@ -60,23 +60,25 @@ export const UIProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
   const [initialChatPrompt, setInitialChatPrompt] = useState('');
 
+  const value = useMemo(() => ({
+    viewMode, setViewMode,
+    activeSubMode, setActiveSubMode,
+    isDrawerOpen, setIsDrawerOpen,
+    isNarrativeOpen, setIsNarrativeOpen,
+    isSettingsOpen, setIsSettingsOpen,
+    isLeftSidebarOpen, setIsLeftSidebarOpen,
+    isRightSidebarOpen, setIsRightSidebarOpen,
+    isBottomDrawerOpen, setIsBottomDrawerOpen,
+    isFullScreen, setIsFullScreen,
+    isCodeCollapsed, setIsCodeCollapsed,
+    isSynthesisCollapsed, setIsSynthesisCollapsed,
+    isLandingView, setIsLandingView,
+    isChatDrawerOpen, setIsChatDrawerOpen,
+    initialChatPrompt, setInitialChatPrompt,
+  }), [viewMode, activeSubMode, isDrawerOpen, isNarrativeOpen, isSettingsOpen, isLeftSidebarOpen, isRightSidebarOpen, isBottomDrawerOpen, isFullScreen, isCodeCollapsed, isSynthesisCollapsed, isLandingView, isChatDrawerOpen, initialChatPrompt]);
+
   return (
-    <UIContext.Provider value={{
-      viewMode, setViewMode,
-      activeSubMode, setActiveSubMode,
-      isDrawerOpen, setIsDrawerOpen,
-      isNarrativeOpen, setIsNarrativeOpen,
-      isSettingsOpen, setIsSettingsOpen,
-      isLeftSidebarOpen, setIsLeftSidebarOpen,
-      isRightSidebarOpen, setIsRightSidebarOpen,
-      isBottomDrawerOpen, setIsBottomDrawerOpen,
-      isFullScreen, setIsFullScreen,
-      isCodeCollapsed, setIsCodeCollapsed,
-      isSynthesisCollapsed, setIsSynthesisCollapsed,
-      isLandingView, setIsLandingView,
-      isChatDrawerOpen, setIsChatDrawerOpen,
-      initialChatPrompt, setInitialChatPrompt,
-    }}>
+    <UIContext.Provider value={value}>
       {children}
     </UIContext.Provider>
   );

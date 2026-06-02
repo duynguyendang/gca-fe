@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useMemo, ReactNode } from 'react';
 
 export interface NarrativeSection {
   type: 'summary' | 'inconsistency' | 'gravity' | 'info';
@@ -40,13 +40,15 @@ export const NarrativeProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [nodeInsight, setNodeInsight] = useState<string | null>(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
 
+  const value = useMemo(() => ({
+    narrativeMessages, setNarrativeMessages,
+    isNarrativeLoading, setIsNarrativeLoading,
+    nodeInsight, setNodeInsight,
+    isInsightLoading, setIsInsightLoading,
+  }), [narrativeMessages, isNarrativeLoading, nodeInsight, isInsightLoading]);
+
   return (
-    <NarrativeContext.Provider value={{
-      narrativeMessages, setNarrativeMessages,
-      isNarrativeLoading, setIsNarrativeLoading,
-      nodeInsight, setNodeInsight,
-      isInsightLoading, setIsInsightLoading,
-    }}>
+    <NarrativeContext.Provider value={value}>
       {children}
     </NarrativeContext.Provider>
   );

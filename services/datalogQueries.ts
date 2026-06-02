@@ -24,6 +24,8 @@ export function isIntrospectionQuery(query: string): boolean {
   return hasAction && hasEntity && !hasChatKeyword;
 }
 
+const COMMON_SHORT = new Set(['go', 'io', 'os', 'db', 'id', 'fs', 'fn', 'ok', 'it', 'is', 'by', 'to', 'on', 'in', 'at']);
+
 export function isValidIntrospectionQuery(query: string): boolean {
   const q = query.trim();
   if (!q || q.length < 3) {
@@ -36,7 +38,7 @@ export function isValidIntrospectionQuery(query: string): boolean {
   }
 
   const gibberish = /^[a-z]{1,3}$/.test(q.toLowerCase());
-  if (gibberish) {
+  if (gibberish && !COMMON_SHORT.has(q.toLowerCase())) {
     return false;
   }
 

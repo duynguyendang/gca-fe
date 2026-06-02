@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { useNarrativeContext, NarrativeMessage } from '../../context/NarrativeContext';
 import { useSettingsContext } from '../../context/SettingsContext';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
-import { askAI } from '../../services/geminiService';
+import { askAIStream } from '../../services/geminiService';
 import { useQueryContext } from '../../hooks/useQueryContext';
 import { logger } from '../../logger';
 
@@ -19,13 +19,16 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
   const { buildContext } = useQueryContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState('');
+  const rafRef = useRef<number | null>(null);
+  const narrativeMessagesRef = useRef(narrativeMessages);
+  narrativeMessagesRef.current = narrativeMessages;
 
   // Auto-submit initial prompt when drawer opens with a prompt
   useEffect(() => {
     if (isOpen && initialPrompt && narrativeMessages.length === 0) {
       handleSubmit(initialPrompt);
     }
-  }, [isOpen, initialPrompt]);
+  }, [isOpen, initialPrompt, narrativeMessages.length]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -36,9 +39,10 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
 
     const { enhancedQuery, contextData } = await buildContext(query);
 
+    const msgs = narrativeMessagesRef.current;
     let fullQuery = query;
-    if (narrativeMessages.length > 0) {
-      const lastUserMessage = [...narrativeMessages].reverse().find(m => m.role === 'user');
+    if (msgs.length > 0) {
+      const lastUserMessage = [...msgs].reverse().find(m => m.role === 'user');
       if (lastUserMessage && lastUserMessage.displayContent !== query) {
         fullQuery = `Follow-up: ${query}`;
       }
@@ -62,19 +66,50 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
     setIsNarrativeLoading(true);
 
     try {
-      const aiResponse = await askAI(dataApiBase, selectedProjectId, {
+      // Push empty AI message immediately for streaming
+      const placeholderMsg: NarrativeMessage = {
+        role: 'ai',
+        content: '',
+        timestamp: Date.now(),
+      };
+      setNarrativeMessages(prev => [...prev, placeholderMsg]);
+
+      let fullResponse = '';
+      const scheduleUpdate = () => {
+        if (rafRef.current !== null) return;
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = null;
+          setNarrativeMessages(prev => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last && last.role === 'ai') {
+              next[next.length - 1] = { ...last, content: fullResponse };
+            }
+            return next;
+          });
+        });
+      };
+      await askAIStream(dataApiBase, selectedProjectId, {
         task: 'chat',
         query: fullQuery,
         data: contextData.length > 0 ? contextData : undefined,
+      }, (_delta) => {
+        fullResponse += _delta;
+        scheduleUpdate();
+      }, undefined);
+      // Final update after stream ends (flush any pending RAF)
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      setNarrativeMessages(prev => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last && last.role === 'ai') {
+          next[next.length - 1] = { ...last, content: fullResponse };
+        }
+        return next;
       });
-
-      const aiMsg: NarrativeMessage = {
-        role: 'ai',
-        content: aiResponse,
-        timestamp: Date.now(),
-      };
-
-      setNarrativeMessages(prev => [...prev, aiMsg]);
     } catch (error: any) {
       logger.error('[AIChatDrawer] AI Chat Error:', error);
       let userMessage = 'Something went wrong. Please try again.';
@@ -92,11 +127,20 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
         content: `I encountered an issue: ${userMessage}`,
         timestamp: Date.now(),
       };
-      setNarrativeMessages(prev => [...prev, errorResponseMsg]);
+      setNarrativeMessages(prev => {
+        // Replace last placeholder if it's empty, otherwise append
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last && last.role === 'ai' && last.content === '') {
+          next[next.length - 1] = errorResponseMsg;
+          return next;
+        }
+        return [...next, errorResponseMsg];
+      });
     } finally {
       setIsNarrativeLoading(false);
     }
-  }, [isNarrativeLoading, dataApiBase, selectedProjectId, narrativeMessages, buildContext, setNarrativeMessages, setIsNarrativeLoading]);
+  }, [isNarrativeLoading, dataApiBase, selectedProjectId, buildContext, setNarrativeMessages, setIsNarrativeLoading]);
 
   const handleSend = () => {
     if (inputValue.trim()) {
@@ -174,7 +218,10 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
                         <p className="text-[12px] text-white leading-relaxed">{displayText}</p>
                       ) : (
                         <div className="text-[11px] text-slate-300 leading-relaxed">
-                          <MarkdownRenderer content={displayText} />
+                          <MarkdownRenderer
+                            content={displayText}
+                            isStreaming={isNarrativeLoading && msg.role === 'ai' && idx === narrativeMessages.length - 1}
+                          />
                         </div>
                       )}
                     </div>

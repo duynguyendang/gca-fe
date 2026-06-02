@@ -21,7 +21,7 @@ import UnifiedSearchBar from './components/UnifiedSearchBar';
 import { useSessionStorage } from './hooks/useSessionStorage';
 import { useQueryContext } from './hooks/useQueryContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { fetchFileCalls, fetchSource } from './services/graphService';
+import { fetchFileCalls, fetchPredicates, fetchSource } from './services/graphService';
 import { askAI } from './services/geminiService';
 import { logger } from './logger';
 import { requestManager } from './utils/requestManager';
@@ -193,20 +193,18 @@ const App: React.FC = () => {
       logger.log('[Auto-Sync] Connecting to API on mount:', dataApiBase);
       syncDataFromApi(dataApiBase);
     }
-  }, []);
+  }, [dataApiBase, isDataSyncing, availableProjects.length, syncDataFromApi]);
 
   useEffect(() => {
     if (!dataApiBase || !selectedProjectId) return;
 
-    import('./services/graphService').then(({ fetchPredicates }) => {
-      fetchPredicates(dataApiBase, selectedProjectId)
-        .then((preds: any[]) => {
-          const predNames = preds.map((p: any) => typeof p === 'string' ? p : p.name).filter(Boolean);
-          logger.log('Fetched predicates:', predNames);
-          setAvailablePredicates(predNames);
-        })
-        .catch((err: any) => logger.warn('Failed to fetch predicates:', err));
-    });
+    fetchPredicates(dataApiBase, selectedProjectId)
+      .then((preds: any[]) => {
+        const predNames = preds.map((p: any) => typeof p === 'string' ? p : p.name).filter(Boolean);
+        logger.log('Fetched predicates:', predNames);
+        setAvailablePredicates(predNames);
+      })
+      .catch((err: any) => logger.warn('Failed to fetch predicates:', err));
   }, [dataApiBase, selectedProjectId]);
 
   const handleDataApiBaseChange = useCallback((url: string) => {
@@ -249,27 +247,9 @@ const App: React.FC = () => {
     fullQuery += `\n${enhancedQuery}`;
 
     if (query === 'Explain this code' && selectedNode) {
-      const nodeId = selectedNode.id;
-      const nodeFilePath = selectedNode._filePath || selectedNode.filePath || nodeId;
-      let nodeCode = selectedNode.code;
-
-      if ((!nodeCode || nodeCode.trim() === '') && nodeId && dataApiBase && selectedProjectId) {
-        try {
-          nodeCode = await fetchSource(dataApiBase, selectedProjectId, nodeFilePath) || '';
-        } catch (e) {
-          logger.warn('[App] Failed to fetch source for explain:', e);
-        }
-      }
-
-      fullQuery = `Explain the following code:\n\n`;
-      fullQuery += `Selected: "${selectedNode.name}" (${selectedNode.kind || selectedNode.type})\n`;
-      fullQuery += `File: ${nodeFilePath}\n`;
-      if (nodeCode && nodeCode.trim() !== '') {
-        fullQuery += `\nFull Code:\n${nodeCode.trim()}\n`;
-      } else {
-        fullQuery += `\n(No code available for this symbol)\n`;
-      }
-      fullQuery += `\nPlease analyze the code and provide:\n1. What this code does\n2. How components interact\n3. Key patterns\n4. Potential improvements`;
+      // Code is already in contextData — don't duplicate it in the query.
+      // The backend's BuildChatPrompt will include code from the data array.
+      fullQuery = `Explain the selected code: "${selectedNode.name}" (${selectedNode.kind || selectedNode.type})\n\nPlease analyze and provide:\n1. What this code does\n2. How components interact\n3. Key patterns\n4. Potential improvements`;
     }
 
     const userMsg: NarrativeMessage = {

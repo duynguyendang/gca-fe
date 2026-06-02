@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useSettingsContext } from '../../context/SettingsContext';
 import { fetchHealthSummaryV2, fetchHealthSummary, fetchSurpriseAnalysis, fetchKnowledgeGaps, createSnapshot, fetchSnapshots, fetchGraphDiff, generateTests, HealthSummaryV2, FileHealth } from '../../services/graphService';
 import { logger } from '../../logger';
@@ -15,14 +15,12 @@ interface DashboardProps {
   refreshKey?: string;
 }
 
-// Request tracking for stale response elimination
-let requestCounter = 0;
-
-function nextRequestId(): string {
-  return `req_${++requestCounter}_${Date.now()}`;
-}
-
 export const Dashboard: React.FC<DashboardProps> = ({ refreshKey }) => {
+  const requestCounterRef = useRef(0);
+
+  const nextRequestId = useCallback((): string => {
+    return `req_${++requestCounterRef.current}_${Date.now()}`;
+  }, []);
   const { dataApiBase, selectedProjectId } = useSettingsContext();
 
   const [healthV2, setHealthV2] = useState<HealthSummaryV2 | null>(null);

@@ -22,7 +22,7 @@ import { useSessionStorage } from './hooks/useSessionStorage';
 import { useQueryContext } from './hooks/useQueryContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { fetchFileCalls, fetchPredicates, fetchSource } from './services/graphService';
-import { askAI } from './services/geminiService';
+import { askAI, askAIStream } from './services/geminiService';
 import { logger } from './logger';
 import { requestManager } from './utils/requestManager';
 import { CUSTOM_EVENTS } from './constants';
@@ -273,21 +273,27 @@ const App: React.FC = () => {
         project: selectedProjectId
       });
 
-      const aiResponse = await askAI(dataApiBase, selectedProjectId, {
+      const aiMsg: NarrativeMessage = {
+        role: 'ai',
+        content: '',
+        timestamp: Date.now(),
+      };
+      const aiMsgIdxRef = { current: -1 };
+      setNarrativeMessages(prev => {
+        aiMsgIdxRef.current = prev.length;
+        return [...prev, aiMsg];
+      });
+
+      await askAIStream(dataApiBase, selectedProjectId, {
         task: 'chat',
         query: fullQuery,
         data: contextData.length > 0 ? contextData : undefined,
+      }, (delta) => {
+        const idx = aiMsgIdxRef.current;
+        setNarrativeMessages(prev => prev.map((m, i) =>
+          i === idx ? { ...m, content: m.content + delta } : m
+        ));
       });
-
-      logger.log('[App] AI response received:', aiResponse.substring(0, 100) + '...');
-
-      const aiMsg: NarrativeMessage = {
-        role: 'ai',
-        content: aiResponse,
-        timestamp: Date.now(),
-      };
-
-      setNarrativeMessages(prev => [...prev, aiMsg]);
     } catch (error: any) {
       logger.error('[App] Error:', error);
       const errorMsg: NarrativeMessage = {

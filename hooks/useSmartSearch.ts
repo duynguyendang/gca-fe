@@ -20,6 +20,7 @@ import {
     generateReactiveNarrative,
     analyzePathWithCode,
     askAI,
+    askAIStream,
     ConversationTurn
 } from '../services/geminiService';
 import { isIntrospectionQuery, isValidIntrospectionQuery } from '../services/datalogQueries';
@@ -219,7 +220,9 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                             onViewModeChange('discovery');
 
                             setSearchStatus("Analyzing results with AI...");
-                            const analysis = await askAI(dataApiBase, selectedProjectId, {
+                            let insightAccum = '';
+                            setNodeInsight('');
+                            const analysis = await askAIStream(dataApiBase, selectedProjectId, {
                                 task: 'multi_file_summary',
                                 query: query,
                                 context_mode: activeSubMode,
@@ -229,6 +232,9 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                                         ? "Focus on design patterns, component hierarchy, and dependency structure."
                                         : "Analyze the logical flow and step-by-step execution.",
                                 data: subgraph.nodes.map(n => n.id).slice(0, 15)
+                            }, (delta) => {
+                                insightAccum += delta;
+                                setNodeInsight(insightAccum);
                             });
                             setNodeInsight(analysis);
                             setSearchStatus(null);
@@ -356,7 +362,9 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
 
                             // Analyze with AI using multi-file context to ensure code is read
                             setSearchStatus("Analyzing results with AI...");
-                            const analysis = await askAI(dataApiBase, selectedProjectId, {
+                            let insightAccum = '';
+                            setNodeInsight('');
+                            const analysis = await askAIStream(dataApiBase, selectedProjectId, {
                                 task: 'multi_file_summary',
                                 query: query,
                                 context_mode: activeSubMode,
@@ -366,6 +374,9 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                                         ? "Focus on the architectural relationships and modularity."
                                         : "Explain the logical story and flow of these components.",
                                 data: subgraph.nodes.map(n => n.id).slice(0, 15)
+                            }, (delta) => {
+                                insightAccum += delta;
+                                setNodeInsight(insightAccum);
                             });
                             setNodeInsight(analysis);
                             setSearchStatus(null);
@@ -400,8 +411,10 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
 
             // Analyze results with AI using multi-file context to pull in actual code
             setSearchStatus("Analyzing results with AI...");
+            let insightAccum = '';
+            setNodeInsight('');
             try {
-                const analysis = await askAI(dataApiBase, selectedProjectId, {
+                const analysis = await askAIStream(dataApiBase, selectedProjectId, {
                     task: 'multi_file_summary',
                     query: query,
                     context_mode: activeSubMode,
@@ -411,6 +424,9 @@ export const useSmartSearch = (options: UseSmartSearchOptions) => {
                             ? "Highlight design patterns and structural soundness."
                             : "Narrate the logical flow and sequence of operations.",
                     data: results.nodes.map((n: any) => n.id).slice(0, 15)
+                }, (delta) => {
+                    insightAccum += delta;
+                    setNodeInsight(insightAccum);
                 });
                 setNodeInsight(analysis || `Found ${results.nodes.length} nodes and ${results.links?.length || 0} relationships.`);
             } catch (aiErr) {

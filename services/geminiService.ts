@@ -10,10 +10,6 @@ import { readSSEStream } from '../utils/sseStream';
 import { API_CONFIG } from '../constants';
 import { logger } from '../logger';
 
-export interface AIResponse {
-  answer: string;
-}
-
 /**
  * Safely extract JSON from AI response text
  * Handles cases where AI wraps JSON in markdown code blocks or adds extra text
@@ -114,6 +110,7 @@ export const askAI = async (
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
     },
     body,
   }, API_CONFIG.TIMEOUT.LONG, signal);
@@ -124,8 +121,11 @@ export const askAI = async (
     throw new Error(`AI Service Error: ${response.statusText}`);
   }
 
-  const data: AIResponse = await response.json();
-  return data.answer || "No response from AI.";
+  let full = '';
+  for await (const delta of readSSEStream(response, signal)) {
+    full += delta;
+  }
+  return full || "No response from AI.";
 };
 
 /**

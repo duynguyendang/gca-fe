@@ -81,17 +81,10 @@ export const askAI = async (
   let contextData = payload.data;
   if (Array.isArray(contextData)) {
     const MAX_CONTEXT_ITEMS = 15;
-    const MAX_CODE_PER_ITEM = 1500;
     if (contextData.length > MAX_CONTEXT_ITEMS) {
       logger.warn(`[GeminiService] Truncating context from ${contextData.length} to ${MAX_CONTEXT_ITEMS} items`);
       contextData = contextData.slice(0, MAX_CONTEXT_ITEMS);
     }
-    contextData = contextData.map((item: any) => {
-      if (item.code && item.code.length > MAX_CODE_PER_ITEM) {
-        return { ...item, code: item.code.substring(0, MAX_CODE_PER_ITEM) + '\n...[truncated]' };
-      }
-      return item;
-    });
   }
 
   const body = JSON.stringify({
@@ -152,17 +145,10 @@ export const askAIStream = async (
   let contextData = payload.data;
   if (Array.isArray(contextData)) {
     const MAX_CONTEXT_ITEMS = 15;
-    const MAX_CODE_PER_ITEM = 1500;
     if (contextData.length > MAX_CONTEXT_ITEMS) {
       logger.warn(`[GeminiService] Truncating context from ${contextData.length} to ${MAX_CONTEXT_ITEMS} items`);
       contextData = contextData.slice(0, MAX_CONTEXT_ITEMS);
     }
-    contextData = contextData.map((item: any) => {
-      if (item.code && item.code.length > MAX_CODE_PER_ITEM) {
-        return { ...item, code: item.code.substring(0, MAX_CODE_PER_ITEM) + '\n...[truncated]' };
-      }
-      return item;
-    });
   }
 
   const body = JSON.stringify({

@@ -229,12 +229,6 @@ export const useQueryContext = () => {
       enhancedQuery = enhancedQuery.substring(0, MAX_QUERY_LENGTH) + '\n...[shortened]';
     }
 
-    for (const node of contextData) {
-      if (node.code && node.code.length > 2000) {
-        node.code = node.code.substring(0, 2000) + '\n...[shortened]';
-      }
-    }
-
     return {
       enhancedQuery,
       contextData,

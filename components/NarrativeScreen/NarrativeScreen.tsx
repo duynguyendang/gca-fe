@@ -7,7 +7,7 @@ import UnifiedSearchBar from '../UnifiedSearchBar';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
 import { useContextualSuggestions } from '../../hooks/useContextualSuggestions';
 import { useQueryContext } from '../../hooks/useQueryContext';
-import { askAI, askAIStream } from '../../services/geminiService';
+import { askAI, askAIStream, askQuestion } from '../../services/geminiService';
 import { logger } from '../../logger';
 import { isIntrospectionQuery, isValidIntrospectionQuery } from '../../services/datalogQueries';
 
@@ -193,10 +193,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
             setNarrativeMessages(prev => [...prev, userMsg]);
 
             try {
-                const answer = await askAI(dataApiBase, selectedProjectId, {
-                    task: 'datalog',
-                    query: query,
-                });
+                const answer = await askQuestion(dataApiBase, selectedProjectId, query);
                 const aiMsg: NarrativeMessage = {
                     role: 'ai',
                     content: answer,

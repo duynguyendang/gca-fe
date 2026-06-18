@@ -58,6 +58,11 @@ function extractJSON<T>(text: string, fallback: T): T {
     return fallback;
 }
 
+export interface ChatMessage {
+  role: 'user' | 'ai' | 'assistant';
+  content: string;
+}
+
 /**
  * Core Proxy Function
  */
@@ -71,6 +76,7 @@ export const askAI = async (
     data?: any;
     context_mode?: string;
     query_instruction?: string;
+    messages?: ChatMessage[];
   },
   signal?: AbortSignal | null
 ): Promise<string> => {
@@ -94,7 +100,8 @@ export const askAI = async (
     symbol_id: payload.symbol_id || '',
     data: contextData || null,
     context_mode: payload.context_mode || '',
-    query_instruction: payload.query_instruction || ''
+    query_instruction: payload.query_instruction || '',
+    messages: payload.messages || [],
   });
 
   logger.log(`[GeminiService] POST ${url} (${(body.length / 1024).toFixed(1)}KB body)`);
@@ -135,6 +142,7 @@ export const askAIStream = async (
     data?: any;
     context_mode?: string;
     query_instruction?: string;
+    messages?: ChatMessage[];
   },
   onChunk: (delta: string) => void,
   signal?: AbortSignal | null
@@ -158,7 +166,8 @@ export const askAIStream = async (
     symbol_id: payload.symbol_id || '',
     data: contextData || null,
     context_mode: payload.context_mode || '',
-    query_instruction: payload.query_instruction || ''
+    query_instruction: payload.query_instruction || '',
+    messages: payload.messages || [],
   });
 
   logger.log(`[GeminiService] POST ${url} (streaming, ${(body.length / 1024).toFixed(1)}KB body)`);

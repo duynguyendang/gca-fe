@@ -3,6 +3,7 @@ import * as d3 from 'd3';
 import { usePaginatedGraph, useInfiniteScroll } from '../hooks/usePaginatedGraph';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ErrorMessage } from '../components/common/ErrorMessage';
+import { OKF_COLORS } from '../theme';
 
 interface PaginatedGraphVisualizationProps {
   apiBase: string;
@@ -82,7 +83,12 @@ export const PaginatedGraphVisualization: React.FC<PaginatedGraphVisualizationPr
       .data(links)
       .enter()
       .append('line')
-      .attr('stroke', '#999')
+      .attr('stroke', (d: any) => {
+        if (d.relation === 'bridges_to') return OKF_COLORS.BRIDGE_EDGE;
+        if (d.relation === 'okf_link') return OKF_COLORS.LINK_EDGE;
+        return '#999';
+      })
+      .attr('stroke-dasharray', (d: any) => d.relation === 'bridges_to' ? '5,3' : null)
       .attr('stroke-opacity', 0.6)
       .attr('stroke-width', (d: any) => Math.sqrt(d.weight || 1));
 
@@ -93,8 +99,11 @@ export const PaginatedGraphVisualization: React.FC<PaginatedGraphVisualizationPr
       .data(nodes)
       .enter()
       .append('circle')
-      .attr('r', 8)
-      .attr('fill', (d: any) => d.kind === 'file' ? '#ff7f0e' : '#1f77b4')
+      .attr('r', (d: any) => d.role === 'okf_concept' ? 10 : 8)
+      .attr('fill', (d: any) => {
+        if (d.role === 'okf_concept') return OKF_COLORS.NODE;
+        return d.kind === 'file' ? '#ff7f0e' : '#1f77b4';
+      })
       .attr('stroke', '#fff')
       .attr('stroke-width', 2)
       .style('cursor', 'pointer')

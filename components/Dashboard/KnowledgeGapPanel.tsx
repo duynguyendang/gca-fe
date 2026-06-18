@@ -1,9 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { KnowledgeGapItem, KnowledgeGapsResponse } from '../../types';
+import { KnowledgeGapItem, KnowledgeGapsResponse, OKFSmellResponse } from '../../types';
+import { OKFSmellTab } from './OKFSmellTab';
 
 interface KnowledgeGapPanelProps {
   gaps: KnowledgeGapsResponse;
+  okfSmells?: OKFSmellResponse | null;
   onSymbolClick?: (symbol: string) => void;
+  onConceptClick?: (conceptId: string) => void;
   onGenerateTests?: (symbol: string) => void;
 }
 
@@ -29,15 +32,29 @@ const gapTypeLabels: Record<string, string> = {
   single_file_community: 'Single-File Clusters',
 };
 
-export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, onSymbolClick, onGenerateTests }) => {
+export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, okfSmells, onSymbolClick, onConceptClick, onGenerateTests }) => {
   const [activeTab, setActiveTab] = useState<string>('isolated');
 
-  const tabs = useMemo(() => [
-    { key: 'isolated', label: 'Isolated', count: gaps.isolated_nodes.length, icon: gapTypeIcons.isolated },
-    { key: 'untested_hotspot', label: 'Untested', count: gaps.untested_hotspots.length, icon: gapTypeIcons.untested_hotspot },
-    { key: 'thin_community', label: 'Thin Communities', count: gaps.thin_communities.length, icon: gapTypeIcons.thin_community },
-    { key: 'single_file_community', label: 'Single-File', count: gaps.single_file_clusters.length, icon: gapTypeIcons.single_file_community },
-  ], [gaps]);
+  const hasOKF = okfSmells && okfSmells.total_count > 0;
+
+  const tabs = useMemo(() => {
+    const codeTabs = [
+      { key: 'isolated', label: 'Isolated', count: gaps.isolated_nodes.length, icon: gapTypeIcons.isolated },
+      { key: 'untested_hotspot', label: 'Untested', count: gaps.untested_hotspots.length, icon: gapTypeIcons.untested_hotspot },
+      { key: 'thin_community', label: 'Thin Communities', count: gaps.thin_communities.length, icon: gapTypeIcons.thin_community },
+      { key: 'single_file_community', label: 'Single-File', count: gaps.single_file_clusters.length, icon: gapTypeIcons.single_file_community },
+    ];
+
+    if (hasOKF) {
+      codeTabs.push(
+        { key: 'okf_orphans', label: 'OKF Orphans', count: okfSmells!.orphans.length, icon: '🔗' },
+        { key: 'okf_stale', label: 'OKF Stale', count: okfSmells!.stale.length, icon: '⏳' },
+        { key: 'okf_bridge_break', label: 'Bridge Breaks', count: okfSmells!.bridge_break.length, icon: '💔' },
+      );
+    }
+
+    return codeTabs;
+  }, [gaps, okfSmells, hasOKF]);
 
   const activeItems = useMemo(() => {
     switch (activeTab) {
@@ -49,7 +66,9 @@ export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, onSy
     }
   }, [activeTab, gaps]);
 
-  if (gaps.total_count === 0) {
+  const isOKFTab = activeTab === 'okf_orphans' || activeTab === 'okf_stale' || activeTab === 'okf_bridge_break';
+
+  if (gaps.total_count === 0 && (!okfSmells || okfSmells.total_count === 0)) {
     return (
       <div className="p-4 text-center text-gray-400">
         <div className="mb-2 text-2xl">✅</div>
@@ -63,10 +82,13 @@ export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, onSy
     <div className="flex flex-col h-full">
       {/* Summary counts */}
       <div className="flex items-center gap-4 px-4 py-2 border-b border-gray-700 text-sm">
-        <span className="font-medium">{gaps.total_count} total gaps</span>
+        <span className="font-medium">{gaps.total_count + (okfSmells?.total_count || 0)} total gaps</span>
         <span className="text-red-400">{gaps.untested_hotspots.length} untested</span>
         <span className="text-amber-400">{gaps.isolated_nodes.length} isolated</span>
         <span className="text-gray-400">{gaps.thin_communities.length + gaps.single_file_clusters.length} structural</span>
+        {hasOKF && (
+          <span className="text-green-400">{okfSmells!.total_count} OKF</span>
+        )}
       </div>
 
       {/* Tabs */}
@@ -94,7 +116,21 @@ export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, onSy
 
       {/* Items list */}
       <div className="flex-1 overflow-auto p-4 space-y-2">
-        {activeItems.length === 0 ? (
+        {isOKFTab ? (
+          <OKFSmellTab
+            items={
+              activeTab === 'okf_orphans' ? okfSmells!.orphans :
+              activeTab === 'okf_stale' ? okfSmells!.stale :
+              okfSmells!.bridge_break
+            }
+            smellCategory={
+              activeTab === 'okf_orphans' ? 'orphans' :
+              activeTab === 'okf_stale' ? 'stale' :
+              'bridge_break'
+            }
+            onConceptClick={onConceptClick}
+          />
+        ) : activeItems.length === 0 ? (
           <div className="text-center text-gray-500 py-8">No {(gapTypeLabels[activeTab] ?? activeTab).toLowerCase()} found</div>
         ) : (
           activeItems.map((item, i) => {

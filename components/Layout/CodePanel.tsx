@@ -5,6 +5,8 @@
 import React from 'react';
 import HighlightedCode from '../HighlightedCode';
 import { useGraphContext } from '../../context/GraphContext';
+import { useOKFBridgesForSymbol } from '../../hooks/useOKFData';
+import { OKF_COLORS } from '../../theme';
 
 interface CodePanelProps {
     width: number;
@@ -20,6 +22,9 @@ const CodePanel: React.FC<CodePanelProps> = ({
     onStartResize
 }) => {
     const { selectedNode, hydratingNodeId } = useGraphContext();
+    const { concepts: knowledgeLinks, loading: bridgesLoading } = useOKFBridgesForSymbol(
+        selectedNode?.id && !selectedNode.id.startsWith('okf:') ? selectedNode.id : null
+    );
 
     const renderCode = () => {
         if (!selectedNode) return (
@@ -97,7 +102,8 @@ const CodePanel: React.FC<CodePanelProps> = ({
             >
                 <div className="flex items-center gap-3 overflow-hidden mr-4">
                     <button
-                        className="text-slate-500 transition-colors"
+                        aria-label={isCollapsed ? 'Expand code panel' : 'Collapse code panel'}
+                        className="text-slate-500 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--accent-teal)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-main)] focus-visible:outline-none"
                     >
                         <i className={`fas fa-chevron-${isCollapsed ? 'right' : 'left'}`}></i>
                     </button>
@@ -112,6 +118,30 @@ const CodePanel: React.FC<CodePanelProps> = ({
             <div className={`flex-1 overflow-auto custom-scrollbar bg-[var(--bg-surface)] ${isCollapsed ? 'hidden' : ''}`}>
                 {renderCode()}
             </div>
+
+            {/* Knowledge Links */}
+            {!isCollapsed && knowledgeLinks.length > 0 && (
+                <div className="border-t border-[var(--border)] px-4 py-3 shrink-0">
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2 flex items-center gap-1.5">
+                        <i className="fas fa-link" style={{ color: OKF_COLORS.BRIDGE_EDGE }}></i>
+                        Knowledge Links
+                    </h4>
+                    <div className="space-y-1 max-h-40 overflow-auto">
+                        {knowledgeLinks.map(link => (
+                            <div
+                                key={link.conceptId}
+                                className="flex items-center gap-2 px-2 py-1.5 bg-[var(--bg-main)] rounded hover:bg-white/5 cursor-pointer transition-colors group"
+                                title={link.conceptId}
+                            >
+                                <i className="fas fa-link text-[9px]" style={{ color: OKF_COLORS.NODE }}></i>
+                                <span className="font-mono text-[10px] text-gray-300 truncate group-hover:text-white transition-colors">
+                                    {link.conceptId}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </aside>
     );
 };

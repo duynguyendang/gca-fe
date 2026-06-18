@@ -262,3 +262,55 @@ export interface SnapshotInfo {
   node_count: number;
   edge_count: number;
 }
+
+// OKF types
+export interface OKFNode extends GraphNode {
+  role: 'okf_concept';
+  okf_type?: string;
+  okf_title?: string;
+  okf_description?: string;
+  okf_tags?: string[];
+  okf_timestamp?: string;
+  okf_body_preview?: string;
+  okf_smells?: string[];
+  okf_in_degree?: number;
+  okf_centrality?: number;
+}
+
+export interface OKFBridgeLink extends GraphLink {
+  relation: 'bridges_to';
+  source_type: 'okf';
+  bridge_miss?: boolean;
+}
+
+export interface OKFIngestReport {
+  concepts: number;
+  links: number;
+  bridges: number;
+  bridge_misses: number;
+  conformant: boolean;
+  duration: string;
+  errors: Array<{ file: string; reason: string }>;
+}
+
+export interface OKFExportReport {
+  concepts_written: number;
+  files_written: number;
+  duration: string;
+}
+
+export interface OKFSmellItem {
+  concept_id: string;
+  smell_type: string;
+  description?: string;
+  detail?: string;
+  severity?: 'high' | 'medium' | 'low';
+}
+
+export interface OKFSmellResponse {
+  orphans: OKFSmellItem[];
+  stale: OKFSmellItem[];
+  bridge_break: OKFSmellItem[];
+  hub_anomaly: OKFSmellItem[];
+  total_count: number;
+}

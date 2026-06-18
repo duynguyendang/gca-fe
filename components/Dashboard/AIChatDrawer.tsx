@@ -3,6 +3,7 @@ import { useNarrativeContext, NarrativeMessage } from '../../context/NarrativeCo
 import { useSettingsContext } from '../../context/SettingsContext';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
 import { askAIStream } from '../../services/geminiService';
+import type { ChatMessage } from '../../services/geminiService';
 import { useQueryContext } from '../../hooks/useQueryContext';
 import { logger } from '../../logger';
 
@@ -14,56 +15,52 @@ interface AIChatDrawerProps {
 
 export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, initialPrompt }) => {
   const { dataApiBase, selectedProjectId } = useSettingsContext();
-  const { narrativeMessages, setNarrativeMessages, isNarrativeLoading, setIsNarrativeLoading } = useNarrativeContext();
+  const { drawerMessages, setDrawerMessages, isDrawerLoading, setIsDrawerLoading } = useNarrativeContext();
 
   const { buildContext } = useQueryContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState('');
   const rafRef = useRef<number | null>(null);
-  const narrativeMessagesRef = useRef(narrativeMessages);
-  narrativeMessagesRef.current = narrativeMessages;
+  const drawerMessagesRef = useRef(drawerMessages);
+  drawerMessagesRef.current = drawerMessages;
 
   // Auto-submit initial prompt when drawer opens with a prompt
   useEffect(() => {
-    if (isOpen && initialPrompt && narrativeMessages.length === 0) {
+    if (isOpen && initialPrompt && drawerMessages.length === 0) {
       handleSubmit(initialPrompt);
     }
-  }, [isOpen, initialPrompt, narrativeMessages.length]);
+  }, [isOpen, initialPrompt, drawerMessages.length]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [narrativeMessages, isNarrativeLoading]);
+  }, [drawerMessages, isDrawerLoading]);
 
   const handleSubmit = useCallback(async (query: string) => {
-    if (!query.trim() || isNarrativeLoading || !dataApiBase || !selectedProjectId) return;
+    if (!query.trim() || isDrawerLoading || !dataApiBase || !selectedProjectId) return;
 
-    const { enhancedQuery, contextData } = await buildContext(query);
+    const { contextData, symbolId } = await buildContext(query);
 
-    const msgs = narrativeMessagesRef.current;
-    let fullQuery = query;
+    const priorMessages: ChatMessage[] = [];
+    const msgs = drawerMessagesRef.current;
     if (msgs.length > 0) {
-      const lastUserMessage = [...msgs].reverse().find(m => m.role === 'user');
-      if (lastUserMessage && lastUserMessage.displayContent !== query) {
-        fullQuery = `Follow-up: ${query}`;
+      for (const m of msgs) {
+        if (m.role === 'user') {
+          priorMessages.push({ role: 'user', content: m.displayContent || m.content });
+        } else if (m.role === 'ai' && m.content) {
+          priorMessages.push({ role: 'assistant', content: m.content });
+        }
       }
-    }
-
-    fullQuery += `\n\n${enhancedQuery}`;
-
-    const MAX_QUERY_LENGTH = 9500;
-    if (fullQuery.length > MAX_QUERY_LENGTH) {
-      fullQuery = fullQuery.substring(0, MAX_QUERY_LENGTH) + '\n...[query shortened]';
     }
 
     const userMsg: NarrativeMessage = {
       role: 'user',
-      content: fullQuery,
+      content: query,
       displayContent: query,
       timestamp: Date.now(),
     };
 
-    setNarrativeMessages(prev => [...prev, userMsg]);
-    setIsNarrativeLoading(true);
+    setDrawerMessages(prev => [...prev, userMsg]);
+    setIsDrawerLoading(true);
 
     try {
       // Push empty AI message immediately for streaming
@@ -72,14 +69,14 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
         content: '',
         timestamp: Date.now(),
       };
-      setNarrativeMessages(prev => [...prev, placeholderMsg]);
+      setDrawerMessages(prev => [...prev, placeholderMsg]);
 
       let fullResponse = '';
       const scheduleUpdate = () => {
         if (rafRef.current !== null) return;
         rafRef.current = requestAnimationFrame(() => {
           rafRef.current = null;
-          setNarrativeMessages(prev => {
+          setDrawerMessages(prev => {
             const next = [...prev];
             const last = next[next.length - 1];
             if (last && last.role === 'ai') {
@@ -91,8 +88,10 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
       };
       await askAIStream(dataApiBase, selectedProjectId, {
         task: 'chat',
-        query: fullQuery,
+        query: query,
+        symbol_id: symbolId,
         data: contextData.length > 0 ? contextData : undefined,
+        messages: priorMessages,
       }, (_delta) => {
         fullResponse += _delta;
         scheduleUpdate();
@@ -102,7 +101,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-      setNarrativeMessages(prev => {
+      setDrawerMessages(prev => {
         const next = [...prev];
         const last = next[next.length - 1];
         if (last && last.role === 'ai') {
@@ -127,7 +126,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
         content: `I encountered an issue: ${userMessage}`,
         timestamp: Date.now(),
       };
-      setNarrativeMessages(prev => {
+      setDrawerMessages(prev => {
         // Replace last placeholder if it's empty, otherwise append
         const next = [...prev];
         const last = next[next.length - 1];
@@ -138,9 +137,9 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
         return [...next, errorResponseMsg];
       });
     } finally {
-      setIsNarrativeLoading(false);
+      setIsDrawerLoading(false);
     }
-  }, [isNarrativeLoading, dataApiBase, selectedProjectId, buildContext, setNarrativeMessages, setIsNarrativeLoading]);
+  }, [isDrawerLoading, dataApiBase, selectedProjectId, buildContext, setDrawerMessages, setIsDrawerLoading]);
 
   const handleSend = () => {
     if (inputValue.trim()) {
@@ -182,7 +181,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4">
-        {narrativeMessages.length === 0 && !isNarrativeLoading ? (
+        {drawerMessages.length === 0 && !isDrawerLoading ? (
           <div className="h-full flex flex-col items-center justify-center text-center">
             <div className="w-16 h-16 rounded-2xl bg-[var(--accent-blue)]/10 border border-[var(--accent-blue)]/20 flex items-center justify-center mb-4">
               <i className="fas fa-brain text-2xl text-[var(--accent-blue)]"></i>
@@ -194,7 +193,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
           </div>
         ) : (
           <div className="space-y-4">
-            {narrativeMessages.map((msg, idx) => {
+            {drawerMessages.map((msg: NarrativeMessage, idx: number) => {
               const isUser = msg.role === 'user';
               const displayText = isUser ? (msg.displayContent || msg.content) : msg.content;
 
@@ -220,7 +219,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
                         <div className="text-[11px] text-slate-300 leading-relaxed">
                           <MarkdownRenderer
                             content={displayText}
-                            isStreaming={isNarrativeLoading && msg.role === 'ai' && idx === narrativeMessages.length - 1}
+                            isStreaming={isDrawerLoading && msg.role === 'ai' && idx === drawerMessages.length - 1}
                           />
                         </div>
                       )}
@@ -233,7 +232,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
               );
             })}
 
-            {isNarrativeLoading && (
+            {isDrawerLoading && (
               <div className="flex justify-start">
                 <div className="max-w-[90%]">
                   <div className="flex items-center gap-2 mb-1.5">
@@ -274,7 +273,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isOpen, onClose, ini
           />
           <button
             onClick={handleSend}
-            disabled={!inputValue.trim() || isNarrativeLoading}
+            disabled={!inputValue.trim() || isDrawerLoading}
             className="px-4 py-2 bg-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white text-[11px] font-medium transition-colors"
           >
             <i className="fas fa-paper-plane text-[10px]"></i>

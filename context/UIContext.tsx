@@ -8,30 +8,18 @@ interface UIState {
   setViewMode: React.Dispatch<React.SetStateAction<ViewMode>>;
   activeSubMode: SubMode;
   setActiveSubMode: React.Dispatch<React.SetStateAction<SubMode>>;
-  isDrawerOpen: boolean;
-  setIsDrawerOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  isNarrativeOpen: boolean;
-  setIsNarrativeOpen: React.Dispatch<React.SetStateAction<boolean>>;
   isSettingsOpen: boolean;
   setIsSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
   isLeftSidebarOpen: boolean;
   setIsLeftSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
   isRightSidebarOpen: boolean;
   setIsRightSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  isBottomDrawerOpen: boolean;
-  setIsBottomDrawerOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  isFullScreen: boolean;
-  setIsFullScreen: React.Dispatch<React.SetStateAction<boolean>>;
   isCodeCollapsed: boolean;
   setIsCodeCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
-  isSynthesisCollapsed: boolean;
-  setIsSynthesisCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   isLandingView: boolean;
   setIsLandingView: React.Dispatch<React.SetStateAction<boolean>>;
-  isChatDrawerOpen: boolean;
-  setIsChatDrawerOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  initialChatPrompt: string;
-  setInitialChatPrompt: React.Dispatch<React.SetStateAction<string>>;
+  isShortcutsOpen: boolean;
+  setIsShortcutsOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const UIContext = createContext<UIState | null>(null);
@@ -45,37 +33,25 @@ export const useUIContext = () => {
 export const UIProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('narrative');
   const [activeSubMode, setActiveSubMode] = useState<SubMode>('NARRATIVE');
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [isNarrativeOpen, setIsNarrativeOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
-  const [isBottomDrawerOpen, setIsBottomDrawerOpen] = useState(false);
-  const [isFullScreen, setIsFullScreen] = useState(false);
   const [isCodeCollapsed, setIsCodeCollapsed] = useState(false);
-  const [isSynthesisCollapsed, setIsSynthesisCollapsed] = useState(false);
   const [isLandingView, setIsLandingView] = useState<boolean>(() => {
     return !sessionStorage.getItem('gca_selected_project_v2');
   });
-  const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
-  const [initialChatPrompt, setInitialChatPrompt] = useState('');
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
 
   const value = useMemo(() => ({
     viewMode, setViewMode,
     activeSubMode, setActiveSubMode,
-    isDrawerOpen, setIsDrawerOpen,
-    isNarrativeOpen, setIsNarrativeOpen,
     isSettingsOpen, setIsSettingsOpen,
     isLeftSidebarOpen, setIsLeftSidebarOpen,
     isRightSidebarOpen, setIsRightSidebarOpen,
-    isBottomDrawerOpen, setIsBottomDrawerOpen,
-    isFullScreen, setIsFullScreen,
     isCodeCollapsed, setIsCodeCollapsed,
-    isSynthesisCollapsed, setIsSynthesisCollapsed,
     isLandingView, setIsLandingView,
-    isChatDrawerOpen, setIsChatDrawerOpen,
-    initialChatPrompt, setInitialChatPrompt,
-  }), [viewMode, activeSubMode, isDrawerOpen, isNarrativeOpen, isSettingsOpen, isLeftSidebarOpen, isRightSidebarOpen, isBottomDrawerOpen, isFullScreen, isCodeCollapsed, isSynthesisCollapsed, isLandingView, isChatDrawerOpen, initialChatPrompt]);
+    isShortcutsOpen, setIsShortcutsOpen,
+  }), [viewMode, activeSubMode, isSettingsOpen, isLeftSidebarOpen, isRightSidebarOpen, isCodeCollapsed, isLandingView, isShortcutsOpen]);
 
   return (
     <UIContext.Provider value={value}>

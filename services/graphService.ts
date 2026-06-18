@@ -1177,3 +1177,61 @@ export async function createSnapshot(
   logger.log('[GraphService] Created snapshot:', data);
   return data;
 }
+
+/**
+ * OKF: Ingest a bundle
+ * POST /api/v1/okf/ingest
+ */
+export async function ingestOKFBundle(
+  dataApiBase: string,
+  projectId: string,
+  bundleDir: string
+): Promise<import('../types').OKFIngestReport> {
+  const url = `${cleanBase(dataApiBase)}/api/v1/okf/ingest`;
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId, bundle_dir: bundleDir }),
+  });
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '');
+    throw new Error(`OKF ingest failed: ${errBody || response.statusText}`);
+  }
+  return response.json();
+}
+
+/**
+ * OKF: Export a bundle
+ * GET /api/v1/okf/export?project=...&scope=...&out=...
+ */
+export async function exportOKFBundle(
+  dataApiBase: string,
+  projectId: string,
+  scope: 'file' | 'package' | 'cluster',
+  outDir: string
+): Promise<import('../types').OKFExportReport> {
+  const params = new URLSearchParams({ project: projectId, scope, out: outDir });
+  const url = `${cleanBase(dataApiBase)}/api/v1/okf/export?${params}`;
+  const response = await fetchWithTimeout(url);
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '');
+    throw new Error(`OKF export failed: ${errBody || response.statusText}`);
+  }
+  return response.json();
+}
+
+/**
+ * OKF: Fetch orphan concepts
+ * GET /api/v1/okf/orphans?project=...
+ */
+export async function fetchOKFOrphans(
+  dataApiBase: string,
+  projectId: string
+): Promise<{ orphans: Array<{ concept_id: string; description?: string }>; count: number }> {
+  const url = `${cleanBase(dataApiBase)}/api/v1/okf/orphans?project=${encodeURIComponent(projectId)}`;
+  const response = await fetchWithTimeout(url);
+  if (!response.ok) {
+    throw new Error(`OKF orphans fetch failed: ${response.statusText}`);
+  }
+  return response.json();
+}

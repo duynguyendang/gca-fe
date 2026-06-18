@@ -8,9 +8,12 @@ interface AppHeaderProps {
   onViewModeChange: (mode: ViewMode) => void;
   isSubModeSwitching: boolean;
   openSettings: () => void;
+  openShortcuts: () => void;
   isSearching: boolean;
   isConnected: boolean;
   isDataSyncing: boolean;
+  onOpenIngestModal?: () => void;
+  onOpenExportModal?: () => void;
 }
 
 const AppHeader: React.FC<AppHeaderProps> = ({
@@ -19,9 +22,12 @@ const AppHeader: React.FC<AppHeaderProps> = ({
   onViewModeChange,
   isSubModeSwitching,
   openSettings,
+  openShortcuts,
   isSearching,
   isConnected,
   isDataSyncing,
+  onOpenIngestModal,
+  onOpenExportModal,
 }) => {
   const getStatus = () => {
     if (isDataSyncing) return { text: 'SYNCING...', color: 'bg-amber-500 animate-pulse shadow-[0_0_8px_#f59e0b]', textColor: 'text-amber-500' };
@@ -61,12 +67,37 @@ const AppHeader: React.FC<AppHeaderProps> = ({
         </span>
       </div>
 
-      <div className="ml-auto flex items-center">
+      <div className="ml-auto flex items-center gap-2">
         <ViewModeSwitcher viewMode={viewMode} onViewModeChange={onViewModeChange} />
         <div className="h-8 w-px bg-white/10 mx-5 rounded"></div>
+        {onOpenIngestModal && (
+          <button
+            title="Ingest OKF Bundle"
+            className="text-slate-500 hover:text-green-400 cursor-pointer transition-colors text-sm bg-transparent border-none p-1 focus-visible:ring-2 focus-visible:ring-[var(--accent-teal)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-main)]"
+            onClick={onOpenIngestModal}
+          >
+            <i className="fas fa-upload"></i>
+          </button>
+        )}
+        {onOpenExportModal && (
+          <button
+            title="Export OKF Bundle"
+            className="text-slate-500 hover:text-blue-400 cursor-pointer transition-colors text-sm bg-transparent border-none p-1 focus-visible:ring-2 focus-visible:ring-[var(--accent-teal)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-main)]"
+            onClick={onOpenExportModal}
+          >
+            <i className="fas fa-download"></i>
+          </button>
+        )}
+        <button
+          aria-label="Keyboard shortcuts"
+          className="text-slate-500 hover:text-white cursor-pointer transition-colors text-sm bg-transparent border-none p-1 focus-visible:ring-2 focus-visible:ring-[var(--accent-teal)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-main)]"
+          onClick={openShortcuts}
+        >
+          <i className="fas fa-question"></i>
+        </button>
         <button
           aria-label="Open settings"
-          className="text-slate-500 hover:text-white cursor-pointer transition-colors text-sm bg-transparent border-none p-1"
+          className="text-slate-500 hover:text-white cursor-pointer transition-colors text-sm bg-transparent border-none p-1 focus-visible:ring-2 focus-visible:ring-[var(--accent-teal)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-main)]"
           onClick={openSettings}
         >
           <i className="fas fa-cog"></i>

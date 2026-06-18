@@ -42,6 +42,19 @@ export const LANGUAGE_COLORS: Record<string, string> = {
   default: '#8b8b8b',
 };
 
+export const OKF_COLORS = {
+  NODE: '#2ca02c',
+  NODE_SELECTED: '#3ddc84',
+  BRIDGE_EDGE: '#9467bd',
+  LINK_EDGE: '#2dd4bf',
+  SMELL: {
+    orphan: '#3b82f6',
+    stale: '#f59e0b',
+    bridge_break: '#ef4444',
+    hub_anomaly: '#f97316',
+  },
+};
+
 export const KIND_COLORS: Record<string, string> = {
   function: '#10b981',
   method: '#10b981',

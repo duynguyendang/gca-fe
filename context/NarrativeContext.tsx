@@ -20,6 +20,10 @@ interface NarrativeState {
   setNarrativeMessages: React.Dispatch<React.SetStateAction<NarrativeMessage[]>>;
   isNarrativeLoading: boolean;
   setIsNarrativeLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  drawerMessages: NarrativeMessage[];
+  setDrawerMessages: React.Dispatch<React.SetStateAction<NarrativeMessage[]>>;
+  isDrawerLoading: boolean;
+  setIsDrawerLoading: React.Dispatch<React.SetStateAction<boolean>>;
   nodeInsight: string | null;
   setNodeInsight: React.Dispatch<React.SetStateAction<string | null>>;
   isInsightLoading: boolean;
@@ -37,15 +41,19 @@ export const useNarrativeContext = () => {
 export const NarrativeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [narrativeMessages, setNarrativeMessages] = useState<NarrativeMessage[]>([]);
   const [isNarrativeLoading, setIsNarrativeLoading] = useState(false);
+  const [drawerMessages, setDrawerMessages] = useState<NarrativeMessage[]>([]);
+  const [isDrawerLoading, setIsDrawerLoading] = useState(false);
   const [nodeInsight, setNodeInsight] = useState<string | null>(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
 
   const value = useMemo(() => ({
     narrativeMessages, setNarrativeMessages,
     isNarrativeLoading, setIsNarrativeLoading,
+    drawerMessages, setDrawerMessages,
+    isDrawerLoading, setIsDrawerLoading,
     nodeInsight, setNodeInsight,
     isInsightLoading, setIsInsightLoading,
-  }), [narrativeMessages, isNarrativeLoading, nodeInsight, isInsightLoading]);
+  }), [narrativeMessages, isNarrativeLoading, drawerMessages, isDrawerLoading, nodeInsight, isInsightLoading]);
 
   return (
     <NarrativeContext.Provider value={value}>

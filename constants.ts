@@ -22,6 +22,18 @@ export const EXTERNAL_URLS = {
   NOISE_SVG: 'https://grainy-gradients.vercel.app/noise.svg',
 };
 
+export const EXPLAIN_CODE_QUERY = 'Explain this code';
+
+export const OKF_PREDICATES = {
+  CONCEPT: 'okf_concept',
+  TITLE: 'okf_title',
+  DESCRIPTION: 'okf_description',
+  BRIDGE: 'bridges_to',
+  LINK: 'okf_link',
+  SMELL_TYPE: 'has_smell_type',
+  ROLE: 'has_role',
+};
+
 export const CUSTOM_EVENTS = {
   FOCUS_SEARCH: 'gca:focus-search',
   OPEN_SETTINGS: 'gca:open-settings',

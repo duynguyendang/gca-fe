@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useSettingsContext } from '../../context/SettingsContext';
 import { fetchHealthSummaryV2, fetchHealthSummary, fetchSurpriseAnalysis, fetchKnowledgeGaps, createSnapshot, fetchSnapshots, fetchGraphDiff, generateTests, HealthSummaryV2, FileHealth } from '../../services/graphService';
+import { fetchOKFSmells } from '../../services/okfService';
 import { logger } from '../../logger';
 import HealthScore from './HealthScore';
 import MetricsRadar from './MetricsRadar';
@@ -9,7 +10,7 @@ import AIChatDrawer from './AIChatDrawer';
 import SurprisePanel from './SurprisePanel';
 import { KnowledgeGapPanel } from './KnowledgeGapPanel';
 import GraphDiffPanel from './GraphDiffPanel';
-import type { SurpriseResponse, KnowledgeGapsResponse, SnapshotInfo, GraphDiff } from '../../types';
+import type { SurpriseResponse, KnowledgeGapsResponse, SnapshotInfo, GraphDiff, OKFSmellResponse } from '../../types';
 
 interface DashboardProps {
   refreshKey?: string;
@@ -26,6 +27,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ refreshKey }) => {
   const [healthV2, setHealthV2] = useState<HealthSummaryV2 | null>(null);
   const [surpriseData, setSurpriseData] = useState<SurpriseResponse | null>(null);
   const [knowledgeGaps, setKnowledgeGaps] = useState<KnowledgeGapsResponse | null>(null);
+  const [okfSmells, setOkfSmells] = useState<OKFSmellResponse | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -60,6 +62,13 @@ try {
           setKnowledgeGaps(gaps);
         } catch (gapsErr: any) {
           logger.warn('[Dashboard] Knowledge gaps unavailable:', gapsErr.message);
+        }
+        // Also load OKF smells
+        try {
+          const smells = await fetchOKFSmells(dataApiBase, selectedProjectId);
+          setOkfSmells(smells);
+        } catch (okfErr: any) {
+          logger.warn('[Dashboard] OKF smells unavailable:', okfErr.message);
         }
     } catch (err: any) {
       // V2 not available — fall back to legacy format and derive V2-like view
@@ -283,16 +292,20 @@ try {
           )}
 
           {/* Knowledge Gaps Panel */}
-          {knowledgeGaps && knowledgeGaps.total_count > 0 && (
+          {(knowledgeGaps && knowledgeGaps.total_count > 0) || (okfSmells && okfSmells.total_count > 0) ? (
             <div className="mb-6">
               <h2 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">
                 🧩 Knowledge Gaps
               </h2>
               <div className="bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] overflow-hidden" style={{ maxHeight: '400px' }}>
-                <KnowledgeGapPanel gaps={knowledgeGaps} onGenerateTests={handleGenerateTests} />
+                <KnowledgeGapPanel
+                  gaps={knowledgeGaps || { isolated_nodes: [], untested_hotspots: [], thin_communities: [], single_file_clusters: [], total_count: 0 }}
+                  okfSmells={okfSmells}
+                  onGenerateTests={handleGenerateTests}
+                />
               </div>
             </div>
-          )}
+          ) : null}
 
           {/* Graph Diff Panel */}
           <div className="mb-6">

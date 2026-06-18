@@ -17,6 +17,7 @@ import {
     getEntropyColor
 } from '../utils/graphUtils';
 import { SubMode } from '../../../context/UIContext';
+import { OKF_COLORS } from '../../../theme';
 
 interface DiscoveryGraphProps {
     nodes: any[];
@@ -146,10 +147,19 @@ const DiscoveryGraph: React.FC<DiscoveryGraphProps> = ({
             .force("collision", d3.forceCollide().radius((d: any) => (nodeRadii.get(d.id) || 30) + 20));
 
         const link = g.append("g").selectAll("line").data(simulationLinks).join("line")
-            .attr("stroke", (d: any) => activeSubMode === 'NARRATIVE' && d._isPath ? "#3b82f6" : getLinkColor(d))
+            .attr("stroke", (d: any) => {
+                if (d.relation === 'bridges_to') return OKF_COLORS.BRIDGE_EDGE;
+                if (d.relation === 'okf_link') return OKF_COLORS.LINK_EDGE;
+                if (activeSubMode === 'NARRATIVE' && d._isPath) return "#3b82f6";
+                return getLinkColor(d);
+            })
             .attr("stroke-width", (d: any) => (activeSubMode === 'NARRATIVE' && d._isPath) ? 2.5 : (isVirtualLink(d) ? 2 : 1))
             .attr("stroke-opacity", (d: any) => getLinkOpacity(d))
-            .attr("stroke-dasharray", (d: any) => isVirtualLink(d) ? "5,5" : null)
+            .attr("stroke-dasharray", (d: any) => {
+                if (d.relation === 'bridges_to') return '5,3';
+                if (activeSubMode === 'NARRATIVE' && d._isPath) return null;
+                return isVirtualLink(d) ? "5,5" : null;
+            })
             .attr("class", (d: any) => activeSubMode === 'NARRATIVE' && d._isPath ? "marching-ants" : "")
             .attr("marker-end", activeSubMode === 'NARRATIVE' ? "url(#arrowhead)" : null);
 
@@ -180,29 +190,44 @@ const DiscoveryGraph: React.FC<DiscoveryGraphProps> = ({
             })
             .style("opacity", (d: any) => activeSubMode === 'NARRATIVE' ? (d._isPath ? 1 : 0.1) : getNodeOpacity(d, expandedFileIds));
 
+        const isOKFNode = (d: any) => d.role === 'okf_concept';
+
         nodeGroup.append("circle")
-            .attr("r", (d: any) => (nodeRadii.get(d.id) || 15) + 6)
+            .attr("r", (d: any) => (isOKFNode(d) ? 16 : (nodeRadii.get(d.id) || 15)) + 6)
             .attr("fill", "transparent")
-            .attr("stroke", (d: any) => activeSubMode === 'ENTROPY' ? getEntropyColor(d) : getNodeStroke(d, getAccent(d.kind), false))
-            .attr("stroke-width", (d: any) => (activeSubMode === 'ENTROPY' && (d.metadata?.complexity > 70)) ? 4 : 2)
+            .attr("stroke", (d: any) => {
+                if (isOKFNode(d)) return d.id === selectedId ? OKF_COLORS.NODE_SELECTED : OKF_COLORS.NODE;
+                if (activeSubMode === 'ENTROPY') return getEntropyColor(d);
+                return getNodeStroke(d, getAccent(d.kind), false);
+            })
+            .attr("stroke-width", (d: any) => {
+                if (isOKFNode(d)) return 2;
+                return (activeSubMode === 'ENTROPY' && (d.metadata?.complexity > 70)) ? 4 : 2;
+            })
             .attr("stroke-opacity", (d: any) => d.id === selectedId ? 1 : 0.2)
             .attr("stroke-dasharray", (d: any) => needsHydration(d) ? "4,2" : null)
             .style("filter", (d: any) => {
+                if (isOKFNode(d)) return `drop-shadow(0 0 8px ${OKF_COLORS.NODE})`;
                 if (activeSubMode === 'ENTROPY') return `drop-shadow(0 0 12px ${getEntropyColor(d)})`;
                 return needsHydration(d) ? "drop-shadow(0 0 4px rgba(168, 85, 247, 0.3))" : `drop-shadow(0 0 8px ${getAccent(d.kind)})`;
             });
 
         nodeGroup.append("circle")
-            .attr("r", (d: any) => nodeRadii.get(d.id) || 15)
-            .attr("fill", (d: any) => needsHydration(d) ? "rgba(168, 85, 247, 0.08)" : "#0a1118")
-            .attr("stroke", "rgba(255,255,255,0.05)")
+            .attr("r", (d: any) => isOKFNode(d) ? 12 : (nodeRadii.get(d.id) || 15))
+            .attr("fill", (d: any) => {
+                if (isOKFNode(d)) return OKF_COLORS.NODE;
+                if (needsHydration(d)) return "rgba(168, 85, 247, 0.08)";
+                return "#0a1118";
+            })
+            .attr("stroke", (d: any) => isOKFNode(d) ? 'rgba(255,255,255,0.15)' : "rgba(255,255,255,0.05)")
             .attr("stroke-width", 1);
 
         nodeGroup.append("text")
             .attr("text-anchor", "middle").attr("dy", "0.35em")
-            .attr("font-size", "12px").attr("font-weight", "900")
-            .attr("fill", (d: any) => getAccent(d.kind))
-            .text((d: any) => getSymbol(d.kind));
+            .attr("font-size", (d: any) => isOKFNode(d) ? "10px" : "12px")
+            .attr("font-weight", "900")
+            .attr("fill", (d: any) => isOKFNode(d) ? '#ffffff' : getAccent(d.kind))
+            .text((d: any) => isOKFNode(d) ? '◆' : getSymbol(d.kind));
 
         nodeGroup.append("text")
             .attr("text-anchor", "middle").attr("dy", "2.8em")

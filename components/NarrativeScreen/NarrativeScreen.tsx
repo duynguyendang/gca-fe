@@ -7,7 +7,7 @@ import UnifiedSearchBar from '../UnifiedSearchBar';
 import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
 import { useContextualSuggestions } from '../../hooks/useContextualSuggestions';
 import { useQueryContext } from '../../hooks/useQueryContext';
-import { askAI, askAIStream, askQuestion } from '../../services/geminiService';
+import { askAI, askAIStream, askQuestion, ChatMessage } from '../../services/geminiService';
 import { logger } from '../../logger';
 import { isIntrospectionQuery, isValidIntrospectionQuery } from '../../services/datalogQueries';
 
@@ -183,6 +183,17 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
         isLoadingRef.current = true;
         setIsNarrativeLoading(true);
 
+        const msgs = narrativeMessagesRef.current;
+        const { contextData, symbolId } = await buildContext(query);
+
+        // Build conversation history from prior turns (exclude current turn not yet added)
+        const chatMessages: ChatMessage[] = msgs
+            .filter(m => m.role === 'user' || m.role === 'ai')
+            .map(m => ({
+                role: m.role === 'ai' ? 'assistant' as const : 'user' as const,
+                content: m.content,
+            }));
+
         if (isIntrospectionQuery(query)) {
             const userMsg: NarrativeMessage = {
                 role: 'user',
@@ -193,7 +204,9 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
             setNarrativeMessages(prev => [...prev, userMsg]);
 
             try {
-                const answer = await askQuestion(dataApiBase, selectedProjectId, query);
+                const answer = await askQuestion(dataApiBase, selectedProjectId, query, {
+                    symbolId: symbolId,
+                });
                 const aiMsg: NarrativeMessage = {
                     role: 'ai',
                     content: answer,
@@ -206,6 +219,9 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
                     const answer = await askAI(dataApiBase, selectedProjectId, {
                         task: 'chat',
                         query: query,
+                        symbol_id: symbolId,
+                        data: contextData.length > 0 ? contextData : undefined,
+                        messages: chatMessages,
                     });
                     const aiMsg: NarrativeMessage = {
                         role: 'ai',
@@ -233,27 +249,18 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
             return;
         }
 
-        const { enhancedQuery, contextData } = await buildContext(query);
-
-        const msgs = narrativeMessagesRef.current;
-        let fullQuery = query;
+        // Determine follow-up hint
+        let finalQuery = query;
         if (msgs.length > 0) {
             const lastUserMessage = [...msgs].reverse().find(m => m.role === 'user');
             if (lastUserMessage && lastUserMessage.displayContent !== query) {
-                fullQuery = `Follow-up: ${query}`;
+                finalQuery = `Follow-up: ${query}`;
             }
-        }
-
-        fullQuery += `\n\n${enhancedQuery}`;
-
-        const MAX_QUERY_LENGTH = 9500;
-        if (fullQuery.length > MAX_QUERY_LENGTH) {
-            fullQuery = fullQuery.substring(0, MAX_QUERY_LENGTH) + '\n...[query shortened]';
         }
 
         const userMsg: NarrativeMessage = {
             role: 'user',
-            content: fullQuery,
+            content: query,
             displayContent: query,
             timestamp: Date.now(),
         };
@@ -285,8 +292,10 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
             };
             await askAIStream(dataApiBase, selectedProjectId, {
                 task: 'chat',
-                query: fullQuery,
+                query: finalQuery,
+                symbol_id: symbolId,
                 data: contextData.length > 0 ? contextData : undefined,
+                messages: chatMessages,
             }, (_delta) => {
                 fullResponse += _delta;
                 scheduleUpdate();
@@ -332,6 +341,7 @@ const NarrativeScreen: React.FC<NarrativeScreenProps> = ({
             });
         } finally {
             setIsNarrativeLoading(false);
+            isLoadingRef.current = false;
         }
     }, [dataApiBase, selectedProjectId, setNarrativeMessages, setIsNarrativeLoading, buildContext]);
 

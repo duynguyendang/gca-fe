@@ -7,77 +7,73 @@ interface ViewModeSwitcherProps {
   onViewModeChange: (mode: ViewMode) => void;
 }
 
-const ViewModeSwitcher: React.FC<ViewModeSwitcherProps> = ({ viewMode, onViewModeChange }) => {
-  const getGlowColor = () => {
-    switch (viewMode) {
-      case 'narrative': return 'var(--accent-blue)';
-      case 'test': return 'var(--accent-purple)';
-      case 'architecture': return 'var(--accent-purple)';
-      case 'map': return '#f59e0b';
-      case 'dashboard': return 'var(--accent-teal)';
-      default: return 'var(--accent-teal)';
-    }
-  };
+const MODE_CONFIG: Record<ViewMode, { label: string; icon: string; tooltip: string }> = {
+  narrative: {
+    label: 'NARRATIVE',
+    icon: 'fa-brain',
+    tooltip: 'AI chat & code explanation (1)',
+  },
+  discovery: {
+    label: 'DISCOVERY',
+    icon: 'fa-circle-nodes',
+    tooltip: 'Graph exploration & traversal (2)',
+  },
+  architecture: {
+    label: 'ARCHITECTURE',
+    icon: 'fa-sitemap',
+    tooltip: 'Hierarchical class/file diagrams (3)',
+  },
+  map: {
+    label: 'MAP',
+    icon: 'fa-layer-group',
+    tooltip: 'Treemap & cluster overview (4)',
+  },
+  test: {
+    label: 'TEST',
+    icon: 'fa-vial',
+    tooltip: 'Integration test generation (5)',
+  },
+  dashboard: {
+    label: 'DASHBOARD',
+    icon: 'fa-chart-pie',
+    tooltip: 'Health metrics & risk leaderboard (6)',
+  },
+};
 
+const VIEW_MODES: ViewMode[] = [
+  'narrative',
+  'discovery',
+  'architecture',
+  'map',
+  'test',
+  'dashboard',
+];
+
+const ViewModeSwitcher: React.FC<ViewModeSwitcherProps> = ({ viewMode, onViewModeChange }) => {
   return (
-    <div className="view-switcher" role="tablist" aria-label="View mode" style={{ '--glow-color': getGlowColor() } as any}>
-      <button
-        role="tab"
-        aria-selected={viewMode === 'dashboard'}
-        aria-label="Dashboard view"
-        className={viewMode === 'dashboard' ? 'active' : ''}
-        onClick={() => onViewModeChange('dashboard')}
-      >
-        <i className="fas fa-chart-pie mr-1.5 opacity-80"></i>
-        DASHBOARD
-      </button>
-      <button
-        role="tab"
-        aria-selected={viewMode === 'narrative'}
-        aria-label="Narrative view"
-        className={viewMode === 'narrative' ? 'active' : ''}
-        onClick={() => onViewModeChange('narrative')}
-      >
-        <i className="fas fa-brain mr-1.5 opacity-80"></i>
-        NARRATIVE
-      </button>
-      <button
-        role="tab"
-        aria-selected={viewMode === 'test'}
-        aria-label="Test generation view"
-        className={viewMode === 'test' ? 'active' : ''}
-        onClick={() => onViewModeChange('test')}
-      >
-        <i className="fas fa-vial mr-1.5 opacity-80"></i>
-        TEST
-      </button>
-      <button
-        role="tab"
-        aria-selected={viewMode === 'architecture'}
-        aria-label="Architecture view"
-        className={viewMode === 'architecture' ? 'active' : ''}
-        onClick={() => onViewModeChange('architecture')}
-      >
-        ARCHITECTURE
-      </button>
-      <button
-        role="tab"
-        aria-selected={viewMode === 'discovery'}
-        aria-label="Discovery view"
-        className={viewMode === 'discovery' ? 'active' : ''}
-        onClick={() => onViewModeChange('discovery')}
-      >
-        DISCOVERY
-      </button>
-      <button
-        role="tab"
-        aria-selected={viewMode === 'map'}
-        aria-label="Map view"
-        className={viewMode === 'map' ? 'active' : ''}
-        onClick={() => onViewModeChange('map')}
-      >
-        MAP
-      </button>
+    <div className="view-switcher flex items-center gap-1 bg-slate-900/50 border border-white/5 rounded-full p-1" role="tablist" aria-label="View mode">
+      {VIEW_MODES.map((mode) => {
+        const config = MODE_CONFIG[mode];
+        const isActive = viewMode === mode;
+        return (
+          <button
+            key={mode}
+            role="tab"
+            aria-selected={isActive}
+            aria-label={config.tooltip}
+            title={config.tooltip}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.15em] rounded-full transition-all ${
+              isActive
+                ? 'bg-[var(--accent-teal)]/20 text-[var(--accent-teal)] border border-[var(--accent-teal)]/30 shadow-[0_0_8px_rgba(45,212,191,0.2)]'
+                : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+            }`}
+            onClick={() => onViewModeChange(mode)}
+          >
+            <i className={`fas ${config.icon} text-[9px]`} aria-hidden="true"></i>
+            <span className="hidden sm:inline">{config.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 };

@@ -16,16 +16,19 @@ import AppHeader from './components/AppHeader';
 import AppSidebar from './components/AppSidebar';
 import AppFooter from './components/AppFooter';
 import SettingsModal from './components/SettingsModal';
+import ShortcutsModal from './components/ShortcutsModal';
 import GraphContainer from './components/GraphContainer';
 import UnifiedSearchBar from './components/UnifiedSearchBar';
+import OKFIngestModal from './components/OKFIngestModal';
+import OKFExportModal from './components/OKFExportModal';
 import { useSessionStorage } from './hooks/useSessionStorage';
 import { useQueryContext } from './hooks/useQueryContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { fetchFileCalls, fetchPredicates, fetchSource } from './services/graphService';
-import { askAI, askAIStream } from './services/geminiService';
+import { askAI, askAIStream, ChatMessage } from './services/geminiService';
 import { logger } from './logger';
 import { requestManager } from './utils/requestManager';
-import { CUSTOM_EVENTS } from './constants';
+import { CUSTOM_EVENTS, EXPLAIN_CODE_QUERY } from './constants';
 import { classifyIntentRoute } from './utils/queryClassifier';
 import './prismSetup';
 
@@ -51,6 +54,7 @@ const App: React.FC = () => {
   } = useSearchContext();
 
   const {
+    narrativeMessages,
     setNarrativeMessages,
     setIsNarrativeLoading,
     setNodeInsight,
@@ -74,10 +78,13 @@ const App: React.FC = () => {
     isSettingsOpen, setIsSettingsOpen,
     isCodeCollapsed, setIsCodeCollapsed,
     isLandingView,
+    isShortcutsOpen, setIsShortcutsOpen,
   } = useUIContext();
 
   const [isSubModeSwitching, setIsSubModeSwitching] = useState(false);
   const nodeSelectRequestRef = useRef<string | null>(null);
+  const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   const { manifest } = useManifest(dataApiBase, selectedProjectId);
   const { syncDataFromApi } = useApiSync();
@@ -138,6 +145,7 @@ const App: React.FC = () => {
 
   const openSettings = useCallback(() => setIsSettingsOpen(true), []);
   const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
+  const openShortcuts = useCallback(() => setIsShortcutsOpen(true), []);
   const syncApi = useCallback(() => syncDataFromApi(dataApiBase), [dataApiBase, syncDataFromApi]);
 
   const handleProjectChange = useCallback((projectId: string) => {
@@ -170,9 +178,13 @@ const App: React.FC = () => {
       } else if (e.key === 'Escape') {
         setSelectedNode(null);
         setSearchTerm('');
-      } else if (mod && e.key >= '1' && e.key <= '5') {
+        setIsShortcutsOpen(false);
+      } else if (e.key === '?' && e.shiftKey) {
         e.preventDefault();
-        const modes = ['narrative', 'map', 'discovery', 'architecture'] as const;
+        setIsShortcutsOpen(true);
+      } else if (mod && e.key >= '1' && e.key <= '6') {
+        e.preventDefault();
+        const modes = ['narrative', 'discovery', 'architecture', 'map', 'test', 'dashboard'] as const;
         const idx = parseInt(e.key) - 1;
         if (idx < modes.length) setViewMode(modes[idx]!);
       }
@@ -180,7 +192,7 @@ const App: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setViewMode, setIsCodeCollapsed, setSelectedNode, setSearchTerm]);
+  }, [setViewMode, setIsCodeCollapsed, setSelectedNode, setSearchTerm, setIsShortcutsOpen]);
 
   useEffect(() => {
     const handleOpenSettings = () => setIsSettingsOpen(true);
@@ -219,7 +231,6 @@ const App: React.FC = () => {
 
   const handleSmartSearchWithNarrativeSwitch = useCallback(async (query: string) => {
     const intentRoute = classifyIntentRoute(query);
-    setSearchTerm(query);
 
     if (intentRoute === 'explore') {
       const handled = await handleExploreIntent(query);
@@ -238,23 +249,45 @@ const App: React.FC = () => {
 
     setViewMode('narrative');
 
-    const { enhancedQuery, contextData } = await buildContext(query);
+    const { contextData, symbolId } = await buildContext(query);
+
+    // Build conversation history from current narrative messages
+    const chatMessages: ChatMessage[] = narrativeMessages
+        .filter(m => m.role === 'user' || m.role === 'ai')
+        .map(m => ({
+            role: m.role === 'ai' ? 'assistant' as const : 'user' as const,
+            content: m.content,
+        }));
 
     let fullQuery = query;
     if (currentProject) {
       fullQuery = `[Analyzing project: ${currentProject}] ${query}`;
     }
-    fullQuery += `\n${enhancedQuery}`;
 
-    if (query === 'Explain this code' && selectedNode) {
-      // Code is already in contextData — don't duplicate it in the query.
-      // The backend's BuildChatPrompt will include code from the data array.
-      fullQuery = `Explain the selected code: "${selectedNode.name}" (${selectedNode.kind || selectedNode.type})\n\nPlease analyze and provide:\n1. What this code does\n2. How components interact\n3. Key patterns\n4. Potential improvements`;
+    if (query === EXPLAIN_CODE_QUERY && selectedNode) {
+      fullQuery = `Explain the selected code: "${selectedNode.name}" (${selectedNode.kind || selectedNode.type})`;
+
+      if (fileScopedNodes && fileScopedNodes.length > 0) {
+        const fileSet = new Set<string>();
+        for (const node of fileScopedNodes) {
+          const fp = (node as any)._filePath || (node as any).filePath || (node as any).file_path;
+          if (fp) fileSet.add(fp);
+        }
+        if (fileSet.size > 0) {
+          fullQuery += `\n\nFiles in this graph:\n${Array.from(fileSet).sort().map(f => `- ${f}`).join('\n')}`;
+        }
+      }
+
+      fullQuery += `\n\nPlease analyze and provide:\n1. What this code does\n2. How components interact\n3. Key patterns\n4. Potential improvements`;
     }
+
+    const userQueryForHistory = query === EXPLAIN_CODE_QUERY && selectedNode
+      ? `Explain the selected code: "${selectedNode.name}" (${selectedNode.kind || selectedNode.type})`
+      : query;
 
     const userMsg: NarrativeMessage = {
       role: 'user',
-      content: fullQuery,
+      content: userQueryForHistory,
       displayContent: query,
       timestamp: Date.now(),
     };
@@ -287,7 +320,9 @@ const App: React.FC = () => {
       await askAIStream(dataApiBase, selectedProjectId, {
         task: 'chat',
         query: fullQuery,
+        symbol_id: symbolId,
         data: contextData.length > 0 ? contextData : undefined,
+        messages: chatMessages,
       }, (delta) => {
         const idx = aiMsgIdxRef.current;
         setNarrativeMessages(prev => prev.map((m, i) =>
@@ -306,7 +341,7 @@ const App: React.FC = () => {
       setIsNarrativeLoading(false);
       addConversationTurn({ user_input: query, intent: 'explain', datalog_query: '', result_count: 0, summary: 'Explain query', timestamp: Date.now() });
     }
-  }, [setViewMode, setSearchTerm, selectedNode, dataApiBase, selectedProjectId, setNarrativeMessages, setIsNarrativeLoading, currentProject, buildContext, toast, addConversationTurn, handleIntent, handleExploreIntent, handleNavigateIntent]);
+  }, [setViewMode, setSearchTerm, selectedNode, dataApiBase, selectedProjectId, setNarrativeMessages, setIsNarrativeLoading, currentProject, buildContext, toast, addConversationTurn, handleIntent, handleExploreIntent, handleNavigateIntent, narrativeMessages]);
 
   const expandedGraphData = React.useMemo(() => {
     if (!astData || !('nodes' in astData)) {
@@ -451,9 +486,12 @@ const App: React.FC = () => {
             onViewModeChange={setViewMode}
             isSubModeSwitching={isSubModeSwitching}
             openSettings={openSettings}
+            openShortcuts={openShortcuts}
             isSearching={isSearching}
             isConnected={!!dataApiBase && availableProjects.length > 0}
             isDataSyncing={isDataSyncing}
+            onOpenIngestModal={() => setIsIngestModalOpen(true)}
+            onOpenExportModal={() => setIsExportModalOpen(true)}
           />
 
           <div className="relative flex-1 flex flex-col min-h-0">
@@ -534,6 +572,18 @@ const App: React.FC = () => {
         isDataSyncing={isDataSyncing}
         availableProjects={availableProjects}
         onConnect={handleConnect}
+      />
+      <ShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
+      />
+      <OKFIngestModal
+        isOpen={isIngestModalOpen}
+        onClose={() => setIsIngestModalOpen(false)}
+      />
+      <OKFExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
       />
       </div>
       )}

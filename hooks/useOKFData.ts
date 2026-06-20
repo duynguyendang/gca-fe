@@ -1,105 +1,145 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useSettingsContext } from '../context/SettingsContext';
-import { fetchOKFConcepts, fetchOKFBridges, fetchOKFBridgesForSymbol as fetchBridgesForSymbol } from '../services/okfService';
-import type { OKFNode, OKFBridgeLink, OKFSmellResponse } from '../types';
-import { OKF_COLORS } from '../theme';
+/**
+ * useOKFData — Fetches OKF concepts + bridges + smells for the current project.
+ * useOKFBridgesForSymbol — Fetches OKF bridges pointing TO a specific code symbol.
+ */
+import { useState, useEffect, useRef } from 'react';
+import { fetchOKFConcepts, fetchOKFBridges, fetchOKFSmells, fetchOKFBridgesForSymbol } from '../services/okfService';
+import type { OKFSmellResponse } from '../types';
 
-interface UseOKFDataResult {
-  okfNodes: OKFNode[];
-  okfBridgeLinks: OKFBridgeLink[];
+export interface OKFNodeData {
+  id: string;
+  name: string;
+  title: string;
+  role: 'okf_concept';
+  kind: 'okf_concept';
+  type: string;
+  okf_type: string;
+  okf_title: string;
+}
+
+export interface OKFBridgeData {
+  source: string;
+  target: string;
+  relation: 'bridges_to';
+  source_type: 'okf';
+}
+
+export interface OKFDataResult {
+  okfNodes: OKFNodeData[];
+  okfBridgeLinks: OKFBridgeData[];
   okfSmells: OKFSmellResponse | null;
   loading: boolean;
   error: string | null;
 }
 
-export function useOKFData(): UseOKFDataResult {
-  const { dataApiBase, selectedProjectId } = useSettingsContext();
-  const [okfNodes, setOkfNodes] = useState<OKFNode[]>([]);
-  const [okfBridgeLinks, setOkfBridgeLinks] = useState<OKFBridgeLink[]>([]);
+export function useOKFData(
+  dataApiBase: string | undefined,
+  projectId: string | undefined
+): OKFDataResult {
+  const [okfNodes, setOkfNodes] = useState<OKFNodeData[]>([]);
+  const [okfBridgeLinks, setOkfBridgeLinks] = useState<OKFBridgeData[]>([]);
   const [okfSmells, setOkfSmells] = useState<OKFSmellResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
-  const load = useCallback(async () => {
-    if (!dataApiBase || !selectedProjectId) return;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!dataApiBase || !projectId) {
+      setOkfNodes([]);
+      setOkfBridgeLinks([]);
+      setOkfSmells(null);
+      return;
+    }
+
+    let cancelled = false;
     setLoading(true);
     setError(null);
 
-    try {
-      const [concepts, bridges] = await Promise.all([
-        fetchOKFConcepts(dataApiBase, selectedProjectId).catch(() => []),
-        fetchOKFBridges(dataApiBase, selectedProjectId).catch(() => []),
-      ]);
+    Promise.all([
+      fetchOKFConcepts(dataApiBase, projectId),
+      fetchOKFBridges(dataApiBase, projectId),
+      fetchOKFSmells(dataApiBase, projectId),
+    ])
+      .then(([concepts, bridges, smells]) => {
+        if (cancelled || !mountedRef.current) return;
 
-      // Build OKF nodes from concepts
-      const nodes: OKFNode[] = concepts.map(c => ({
-        id: c.id,
-        name: c.title,
-        type: 'okf_concept',
-        role: 'okf_concept' as const,
-        okf_type: c.type,
-        okf_title: c.title,
-      }));
+        const nodes: OKFNodeData[] = concepts.map(c => ({
+          id: c.id,
+          name: c.title,
+          title: c.title,
+          role: 'okf_concept' as const,
+          kind: 'okf_concept' as const,
+          type: c.type,
+          okf_type: c.type,
+          okf_title: c.title,
+        }));
 
-      // Build bridge links
-      const links: OKFBridgeLink[] = bridges.map(b => ({
-        source: b.conceptId,
-        target: b.symbolId,
-        relation: 'bridges_to' as const,
-        source_type: 'okf' as const,
-      }));
+        const bridgeLinks: OKFBridgeData[] = bridges.map(b => ({
+          source: b.conceptId,
+          target: b.symbolId,
+          relation: 'bridges_to' as const,
+          source_type: 'okf' as const,
+        }));
 
-      setOkfNodes(nodes);
-      setOkfBridgeLinks(links);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [dataApiBase, selectedProjectId]);
+        setOkfNodes(nodes);
+        setOkfBridgeLinks(bridgeLinks);
+        setOkfSmells(smells);
+        setLoading(false);
+      })
+      .catch((err: any) => {
+        if (cancelled || !mountedRef.current) return;
+        setError(err.message || 'Failed to load OKF data');
+        setLoading(false);
+      });
 
-  useEffect(() => {
-    load();
-  }, [load]);
+    return () => { cancelled = true; };
+  }, [dataApiBase, projectId]);
 
   return { okfNodes, okfBridgeLinks, okfSmells, loading, error };
 }
 
 /**
- * Hook to fetch bridges_to facts for a specific symbol (code → concept links)
+ * useOKFBridgesForSymbol — Fetches OKF bridges pointing TO a specific code symbol.
+ * Used by CodePanel to show "Knowledge Links" for the selected code symbol.
  */
-export function useOKFBridgesForSymbol(symbolId: string | null | undefined): {
-  concepts: Array<{ conceptId: string; title?: string }>;
-  loading: boolean;
-} {
-  const { dataApiBase, selectedProjectId } = useSettingsContext();
+export function useOKFBridgesForSymbol(
+  symbolId: string | null,
+  dataApiBase?: string,
+  selectedProjectId?: string
+): { concepts: Array<{ conceptId: string; title?: string }>; loading: boolean; error: string | null } {
   const [concepts, setConcepts] = useState<Array<{ conceptId: string; title?: string }>>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!dataApiBase || !selectedProjectId || !symbolId) {
+    if (!symbolId || !dataApiBase || !selectedProjectId) {
       setConcepts([]);
       return;
     }
 
     let cancelled = false;
     setLoading(true);
+    setError(null);
 
-    fetchBridgesForSymbol(dataApiBase, selectedProjectId, symbolId)
-      .then(rows => {
-      if (!cancelled) {
-        setConcepts(rows.map(r => ({ conceptId: r.conceptId })));
+    fetchOKFBridgesForSymbol(dataApiBase!, selectedProjectId!, symbolId!)
+      .then((result) => {
+        if (cancelled) return;
+        setConcepts(result);
         setLoading(false);
-      }
-    }).catch(() => {
-      if (!cancelled) {
-        setConcepts([]);
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        setError(err.message || 'Failed to load knowledge links');
         setLoading(false);
-      }
-    });
+      });
 
     return () => { cancelled = true; };
-  }, [dataApiBase, selectedProjectId, symbolId]);
+  }, [symbolId, dataApiBase, selectedProjectId]);
 
-  return { concepts, loading };
+  return { concepts, loading, error };
 }

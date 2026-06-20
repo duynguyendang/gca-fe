@@ -580,10 +580,19 @@ const App: React.FC = () => {
       <OKFIngestModal
         isOpen={isIngestModalOpen}
         onClose={() => setIsIngestModalOpen(false)}
+        dataApiBase={dataApiBase}
+        selectedProjectId={selectedProjectId}
+        availableProjects={availableProjects}
+        onSuccess={() => {
+          window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.REFRESH_DASHBOARD));
+        }}
       />
       <OKFExportModal
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
+        dataApiBase={dataApiBase}
+        selectedProjectId={selectedProjectId}
+        availableProjects={availableProjects}
       />
       </div>
       )}

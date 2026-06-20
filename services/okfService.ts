@@ -1,200 +1,187 @@
 /**
- * OKF Service — thin wrappers around /api/v1/query for OKF-specific Datalog queries.
+ * OKF Service — Thin wrappers around /api/v1/query?raw=true for OKF-specific Datalog queries.
  */
 import { executeQuery } from './graphService';
+import { OKF_PREDICATES } from '../constants';
 import type { OKFSmellItem, OKFSmellResponse } from '../types';
 
-interface RawQueryResult {
-  results?: any[];
-  [key: string]: any;
-}
-
-async function rawQuery(
-  dataApiBase: string,
-  projectId: string,
-  datalogQuery: string
-): Promise<any[]> {
-  const res = await executeQuery(dataApiBase, projectId, datalogQuery, false);
-  // executeQuery returns the parsed JSON; raw=true results come back as { results: [...] }
-  if (Array.isArray(res)) return res;
-  if (res && typeof res === 'object' && Array.isArray((res as any).results)) {
-    return (res as any).results;
-  }
-  return [];
+function esc(id: string): string {
+  return id.replace(/"/g, '\\"');
 }
 
 /**
- * Fetch all OKF concepts (IDs + titles + types)
+ * Fetch all OKF concepts (IDs + titles + types).
  */
 export async function fetchOKFConcepts(
   dataApiBase: string,
   projectId: string
 ): Promise<Array<{ id: string; title: string; type: string }>> {
-  const ids = await rawQuery(
-    dataApiBase,
-    projectId,
-    'triples(Concept, "has_role", "okf_concept")'
-  );
+  const q = `triples(Concept, "${OKF_PREDICATES.ROLE}", "${OKF_PREDICATES.CONCEPT}")`;
+  const result = await executeQuery(dataApiBase, projectId, q, false);
+  const triples = result?.results || result?.triples || [];
+  const conceptIds: string[] = triples.map((t: any) => t[0] || t.Subject || t.subject).filter(Boolean);
 
-  const titles = await rawQuery(
-    dataApiBase,
-    projectId,
-    'triples(Concept, "okf_title", Title)'
-  );
+  if (conceptIds.length === 0) return [];
 
-  const types = await rawQuery(
-    dataApiBase,
-    projectId,
-    'triples(Concept, "okf_type", Type)'
-  );
+  // Fetch titles for all concepts
+  const titlePromises = conceptIds.map(async (id) => {
+    const tq = `triples("${esc(id)}", "${OKF_PREDICATES.TITLE}", Title)`;
+    const tr = await executeQuery(dataApiBase, projectId, tq, false);
+    const rows = tr?.results || tr?.triples || [];
+    const title = rows.length > 0 ? (rows[0][2] || rows[0].Title || rows[0].title || id) : id;
+    return { id, title, type: 'okf_concept' };
+  });
 
-  // Index titles and types by concept id
-  const titleMap = new Map<string, string>();
-  for (const row of titles) {
-    const concept = row.subject || row[0];
-    const title = row.object || row[1];
-    if (concept && title) titleMap.set(concept, title);
-  }
-
-  const typeMap = new Map<string, string>();
-  for (const row of types) {
-    const concept = row.subject || row[0];
-    const type = row.object || row[1];
-    if (concept && type) typeMap.set(concept, type);
-  }
-
-  return ids.map((row: any) => {
-    const id = row.subject || row[0];
-    return {
-      id,
-      title: titleMap.get(id) || id,
-      type: typeMap.get(id) || 'unknown',
-    };
-  }).filter((c: any) => c.id);
+  return Promise.all(titlePromises);
 }
 
 /**
- * Fetch bridges_to facts (concept → symbol)
+ * Fetch all bridges_to facts (concept → symbol).
  */
 export async function fetchOKFBridges(
   dataApiBase: string,
   projectId: string
 ): Promise<Array<{ conceptId: string; symbolId: string }>> {
-  const rows = await rawQuery(
-    dataApiBase,
-    projectId,
-    'triples(Concept, "bridges_to", Symbol)'
-  );
-
-  return rows.map((row: any) => ({
-    conceptId: row.subject || row[0],
-    symbolId: row.object || row[1],
-  })).filter((b: any) => b.conceptId && b.symbolId);
+  const q = `triples(Concept, "${OKF_PREDICATES.BRIDGE}", Symbol)`;
+  const result = await executeQuery(dataApiBase, projectId, q, false);
+  const triples = result?.results || result?.triples || [];
+  return triples.map((t: any) => ({
+    conceptId: t[0] || t.Subject || t.subject,
+    symbolId: t[2] || t.Object || t.object,
+  }));
 }
 
 /**
- * Fetch bridges for a specific symbol (which concepts bridge to this symbol)
- */
-export async function fetchOKFBridgesForSymbol(
-  dataApiBase: string,
-  projectId: string,
-  symbolId: string
-): Promise<Array<{ conceptId: string }>> {
-  const rows = await rawQuery(
-    dataApiBase,
-    projectId,
-    `triples(Concept, "bridges_to", "${symbolId}")`
-  );
-
-  return rows.map((row: any) => ({
-    conceptId: row.subject || row[0],
-  })).filter((b: any) => b.conceptId);
-}
-
-/**
- * Fetch bridges from a specific concept (what symbols this concept bridges to)
+ * Fetch outgoing bridges from a concept to source symbols (concept → symbol).
+ * Returns symbol IDs that this concept bridges to — the "source files" references.
  */
 export async function fetchOKFBridgesFromConcept(
   dataApiBase: string,
   projectId: string,
   conceptId: string
-): Promise<Array<{ symbolId: string }>> {
-  const rows = await rawQuery(
-    dataApiBase,
-    projectId,
-    `triples("${conceptId}", "bridges_to", Symbol)`
-  );
+): Promise<Array<{ symbolId: string; title?: string }>> {
+  const q = `triples("${esc(conceptId)}", "${OKF_PREDICATES.BRIDGE}", Symbol)`;
+  const result = await executeQuery(dataApiBase, projectId, q, false);
+  const triples = result?.results || result?.triples || [];
+  const symbolIds: string[] = triples.map((t: any) => t[2] || t.Object || t.object).filter(Boolean);
 
-  return rows.map((row: any) => ({
-    symbolId: row.object || row[1],
-  })).filter((b: any) => b.symbolId);
+  // Fetch names for each symbol (strip prefix for display)
+  return symbolIds.map((sid: string) => {
+    // Try to extract a readable name from the symbol ID
+    // e.g., "genkit:ai/src/chat.ts#Chat" → "ai/src/chat.ts#Chat"
+    const name = sid.includes(':') ? sid.split(':').slice(1).join(':') : sid;
+    return { symbolId: sid, title: name };
+  });
 }
 
 /**
- * Fetch all OKF smells by querying each smell_type
+ * Fetch bridges for a specific symbol (symbol ← concept).
+ */
+export async function fetchOKFBridgesForSymbol(
+  dataApiBase: string,
+  projectId: string,
+  symbolId: string
+): Promise<Array<{ conceptId: string; title?: string }>> {
+  const q = `triples(Concept, "${OKF_PREDICATES.BRIDGE}", "${esc(symbolId)}")`;
+  const result = await executeQuery(dataApiBase, projectId, q, false);
+  const triples = result?.results || result?.triples || [];
+  const conceptIds = triples.map((t: any) => t[0] || t.Subject || t.subject).filter(Boolean);
+
+  // Fetch titles for each concept
+  return Promise.all(
+    conceptIds.map(async (cid: string) => {
+      const tq = `triples("${esc(cid)}", "${OKF_PREDICATES.TITLE}", Title)`;
+      const tr = await executeQuery(dataApiBase, projectId, tq, false);
+      const rows = tr?.results || tr?.triples || [];
+      const title = rows.length > 0 ? (rows[0][2] || rows[0].Title || rows[0].title) : undefined;
+      return { conceptId: cid, title };
+    })
+  );
+}
+
+/**
+ * Fetch OKF body/title/link for a concept.
+ */
+export async function fetchOKFConceptDetail(
+  dataApiBase: string,
+  projectId: string,
+  conceptId: string
+): Promise<{ title?: string; description?: string; body?: string; link?: string; tags?: string[]; timestamp?: string }> {
+  const queries = [
+    { predicate: 'okf_title', key: 'title' },
+    { predicate: 'okf_description', key: 'description' },
+    { predicate: 'okf_body', key: 'body' },
+    { predicate: 'okf_link', key: 'link' },
+    { predicate: 'okf_tags', key: 'tags' },
+    { predicate: 'okf_timestamp', key: 'timestamp' },
+  ];
+
+  const results: any = {};
+  for (const { predicate, key } of queries) {
+    const q = `triples("${esc(conceptId)}", "${predicate}", Value)`;
+    const result = await executeQuery(dataApiBase, projectId, q, false);
+    const rows = result?.results || result?.triples || [];
+    if (rows.length > 0) {
+      const val = rows[0][2] || rows[0].Value || rows[0].value;
+      if (key === 'tags' && typeof val === 'string') {
+        results[key] = val.split(',').map((s: string) => s.trim());
+      } else {
+        results[key] = val;
+      }
+    }
+  }
+
+  return results;
+}
+
+async function querySmells(
+  dataApiBase: string,
+  projectId: string,
+  smellType: string
+): Promise<OKFSmellItem[]> {
+  const q = `triples(Subject, "${OKF_PREDICATES.SMELL_TYPE}", "${smellType}")`;
+  const result = await executeQuery(dataApiBase, projectId, q, false);
+  const triples = result?.results || result?.triples || [];
+  return Promise.all(
+    triples.map(async (t: any) => {
+      const conceptId = t[0] || t.Subject || t.subject;
+      // Fetch description for context
+      const dq = `triples("${esc(conceptId)}", "${OKF_PREDICATES.DESCRIPTION}", Desc)`;
+      const dr = await executeQuery(dataApiBase, projectId, dq, false);
+      const dRows = dr?.results || dr?.triples || [];
+      const description = dRows.length > 0 ? (dRows[0][2] || dRows[0].Desc || dRows[0].desc) : undefined;
+      return {
+        concept_id: conceptId,
+        smell_type: smellType,
+        description,
+        detail: undefined,
+        severity: ('high' as 'high' | 'medium' | 'low'),
+      };
+    })
+  );
+}
+
+/**
+ * Fetch all OKF smells by querying each smell_type.
  */
 export async function fetchOKFSmells(
   dataApiBase: string,
   projectId: string
 ): Promise<OKFSmellResponse> {
-  const smellTypes = [
-    { type: 'okf_orphan_concept', category: 'orphans' as const },
-    { type: 'okf_stale_concept', category: 'stale' as const },
-    { type: 'okf_bridge_break', category: 'bridge_break' as const },
-    { type: 'okf_hub_anomaly', category: 'hub_anomaly' as const },
-  ];
+  const [orphans, stale, bridgeBreak, hubAnomaly] = await Promise.all([
+    querySmells(dataApiBase, projectId, 'okf_orphan_concept'),
+    querySmells(dataApiBase, projectId, 'okf_stale_concept'),
+    querySmells(dataApiBase, projectId, 'okf_bridge_break'),
+    querySmells(dataApiBase, projectId, 'okf_hub_anomaly'),
+  ]);
 
-  const results = await Promise.allSettled(
-    smellTypes.map(async ({ type }) => {
-      const rows = await rawQuery(
-        dataApiBase,
-        projectId,
-        `triples(Subject, "has_smell_type", "${type}")`
-      );
-      return { type, rows };
-    })
-  );
-
-  const orphans: OKFSmellItem[] = [];
-  const stale: OKFSmellItem[] = [];
-  const bridge_break: OKFSmellItem[] = [];
-  const hub_anomaly: OKFSmellItem[] = [];
-
-  for (const result of results) {
-    if (result.status !== 'fulfilled') continue;
-    const { type, rows } = result.value;
-    for (const row of rows) {
-      const subject = row.subject || row[0];
-      if (!subject) continue;
-
-      const item: OKFSmellItem = {
-        concept_id: subject,
-        smell_type: type,
-        severity: 'medium',
-      };
-
-      switch (type) {
-        case 'okf_orphan_concept':
-          orphans.push(item);
-          break;
-        case 'okf_stale_concept':
-          stale.push(item);
-          break;
-        case 'okf_bridge_break':
-          bridge_break.push(item);
-          break;
-        case 'okf_hub_anomaly':
-          hub_anomaly.push(item);
-          break;
-      }
-    }
-  }
+  const totalCount = orphans.length + stale.length + bridgeBreak.length + hubAnomaly.length;
 
   return {
     orphans,
     stale,
-    bridge_break,
-    hub_anomaly,
-    total_count: orphans.length + stale.length + bridge_break.length + hub_anomaly.length,
+    bridge_break: bridgeBreak,
+    hub_anomaly: hubAnomaly,
+    total_count: totalCount,
   };
 }

@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ASTNode, FlatGraph } from '../types';
 import { SubMode } from '../context/UIContext';
+import { useSettingsContext } from '../context/SettingsContext';
+import { useOKFData } from '../hooks/useOKFData';
 import TreeVisualizer from './TreeVisualizer/index';
 import ClassDiagramCanvas from './ClassDiagramCanvas';
 
@@ -41,12 +43,20 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const { dataApiBase, selectedProjectId } = useSettingsContext();
+  const { okfNodes, okfBridgeLinks, okfSmells, loading: okfLoading } = useOKFData(dataApiBase, selectedProjectId);
 
   const filteredAstData = expandedGraphData || astData;
-  const filteredFileScopedData = React.useMemo(() => ({
-    nodes: fileScopedNodes,
-    links: fileScopedLinks
-  }), [fileScopedNodes, fileScopedLinks]);
+
+  // Merge OKF nodes + bridges into fileScopedData
+  const mergedFileScopedData = useMemo(() => {
+    const base = { nodes: fileScopedNodes, links: fileScopedLinks };
+    if (okfNodes.length === 0 && okfBridgeLinks.length === 0) return base;
+    return {
+      nodes: [...base.nodes, ...okfNodes],
+      links: [...base.links, ...okfBridgeLinks],
+    };
+  }, [fileScopedNodes, fileScopedLinks, okfNodes, okfBridgeLinks]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -67,7 +77,7 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
     onNodeSelect(node);
   }, [onNodeSelect]);
 
-  const visualizationNodeCount = fileScopedNodes.length;
+  const visualizationNodeCount = mergedFileScopedData.nodes.length;
   const isFlatGraph = astData && 'nodes' in astData && Array.isArray(astData.nodes);
   const nodeCount = isFlatGraph ? (astData as FlatGraph).nodes?.length || 0 : 0;
   const linkCount = isFlatGraph ? (astData as FlatGraph).links?.length || 0 : 0;
@@ -143,7 +153,7 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
           onNodeHover={() => {}}
           mode={viewMode}
           selectedId={selectedNode?.id}
-          fileScopedData={filteredFileScopedData}
+          fileScopedData={mergedFileScopedData}
           expandedFileIds={expandedFileIds}
           onToggleFileExpansion={onToggleFileExpansion}
           expandingFileId={expandingFileId}

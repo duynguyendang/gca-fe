@@ -5,6 +5,7 @@
 import React from 'react';
 import HighlightedCode from '../HighlightedCode';
 import { useGraphContext } from '../../context/GraphContext';
+import { useSettingsContext } from '../../context/SettingsContext';
 import { useOKFBridgesForSymbol } from '../../hooks/useOKFData';
 import { OKF_COLORS } from '../../theme';
 
@@ -22,8 +23,11 @@ const CodePanel: React.FC<CodePanelProps> = ({
     onStartResize
 }) => {
     const { selectedNode, hydratingNodeId } = useGraphContext();
+    const { dataApiBase, selectedProjectId } = useSettingsContext();
     const { concepts: knowledgeLinks, loading: bridgesLoading } = useOKFBridgesForSymbol(
-        selectedNode?.id && !selectedNode.id.startsWith('okf:') ? selectedNode.id : null
+        selectedNode?.id && !selectedNode.id.startsWith('okf:') ? selectedNode.id : null,
+        dataApiBase,
+        selectedProjectId
     );
 
     const renderCode = () => {

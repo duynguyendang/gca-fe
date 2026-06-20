@@ -1,5 +1,5 @@
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as d3 from 'd3';
 import { ASTNode, FlatGraph } from '../../types';
 import { useGraphData } from '../../hooks/useGraphData';
@@ -7,6 +7,7 @@ import { SubMode } from '../../context/UIContext';
 import { logger } from '../../logger';
 import DiscoveryGraph from './graphs/DiscoveryGraph';
 import TreeMapGraph from './graphs/TreeMapGraph';
+import OKFConceptDetail from './graphs/OKFConceptDetail';
 
 
 interface TreeVisualizerProps {
@@ -59,7 +60,52 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
   const svgRef = useRef<SVGSVGElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [zoomObj, setZoomObj] = useState<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+  const [selectedOKFConceptId, setSelectedOKFConceptId] = useState<string | null>(null);
   const processedData = useGraphData(data);
+
+  // Find a node by ID in the fileScopedData (used for OKF bridge navigation)
+  const findNodeById = useCallback((id: string): any | null => {
+    const allNodes = fileScopedData?.nodes || nodes;
+    return allNodes.find((n: any) => n.id === id) || null;
+  }, [fileScopedData, nodes]);
+
+  // Intercept node selection — detect OKF concept clicks and show overlay
+  const handleNodeSelect = useCallback((node: any, isNavigation?: boolean) => {
+    if (node?.role === 'okf_concept') {
+      setSelectedOKFConceptId(node.id);
+      // Still forward to parent so the node gets highlighted in the graph
+      onNodeSelect(node, isNavigation);
+    } else if (selectedOKFConceptId) {
+      // Clicking a non-OKF node dismisses the OKF overlay
+      setSelectedOKFConceptId(null);
+      onNodeSelect(node, isNavigation);
+    } else {
+      onNodeSelect(node, isNavigation);
+    }
+  }, [onNodeSelect, selectedOKFConceptId]);
+
+  // Navigate to a source symbol from an OKF bridge link
+  const handleOKFNavigateToSymbol = useCallback((symbolId: string) => {
+    const targetNode = findNodeById(symbolId);
+    if (targetNode) {
+      setSelectedOKFConceptId(null); // Close OKF overlay
+      onNodeSelect(targetNode, true);
+    } else {
+      // Node not in current graph — still try to select by creating a stub
+      onNodeSelect({ id: symbolId, name: symbolId.split('#').pop() || symbolId, _isMissingCode: true }, true);
+    }
+  }, [findNodeById, onNodeSelect]);
+
+  // Close OKF overlay on Escape
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedOKFConceptId) {
+        setSelectedOKFConceptId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [selectedOKFConceptId]);
 
   // Handle Resize
   useEffect(() => {
@@ -124,7 +170,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
           </div>
         </div>
       )}
-      <svg ref={svgRef} className="w-full h-full absolute inset-0" style={{ background: '#0f172a' }}>
+      <svg ref={svgRef} className="w-full h-full absolute inset-0" style={{ background: '#0f172a' }} onClick={() => selectedOKFConceptId && setSelectedOKFConceptId(null)}>
         <g className="zoom-layer">
           {mode === 'discovery' && (
             <DiscoveryGraph
@@ -132,7 +178,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
               links={fileScopedData?.nodes?.length ? (fileScopedData.links || []) : links}
               width={width}
               height={height}
-              onNodeSelect={onNodeSelect}
+              onNodeSelect={handleNodeSelect}
               onNodeHover={onNodeHover}
               selectedId={selectedId}
               expandedFileIds={expandedFileIds}
@@ -147,7 +193,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
               nodes={fileScopedData?.nodes?.length ? fileScopedData.nodes : nodes}
               width={width}
               height={height}
-              onNodeSelect={onNodeSelect}
+              onNodeSelect={handleNodeSelect}
             />
           )}
 
@@ -161,6 +207,15 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
             <p className="text-slate-600 text-xs uppercase tracking-widest">No data loaded</p>
           </div>
         </div>
+      )}
+
+      {/* OKF Concept Detail Overlay */}
+      {selectedOKFConceptId && mode === 'discovery' && (
+        <OKFConceptDetail
+          conceptId={selectedOKFConceptId}
+          onClose={() => setSelectedOKFConceptId(null)}
+          onNavigateToSymbol={handleOKFNavigateToSymbol}
+        />
       )}
     </div>
   );

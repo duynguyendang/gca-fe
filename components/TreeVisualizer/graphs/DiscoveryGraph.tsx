@@ -60,7 +60,11 @@ const DiscoveryGraph: React.FC<DiscoveryGraphProps> = ({
 
         // Filter links to ensure both ends exist in the current nodes set
         // This prevents "node not found" errors in D3 force simulations
-        const validLinks = (links || []).filter(l => nodeSet.has(l.source) && nodeSet.has(l.target));
+        const validLinks = (links || []).filter(l => {
+            const sourceId = typeof l.source === 'object' ? (l.source as any).id : l.source;
+            const targetId = typeof l.target === 'object' ? (l.target as any).id : l.target;
+            return nodeSet.has(sourceId) && nodeSet.has(targetId);
+        });
 
         // Clone links to avoid mutation issues with d3 force
         const simulationLinks = validLinks.map((l: any) => ({ ...l }));

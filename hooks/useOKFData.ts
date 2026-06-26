@@ -3,7 +3,7 @@
  * useOKFBridgesForSymbol — Fetches OKF bridges pointing TO a specific code symbol.
  */
 import { useState, useEffect, useRef } from 'react';
-import { fetchOKFConcepts, fetchOKFBridges, fetchOKFSmells, fetchOKFBridgesForSymbol } from '../services/okfService';
+import { fetchOKFConcepts, fetchOKFBridges, fetchOKFLinks, fetchOKFSmells, fetchOKFBridgesForSymbol } from '../services/okfService';
 import type { OKFSmellResponse } from '../types';
 
 export interface OKFNodeData {
@@ -24,9 +24,17 @@ export interface OKFBridgeData {
   source_type: 'okf';
 }
 
+export interface OKFLinkData {
+  source: string;
+  target: string;
+  relation: 'okf_link';
+  source_type: 'okf';
+}
+
 export interface OKFDataResult {
   okfNodes: OKFNodeData[];
   okfBridgeLinks: OKFBridgeData[];
+  okfLinkLinks: OKFLinkData[];
   okfSmells: OKFSmellResponse | null;
   loading: boolean;
   error: string | null;
@@ -38,6 +46,7 @@ export function useOKFData(
 ): OKFDataResult {
   const [okfNodes, setOkfNodes] = useState<OKFNodeData[]>([]);
   const [okfBridgeLinks, setOkfBridgeLinks] = useState<OKFBridgeData[]>([]);
+  const [okfLinkLinks, setOkfLinkLinks] = useState<OKFLinkData[]>([]);
   const [okfSmells, setOkfSmells] = useState<OKFSmellResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +61,7 @@ export function useOKFData(
     if (!dataApiBase || !projectId) {
       setOkfNodes([]);
       setOkfBridgeLinks([]);
+      setOkfLinkLinks([]);
       setOkfSmells(null);
       return;
     }
@@ -63,9 +73,10 @@ export function useOKFData(
     Promise.all([
       fetchOKFConcepts(dataApiBase, projectId),
       fetchOKFBridges(dataApiBase, projectId),
+      fetchOKFLinks(dataApiBase, projectId),
       fetchOKFSmells(dataApiBase, projectId),
     ])
-      .then(([concepts, bridges, smells]) => {
+      .then(([concepts, bridges, links, smells]) => {
         if (cancelled || !mountedRef.current) return;
 
         const nodes: OKFNodeData[] = concepts.map(c => ({
@@ -86,8 +97,16 @@ export function useOKFData(
           source_type: 'okf' as const,
         }));
 
+        const okfLinkLinks: OKFLinkData[] = links.map(l => ({
+          source: l.source,
+          target: l.target,
+          relation: 'okf_link' as const,
+          source_type: 'okf' as const,
+        }));
+
         setOkfNodes(nodes);
         setOkfBridgeLinks(bridgeLinks);
+        setOkfLinkLinks(okfLinkLinks);
         setOkfSmells(smells);
         setLoading(false);
       })
@@ -100,7 +119,7 @@ export function useOKFData(
     return () => { cancelled = true; };
   }, [dataApiBase, projectId]);
 
-  return { okfNodes, okfBridgeLinks, okfSmells, loading, error };
+  return { okfNodes, okfBridgeLinks, okfLinkLinks, okfSmells, loading, error };
 }
 
 /**

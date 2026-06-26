@@ -62,6 +62,7 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
   const [zoomObj, setZoomObj] = useState<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const [selectedOKFConceptId, setSelectedOKFConceptId] = useState<string | null>(null);
   const processedData = useGraphData(data);
+  const { nodes, links } = processedData || { nodes: [], links: [] };
 
   // Find a node by ID in the fileScopedData (used for OKF bridge navigation)
   const findNodeById = useCallback((id: string): any | null => {
@@ -155,7 +156,6 @@ const TreeVisualizer: React.FC<TreeVisualizerProps> = ({
 
   }, [dimensions]);
 
-  const { nodes, links } = processedData || { nodes: [], links: [] };
   const { width, height } = dimensions;
 
   if (width === 0 || height === 0) return <div ref={containerRef} className="w-full h-full bg-slate-900" />;

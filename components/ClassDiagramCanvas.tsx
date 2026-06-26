@@ -7,7 +7,7 @@ import dagre from 'dagre';
 interface ClassDiagramNode {
   id: string;
   name: string;
-  kind: 'struct' | 'func' | 'interface' | 'field' | 'file' | 'package';
+  kind: 'struct' | 'func' | 'interface' | 'field' | 'file' | 'package' | 'okf_concept' | string;
   filePath?: string;
   start_line?: number;
   end_line?: number;
@@ -19,7 +19,7 @@ interface ClassDiagramLink {
   source: string;
   target: string;
   relation: string;
-  source_type?: 'ast' | 'virtual';
+  source_type?: 'ast' | 'virtual' | 'okf';
   weight?: number;
 }
 
@@ -64,6 +64,7 @@ export const ClassDiagramCanvas: React.FC<ClassDiagramCanvasProps> = ({
         case 'func': return '#6366f1';
         case 'file': return '#0ea5e9';
         case 'package': return '#8b5cf6';
+        case 'okf_concept': return '#2ca02c';
         default: return '#94a3b8';
       }
     };
@@ -114,37 +115,58 @@ export const ClassDiagramCanvas: React.FC<ClassDiagramCanvasProps> = ({
         const nodeData = gGraph.node(d) as any;
         const el = d3.select(this);
         const color = getNodeColor(nodeData.kind || 'func');
+        const isOKF = nodeData.kind === 'okf_concept';
         const isStructOrFile = nodeData.kind === 'struct' || nodeData.kind === 'file' || nodeData.kind === 'interface';
 
-        el.append('rect')
-          .attr('width', nodeData.width)
-          .attr('height', nodeData.height)
-          .attr('rx', isStructOrFile ? 6 : 4)
-          .attr('fill', `rgba(${hexToRgb(color)}, 0.15)`)
-          .attr('stroke', color)
-          .attr('stroke-width', 1.5);
+        if (isOKF) {
+          // Diamond shape for OKF concept nodes
+          const cx = nodeData.width / 2;
+          const cy = nodeData.height / 2;
+          const r = Math.max(16, nodeData.width / 2);
+          el.append('rect')
+            .attr('x', 4)
+            .attr('y', 4)
+            .attr('width', nodeData.width - 8)
+            .attr('height', nodeData.height - 8)
+            .attr('rx', 10)
+            .attr('fill', `rgba(${hexToRgb(color)}, 0.12)`)
+            .attr('stroke', color)
+            .attr('stroke-width', 2)
+            .attr('stroke-dasharray', '4,3');
+        } else {
+          el.append('rect')
+            .attr('width', nodeData.width)
+            .attr('height', nodeData.height)
+            .attr('rx', isStructOrFile ? 6 : 4)
+            .attr('fill', `rgba(${hexToRgb(color)}, 0.15)`)
+            .attr('stroke', color)
+            .attr('stroke-width', 1.5);
+        }
 
         el.append('text')
           .attr('x', nodeData.width / 2)
           .attr('y', nodeData.height / 2)
           .attr('text-anchor', 'middle')
           .attr('dominant-baseline', 'middle')
-          .attr('fill', '#f1f5f9')
-          .attr('font-size', isStructOrFile ? '11px' : '10px')
-          .attr('font-weight', isStructOrFile ? '700' : '500')
+          .attr('fill', isOKF ? color : '#f1f5f9')
+          .attr('font-size', isOKF ? '10px' : (isStructOrFile ? '11px' : '10px'))
+          .attr('font-weight', isOKF ? '600' : (isStructOrFile ? '700' : '500'))
           .text(nodeData.label ?? '');
       });
 
     const linkGroup = g.append('g').attr('class', 'links');
 
-    // Helper to check if link is virtual
+    // Helper to check if link is virtual or OKF
     const isVirtualLink = (link: ClassDiagramLink): boolean => {
       if (link.source_type === 'virtual') return true;
+      if (link.relation === 'bridges_to' || link.relation === 'okf_link') return true;
       return link.relation?.startsWith('v:') || false;
     };
 
     // Helper to get link color
     const getLinkColor = (link: ClassDiagramLink): string => {
+      if (link.relation === 'bridges_to') return '#9467bd';
+      if (link.relation === 'okf_link') return '#2dd4bf';
       return isVirtualLink(link) ? '#a855f7' : '#475569';
     };
 
@@ -165,8 +187,8 @@ export const ClassDiagramCanvas: React.FC<ClassDiagramCanvasProps> = ({
 
       const edgeKey = `${edge.v}->${edge.w}`;
       const metadata = linkMetadata.get(edgeKey) || { source_type: undefined, weight: undefined, relation: '' };
-      const isVirtual = metadata.source_type === 'virtual' || metadata.relation?.startsWith('v:');
-      const color = isVirtual ? '#a855f7' : linkColor;
+      const isVirtual = metadata.source_type === 'virtual' || metadata.relation?.startsWith('v:') || metadata.relation === 'bridges_to' || metadata.relation === 'okf_link';
+      const color = metadata.relation === 'bridges_to' ? '#9467bd' : (metadata.relation === 'okf_link' ? '#2dd4bf' : (isVirtual ? '#a855f7' : linkColor));
       const opacity = metadata.weight !== undefined ? (0.2 + (metadata.weight * 0.8)) : 0.6;
 
       // DAGRE layout: 'x' and 'y' are center coordinates

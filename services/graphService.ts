@@ -225,14 +225,17 @@ export async function fetchHydrate(dataApiBase: string, projectId: string, id: s
  * Execute Datalog query
  * POST /api/v1/query
  */
-export async function executeQuery(dataApiBase: string, projectId: string, query: string, hydrate: boolean = true, signal?: AbortSignal | null): Promise<any> {
+export async function executeQuery(dataApiBase: string, projectId: string, query: string, hydrate: boolean = true, signal?: AbortSignal | null, raw?: boolean): Promise<any> {
   if (!isValidUrl(dataApiBase)) throw new Error('Invalid API base URL');
   if (!isValidProjectId(projectId)) throw new Error('Invalid project ID');
   if (!query || typeof query !== 'string') throw new Error('Invalid query');
   
   const sanitizedQuery = sanitizeInput(query, 5000);
   const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
-  const url = `${cleanBase}/api/v1/query?project=${encodeURIComponent(projectId)}${hydrate ? '&hydrate=true' : ''}`;
+  const params = [`project=${encodeURIComponent(projectId)}`];
+  if (hydrate) params.push('hydrate=true');
+  if (raw) params.push('raw=true');
+  const url = `${cleanBase}/api/v1/query?${params.join('&')}`;
 
   const response = await fetchWithTimeout(url, {
     method: 'POST',

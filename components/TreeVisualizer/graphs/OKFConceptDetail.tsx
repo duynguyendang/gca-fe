@@ -3,7 +3,7 @@
  * Shows type, title, description, tags, timestamp, body, and source symbol bridges.
  */
 import React, { useEffect, useState } from 'react';
-import { fetchOKFConceptDetail, fetchOKFBridgesFromConcept } from '../../../services/okfService';
+import { fetchOKFConceptDetail, fetchOKFBridgesFromConcept, fetchOKFLinksFromConcept } from '../../../services/okfService';
 import { useSettingsContext } from '../../../context/SettingsContext';
 import { OKF_COLORS } from '../../../theme';
 import MarkdownRenderer from '../../Synthesis/MarkdownRenderer';
@@ -18,6 +18,7 @@ export const OKFConceptDetail: React.FC<OKFConceptDetailProps> = ({ conceptId, o
   const { dataApiBase, selectedProjectId } = useSettingsContext();
   const [detail, setDetail] = useState<any>(null);
   const [bridges, setBridges] = useState<Array<{ symbolId: string; title?: string }>>([]);
+  const [okfLinks, setOkfLinks] = useState<Array<{ targetId: string; title?: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [showFullBody, setShowFullBody] = useState(false);
 
@@ -28,10 +29,12 @@ export const OKFConceptDetail: React.FC<OKFConceptDetailProps> = ({ conceptId, o
     Promise.all([
       fetchOKFConceptDetail(dataApiBase, selectedProjectId, conceptId),
       fetchOKFBridgesFromConcept(dataApiBase, selectedProjectId, conceptId),
+      fetchOKFLinksFromConcept(dataApiBase, selectedProjectId, conceptId),
     ])
-      .then(([det, br]) => {
+      .then(([det, br, links]) => {
         setDetail(det);
         setBridges(br);
+        setOkfLinks(links);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -164,12 +167,39 @@ export const OKFConceptDetail: React.FC<OKFConceptDetailProps> = ({ conceptId, o
           </div>
         )}
 
+        {/* OKF Concept Links (concept → concept) */}
+        {okfLinks.length > 0 && (
+          <div>
+            <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">
+              <i className="fas fa-project-diagram mr-1" style={{ color: OKF_COLORS.LINK_EDGE }}></i>
+              Concept Links ({okfLinks.length})
+            </h4>
+            <div className="space-y-1">
+              {okfLinks.map((link, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-2 px-2 py-1.5 rounded bg-white/5 hover:bg-white/10 cursor-pointer transition-colors group"
+                  title={`Navigate to ${link.title || link.targetId}`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full mt-1 shrink-0" style={{ background: OKF_COLORS.LINK_EDGE }} />
+                  <div className="min-w-0">
+                    <span className="text-[11px] text-slate-300 group-hover:text-white transition-colors block truncate">
+                      {link.title || link.targetId.split('/').pop()}
+                    </span>
+                    <span className="text-[8px] text-slate-600 block truncate font-mono">{link.targetId}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Outgoing Bridges (concept → source symbols) */}
         {bridges.length > 0 && (
           <div>
             <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">
               <i className="fas fa-link mr-1" style={{ color: OKF_COLORS.BRIDGE_EDGE }}></i>
-              Graph Links ({bridges.length})
+              Source Bridges ({bridges.length})
             </h4>
             <div className="space-y-1">
               {bridges.map((bridge, i) => (

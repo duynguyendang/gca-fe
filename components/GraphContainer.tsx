@@ -44,19 +44,19 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const { dataApiBase, selectedProjectId } = useSettingsContext();
-  const { okfNodes, okfBridgeLinks, okfSmells, loading: okfLoading } = useOKFData(dataApiBase, selectedProjectId);
+  const { okfNodes, okfBridgeLinks, okfLinkLinks, okfSmells, loading: okfLoading } = useOKFData(dataApiBase, selectedProjectId);
 
   const filteredAstData = expandedGraphData || astData;
 
-  // Merge OKF nodes + bridges into fileScopedData
+  // Merge OKF nodes + bridges + concept-to-concept links into fileScopedData
   const mergedFileScopedData = useMemo(() => {
     const base = { nodes: fileScopedNodes, links: fileScopedLinks };
-    if (okfNodes.length === 0 && okfBridgeLinks.length === 0) return base;
+    if (okfNodes.length === 0 && okfBridgeLinks.length === 0 && okfLinkLinks.length === 0) return base;
     return {
       nodes: [...base.nodes, ...okfNodes],
-      links: [...base.links, ...okfBridgeLinks],
+      links: [...base.links, ...okfBridgeLinks, ...okfLinkLinks],
     };
-  }, [fileScopedNodes, fileScopedLinks, okfNodes, okfBridgeLinks]);
+  }, [fileScopedNodes, fileScopedLinks, okfNodes, okfBridgeLinks, okfLinkLinks]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -124,7 +124,7 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
     <div ref={containerRef} className="flex-1 relative dot-grid overflow-hidden bg-[var(--bg-main)]">
       {viewMode === 'architecture' ? (
         <div className="w-full h-full bg-[var(--bg-surface)] relative z-0">
-          {fileScopedNodes.length === 0 ? (
+          {mergedFileScopedData.nodes.length === 0 ? (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center max-w-sm">
                 <div className="w-16 h-16 rounded-full bg-[var(--accent-purple)]/10 border border-[var(--accent-purple)]/20 flex items-center justify-center mx-auto mb-4">
@@ -138,8 +138,8 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
             </div>
           ) : (
             <ClassDiagramCanvas
-              nodes={fileScopedNodes}
-              links={fileScopedLinks}
+              nodes={mergedFileScopedData.nodes}
+              links={mergedFileScopedData.links}
               onNodeClick={handleClassDiagramNodeClick}
               width={dimensions.width}
               height={dimensions.height}

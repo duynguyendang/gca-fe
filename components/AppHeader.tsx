@@ -13,7 +13,7 @@ interface AppHeaderProps {
   isConnected: boolean;
   isDataSyncing: boolean;
   onOpenIngestModal?: () => void;
-  onOpenExportModal?: () => void;
+  onOpenReviewSession?: () => void;
 }
 
 const AppHeader: React.FC<AppHeaderProps> = ({
@@ -27,7 +27,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({
   isConnected,
   isDataSyncing,
   onOpenIngestModal,
-  onOpenExportModal,
+  onOpenReviewSession,
 }) => {
   const getStatus = () => {
     if (isDataSyncing) return { text: 'SYNCING...', color: 'bg-amber-500 animate-pulse shadow-[0_0_8px_#f59e0b]', textColor: 'text-amber-500' };
@@ -79,13 +79,13 @@ const AppHeader: React.FC<AppHeaderProps> = ({
             <i className="fas fa-upload"></i>
           </button>
         )}
-        {onOpenExportModal && (
+        {onOpenReviewSession && (
           <button
-            title="Export OKF Bundle"
-            className="text-slate-500 hover:text-blue-400 cursor-pointer transition-colors text-sm bg-transparent border-none p-1 focus-visible:ring-2 focus-visible:ring-[var(--accent-teal)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-main)]"
-            onClick={onOpenExportModal}
+            title="Review Session"
+            className="text-slate-500 hover:text-orange-400 cursor-pointer transition-colors text-sm bg-transparent border-none p-1 focus-visible:ring-2 focus-visible:ring-[var(--accent-teal)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-main)]"
+            onClick={onOpenReviewSession}
           >
-            <i className="fas fa-download"></i>
+            <i className="fas fa-code-compare"></i>
           </button>
         )}
         <button

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { fetchSymbols, fetchWhatCalls, generateTests } from '../../services/graphService';
+import { fetchSymbols, fetchWhatCalls, generateTests, generateTestsAll } from '../../services/graphService';
 import { useSettingsContext } from '../../context/SettingsContext';
 import HighlightedCode from '../HighlightedCode';
 import { logger } from '../../logger';
@@ -44,6 +44,10 @@ const TestScreen: React.FC<TestScreenProps> = ({ preSelectedNodeId }) => {
   const [generating, setGenerating] = useState(false);
   const [generatedTest, setGeneratedTest] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [batchResults, setBatchResults] = useState<Record<string, string> | null>(null);
+  const [batchErrors, setBatchErrors] = useState<Record<string, string> | null>(null);
+  const [batchSummary, setBatchSummary] = useState<{ total: number; generated: number; failed: number } | null>(null);
 
   useEffect(() => {
     if (preSelectedNodeId && !selectedTarget) {
@@ -119,6 +123,28 @@ const TestScreen: React.FC<TestScreenProps> = ({ preSelectedNodeId }) => {
       setGenerating(false);
     }
   }, [selectedTarget, dataApiBase, selectedProjectId]);
+
+  const handleBatchGenerate = useCallback(async () => {
+    if (!dataApiBase || !selectedProjectId) return;
+
+    setGenerating(true);
+    setError(null);
+    setGeneratedTest(null);
+    setBatchResults(null);
+    setBatchErrors(null);
+    setBatchSummary(null);
+
+    try {
+      const result = await generateTestsAll(dataApiBase, selectedProjectId);
+      setBatchResults(result.results);
+      setBatchErrors(result.errors);
+      setBatchSummary({ total: result.total, generated: result.generated, failed: result.failed });
+    } catch (err: any) {
+      setError(`Batch generation failed: ${err.message}`);
+    } finally {
+      setGenerating(false);
+    }
+  }, [dataApiBase, selectedProjectId]);
 
   useEffect(() => {
     if (!selectedTarget || !dataApiBase || !selectedProjectId) return;
@@ -308,6 +334,24 @@ const TestScreen: React.FC<TestScreenProps> = ({ preSelectedNodeId }) => {
               </button>
             </div>
 
+            <div className="mb-6">
+              <button
+                onClick={handleBatchGenerate}
+                disabled={generating}
+                className={`w-full py-3 px-6 rounded-lg text-sm font-bold uppercase tracking-wider transition-all ${
+                  generating
+                    ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-[var(--accent-teal)] to-[#0d9488] text-white hover:opacity-90 shadow-lg shadow-teal-500/20'
+                }`}
+              >
+                {generating ? (
+                  <span><i className="fas fa-circle-notch fa-spin mr-2"></i>Generating All Tests...</span>
+                ) : (
+                  <span><i className="fas fa-layer-group mr-2"></i>Generate All API Handler Tests</span>
+                )}
+              </button>
+            </div>
+
             {generatedTest && (
               <div className="rounded-lg border border-green-500/30 bg-green-500/5 overflow-hidden">
                 <div className="flex items-center gap-2 px-4 py-3 border-b border-green-500/20">
@@ -319,6 +363,37 @@ const TestScreen: React.FC<TestScreenProps> = ({ preSelectedNodeId }) => {
                   language={getLanguage(generatedTest)}
                   startLine={1}
                 />
+              </div>
+            )}
+
+            {batchResults && batchSummary && (
+              <div className="mt-6 space-y-4">
+                <div className="flex items-center gap-4 p-3 bg-[var(--bg-surface)] rounded-lg border border-[var(--border)] text-sm">
+                  <span className="text-slate-400">Total handlers: <span className="text-white font-bold">{batchSummary.total}</span></span>
+                  <span className="text-green-400">Generated: <span className="font-bold">{batchSummary.generated}</span></span>
+                  {batchSummary.failed > 0 && (
+                    <span className="text-red-400">Failed: <span className="font-bold">{batchSummary.failed}</span></span>
+                  )}
+                </div>
+                {Object.entries(batchResults).map(([symbol, code]) => (
+                  <div key={symbol} className="rounded-lg border border-green-500/30 bg-green-500/5 overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-2 border-b border-green-500/20 bg-green-500/5">
+                      <i className="fas fa-check-circle text-green-400 text-xs"></i>
+                      <span className="text-xs font-bold text-green-400 font-mono">{symbol}</span>
+                    </div>
+                    <HighlightedCode code={code} language={getLanguage(code)} startLine={1} />
+                  </div>
+                ))}
+                {batchErrors && Object.keys(batchErrors).length > 0 && (
+                  <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4">
+                    <div className="text-xs font-bold text-red-400 mb-2">Errors</div>
+                    {Object.entries(batchErrors).map(([symbol, err]) => (
+                      <div key={symbol} className="text-xs text-red-300 font-mono mb-1">
+                        <span className="text-red-500">{symbol}:</span> {err}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>

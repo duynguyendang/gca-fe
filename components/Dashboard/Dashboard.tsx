@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useSettingsContext } from '../../context/SettingsContext';
 import { fetchHealthSummaryV2, fetchHealthSummary, fetchSurpriseAnalysis, fetchKnowledgeGaps, createSnapshot, fetchSnapshots, fetchGraphDiff, generateTests, HealthSummaryV2, FileHealth } from '../../services/graphService';
+import { CUSTOM_EVENTS } from '../../constants';
 import { fetchOKFSmells } from '../../services/okfService';
 import { logger } from '../../logger';
 import HealthScore from './HealthScore';
@@ -162,6 +163,17 @@ try {
     }
   }, [dataApiBase, selectedProjectId]);
 
+  const handleSymbolClick = useCallback((symbol: string) => {
+    window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.NODE_SELECTED, {
+      detail: { nodeId: symbol }
+    }));
+  }, []);
+
+  const handleConceptClick = useCallback((conceptId: string) => {
+    setInitialPrompt(`Explain the OKF concept \`${conceptId}\` — what is its purpose, what code symbols does it bridge to, and what documentation does it contain?`);
+    setDrawerOpen(true);
+  }, []);
+
   if (!selectedProjectId) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -301,6 +313,8 @@ try {
                 <KnowledgeGapPanel
                   gaps={knowledgeGaps || { isolated_nodes: [], untested_hotspots: [], thin_communities: [], single_file_clusters: [], total_count: 0 }}
                   okfSmells={okfSmells}
+                  onSymbolClick={handleSymbolClick}
+                  onConceptClick={handleConceptClick}
                   onGenerateTests={handleGenerateTests}
                 />
               </div>

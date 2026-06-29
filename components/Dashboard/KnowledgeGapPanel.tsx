@@ -50,6 +50,7 @@ export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, okfS
         { key: 'okf_orphans', label: 'OKF Orphans', count: okfSmells!.orphans.length, icon: '🔗' },
         { key: 'okf_stale', label: 'OKF Stale', count: okfSmells!.stale.length, icon: '⏳' },
         { key: 'okf_bridge_break', label: 'Bridge Breaks', count: okfSmells!.bridge_break.length, icon: '💔' },
+        { key: 'okf_hub_anomaly', label: 'Hub Anomaly', count: okfSmells!.hub_anomaly.length, icon: '🔀' },
       );
     }
 
@@ -66,7 +67,7 @@ export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, okfS
     }
   }, [activeTab, gaps]);
 
-  const isOKFTab = activeTab === 'okf_orphans' || activeTab === 'okf_stale' || activeTab === 'okf_bridge_break';
+  const isOKFTab = activeTab === 'okf_orphans' || activeTab === 'okf_stale' || activeTab === 'okf_bridge_break' || activeTab === 'okf_hub_anomaly';
 
   if (gaps.total_count === 0 && (!okfSmells || okfSmells.total_count === 0)) {
     return (
@@ -121,11 +122,13 @@ export const KnowledgeGapPanel: React.FC<KnowledgeGapPanelProps> = ({ gaps, okfS
             items={
               activeTab === 'okf_orphans' ? okfSmells!.orphans :
               activeTab === 'okf_stale' ? okfSmells!.stale :
+              activeTab === 'okf_hub_anomaly' ? okfSmells!.hub_anomaly :
               okfSmells!.bridge_break
             }
             smellCategory={
               activeTab === 'okf_orphans' ? 'orphans' :
               activeTab === 'okf_stale' ? 'stale' :
+              activeTab === 'okf_hub_anomaly' ? 'hub_anomaly' :
               'bridge_break'
             }
             onConceptClick={onConceptClick}

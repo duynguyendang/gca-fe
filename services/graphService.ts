@@ -1072,6 +1072,42 @@ export async function generateTests(
 }
 
 /**
+ * Generate tests for all API handlers in the project
+ * POST /api/v1/projects/:projectId/test/generate-all
+ */
+export async function generateTestsAll(
+  dataApiBase: string,
+  projectId: string,
+  depth?: number,
+): Promise<import('../types').TestGenerateAllResponse> {
+  const cleanBase = dataApiBase.endsWith('/') ? dataApiBase.slice(0, -1) : dataApiBase;
+  const url = `${cleanBase}/api/v1/projects/${encodeURIComponent(projectId)}/test/generate-all`;
+
+  if (!isValidUrl(cleanBase)) {
+    throw new Error('Invalid API base URL');
+  }
+  if (!isValidProjectId(projectId)) {
+    throw new Error('Invalid project ID');
+  }
+
+  logger.log('[GraphService] Batch test generation:', url, { depth });
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ depth: depth || 3 }),
+  }, API_CONFIG.TIMEOUT.LONG);
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`Batch test generation failed: ${errBody || response.statusText}`);
+  }
+
+  const data = await response.json();
+  logger.log('[GraphService] Batch test generation response:', data);
+  return data;
+}
+
+/**
  * Compute graph diff between two snapshots or current state
  * POST /api/v1/graph/diff
  */
@@ -1199,26 +1235,6 @@ export async function ingestOKFBundle(
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
     throw new Error(`OKF ingest failed: ${errBody || response.statusText}`);
-  }
-  return response.json();
-}
-
-/**
- * OKF: Export a bundle
- * GET /api/v1/okf/export?project=...&scope=...&out=...
- */
-export async function exportOKFBundle(
-  dataApiBase: string,
-  projectId: string,
-  scope: 'file' | 'package' | 'cluster',
-  outDir: string
-): Promise<import('../types').OKFExportReport> {
-  const params = new URLSearchParams({ project: projectId, scope, out: outDir });
-  const url = `${cleanBase(dataApiBase)}/api/v1/okf/export?${params}`;
-  const response = await fetchWithTimeout(url);
-  if (!response.ok) {
-    const errBody = await response.text().catch(() => '');
-    throw new Error(`OKF export failed: ${errBody || response.statusText}`);
   }
   return response.json();
 }

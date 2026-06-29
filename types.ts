@@ -53,7 +53,7 @@ export interface GraphLink {
   source: string | { id: string };
   target: string | { id: string };
   relation?: string;
-  source_type?: 'ast' | 'virtual';
+  source_type?: SourceType;
   weight?: number;
   confidence?: number;
   confidence_tier?: ConfidenceTier;
@@ -77,7 +77,7 @@ export interface D3Link extends d3.SimulationLinkDatum<D3Node> {
   source: string | D3Node;
   target: string | D3Node;
   relation?: string;
-  source_type?: 'ast' | 'virtual';
+  source_type?: SourceType;
   weight?: number;
 }
 
@@ -101,7 +101,7 @@ export interface BackboneLink {
   source: string;
   target: string;
   relation?: string;
-  source_type?: 'ast' | 'virtual';
+  source_type?: SourceType;
   weight?: number;
   isCrossFile?: boolean;
   sourceFile?: string;
@@ -159,6 +159,8 @@ export interface HealthSummaryLegacy {
 
 // Confidence tier for edge reliability
 export type ConfidenceTier = 'EXTRACTED' | 'INFERRED' | 'AMBIGUOUS';
+
+export type SourceType = 'ast' | 'virtual' | 'okf';
 
 // Extended graph link with confidence
 export interface GraphLinkExtended extends GraphLink {
@@ -293,12 +295,6 @@ export interface OKFIngestReport {
   errors: Array<{ file: string; reason: string }>;
 }
 
-export interface OKFExportReport {
-  concepts_written: number;
-  files_written: number;
-  duration: string;
-}
-
 export interface OKFSmellItem {
   concept_id: string;
   smell_type: string;
@@ -313,4 +309,46 @@ export interface OKFSmellResponse {
   bridge_break: OKFSmellItem[];
   hub_anomaly: OKFSmellItem[];
   total_count: number;
+}
+
+export interface OKFOrphansResponse {
+  project: string;
+  orphans: Array<{ concept_id: string; description?: string }>;
+  count: number;
+}
+
+export interface TestGenerateAllResponse {
+  results: Record<string, string>;
+  errors: Record<string, string>;
+  total: number;
+  generated: number;
+  failed: number;
+}
+
+export interface ReviewSessionCreateRequest {
+  project_id: string;
+  diff: string;
+  base_commit?: string;
+  head_commit?: string;
+}
+
+export interface ReviewSessionCreateResponse {
+  session_id: string;
+  project_id: string;
+  expires_at: string;
+  facts_parsed: number;
+  base_commit: string;
+  head_commit: string;
+}
+
+export interface ReviewSessionQueryRequest {
+  query: string;
+  project_id: string;
+}
+
+export interface ReviewSessionQueryResponse {
+  ephemeral: Array<Record<string, string>>;
+  source: Array<Record<string, string>>;
+  analytical: Array<Record<string, string>>;
+  total_facts: number;
 }

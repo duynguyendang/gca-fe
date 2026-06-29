@@ -20,7 +20,7 @@ import ShortcutsModal from './components/ShortcutsModal';
 import GraphContainer from './components/GraphContainer';
 import UnifiedSearchBar from './components/UnifiedSearchBar';
 import OKFIngestModal from './components/OKFIngestModal';
-import OKFExportModal from './components/OKFExportModal';
+import ReviewSessionModal from './components/ReviewSession/ReviewSessionModal';
 import { useSessionStorage } from './hooks/useSessionStorage';
 import { useQueryContext } from './hooks/useQueryContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -84,7 +84,7 @@ const App: React.FC = () => {
   const [isSubModeSwitching, setIsSubModeSwitching] = useState(false);
   const nodeSelectRequestRef = useRef<string | null>(null);
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isReviewSessionOpen, setIsReviewSessionOpen] = useState(false);
 
   const { manifest } = useManifest(dataApiBase, selectedProjectId);
   const { syncDataFromApi } = useApiSync();
@@ -491,7 +491,7 @@ const App: React.FC = () => {
             isConnected={!!dataApiBase && availableProjects.length > 0}
             isDataSyncing={isDataSyncing}
             onOpenIngestModal={() => setIsIngestModalOpen(true)}
-            onOpenExportModal={() => setIsExportModalOpen(true)}
+            onOpenReviewSession={() => setIsReviewSessionOpen(true)}
           />
 
           <div className="relative flex-1 flex flex-col min-h-0">
@@ -587,12 +587,11 @@ const App: React.FC = () => {
           window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.REFRESH_DASHBOARD));
         }}
       />
-      <OKFExportModal
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
+      <ReviewSessionModal
+        isOpen={isReviewSessionOpen}
+        onClose={() => setIsReviewSessionOpen(false)}
         dataApiBase={dataApiBase}
         selectedProjectId={selectedProjectId}
-        availableProjects={availableProjects}
       />
       </div>
       )}

@@ -83,7 +83,7 @@ export const OKFConceptDetail: React.FC<OKFConceptDetailProps> = ({ conceptId, o
       const linkRegex = /- \[([^\]]+)\]\(([^)]+)\)(?:\s*—\s*(.+))?/g;
       let m;
       while ((m = linkRegex.exec(sourceMatch[1])) !== null) {
-        sourceLinksFromBody.push({ name: m[1], href: m[2], desc: m[3] || '' });
+        sourceLinksFromBody.push({ name: m[1] || '', href: m[2] || '', desc: m[3] || '' });
       }
     }
   }

@@ -83,7 +83,7 @@ export const ClassDiagramCanvas: React.FC<ClassDiagramCanvasProps> = ({
     });
 
     // Store link metadata for styling
-    const linkMetadata = new Map<string, { source_type?: 'ast' | 'virtual'; weight?: number; relation: string }>();
+    const linkMetadata = new Map<string, { source_type?: 'ast' | 'virtual' | 'okf'; weight?: number; relation: string }>();
     links.forEach(link => {
       if (nodeMap.has(link.source) && nodeMap.has(link.target)) {
         const edgeKey = `${link.source}->${link.target}`;

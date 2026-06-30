@@ -52,9 +52,37 @@ const GraphContainer: React.FC<GraphContainerProps> = ({
   const mergedFileScopedData = useMemo(() => {
     const base = { nodes: fileScopedNodes, links: fileScopedLinks };
     if (okfNodes.length === 0 && okfBridgeLinks.length === 0 && okfLinkLinks.length === 0) return base;
+
+    const nodeIdSet = new Set([...okfNodes.map(n => n.id), ...fileScopedNodes.map((n: any) => n.id)]);
+
+    let resolvedCount = 0;
+    let unresolvedCount = 0;
+    const resolvedLinks = okfLinkLinks.map(link => {
+      const target = link.target.replace(/^\//, '').replace(/\.md$/, '');
+      if (nodeIdSet.has(link.target)) { resolvedCount++; return link; }
+
+      for (const n of okfNodes) {
+        const nodeId = n.id || '';
+        const lastSeg = nodeId.split('/').filter(Boolean).pop()?.toLowerCase() || '';
+        const targetLastSeg = target.split('/').filter(Boolean).pop()?.toLowerCase() || '';
+        if (lastSeg && targetLastSeg && lastSeg === targetLastSeg) {
+          resolvedCount++;
+          return { ...link, target: n.id };
+        }
+        if (nodeId.toLowerCase().includes(target.toLowerCase())) {
+          resolvedCount++;
+          return { ...link, target: n.id };
+        }
+      }
+      unresolvedCount++;
+      return link;
+    }).filter(link => nodeIdSet.has(link.source) && nodeIdSet.has(link.target));
+
+    console.log(`[GraphContainer] OKF links: ${okfLinkLinks.length} total, ${resolvedCount} resolved, ${unresolvedCount} unresolved, ${resolvedLinks.length} after filter, ${okfNodes.length} OKF nodes`);
+
     return {
       nodes: [...base.nodes, ...okfNodes],
-      links: [...base.links, ...okfBridgeLinks, ...okfLinkLinks],
+      links: [...base.links, ...okfBridgeLinks, ...resolvedLinks],
     };
   }, [fileScopedNodes, fileScopedLinks, okfNodes, okfBridgeLinks, okfLinkLinks]);
 

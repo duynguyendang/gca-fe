@@ -2,33 +2,122 @@
  * CodePanel - Right panel for displaying source code
  * Extracted from App.tsx renderCode function
  */
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import HighlightedCode from '../HighlightedCode';
+import MarkdownRenderer from '../Synthesis/MarkdownRenderer';
 import { useGraphContext } from '../../context/GraphContext';
 import { useSettingsContext } from '../../context/SettingsContext';
 import { useOKFBridgesForSymbol } from '../../hooks/useOKFData';
+import { fetchOKFConceptDetail } from '../../services/okfService';
 import { OKF_COLORS } from '../../theme';
+import { logger } from '../../logger';
 
 interface CodePanelProps {
     width: number;
     isCollapsed: boolean;
     onToggleCollapse: () => void;
     onStartResize: (e: React.MouseEvent) => void;
+    onNavigateToSymbol?: (symbolId: string) => void;
 }
 
 const CodePanel: React.FC<CodePanelProps> = ({
     width,
     isCollapsed,
     onToggleCollapse,
-    onStartResize
+    onStartResize,
+    onNavigateToSymbol
 }) => {
-    const { selectedNode, hydratingNodeId } = useGraphContext();
+    const { selectedNode, hydratingNodeId, fileScopedNodes, astData } = useGraphContext();
     const { dataApiBase, selectedProjectId } = useSettingsContext();
+
+    const isOKFConcept = (selectedNode as any)?.role === 'okf_concept' ||
+        (selectedNode?.id || '').includes('/okf/');
+
     const { concepts: knowledgeLinks, loading: bridgesLoading } = useOKFBridgesForSymbol(
-        selectedNode?.id && !selectedNode.id.startsWith('okf:') ? selectedNode.id : null,
+        selectedNode?.id && !isOKFConcept ? selectedNode.id : null,
         dataApiBase,
         selectedProjectId
     );
+
+    const [okfDetail, setOkfDetail] = useState<any>(null);
+    const [okfLoading, setOkfLoading] = useState(false);
+
+    useEffect(() => {
+        if (!isOKFConcept || !selectedNode?.id || !dataApiBase || !selectedProjectId) {
+            setOkfDetail(null);
+            return;
+        }
+        setOkfLoading(true);
+        fetchOKFConceptDetail(dataApiBase, selectedProjectId, selectedNode.id)
+            .then(setOkfDetail)
+            .catch(err => {
+                logger.warn('[CodePanel] Failed to fetch OKF detail:', err.message);
+                setOkfDetail(null);
+            })
+            .finally(() => setOkfLoading(false));
+    }, [isOKFConcept, selectedNode?.id, dataApiBase, selectedProjectId]);
+
+    const handleOKFLinkClick = useCallback((href: string) => {
+        if (!href || href.startsWith('http://') || href.startsWith('https://') || href === '#') return;
+
+        const allGraphNodes = [...(fileScopedNodes || []), ...(('nodes' in (astData || {})) ? ((astData as any).nodes || []) : [])];
+        const codeNodes = allGraphNodes.filter((n: any) => n.role !== 'okf_concept' && !(n.id || '').includes('/okf/'));
+        const okfNodes = allGraphNodes.filter((n: any) => n.role === 'okf_concept' || (n.id || '').includes('/okf/'));
+
+        if (href.includes('#')) {
+            const parts = href.split('#');
+            const filePath = parts[0] || '';
+            const symName = parts[1] || '';
+            const cleanPath = filePath.replace(/^\//, '');
+
+            for (const n of codeNodes) {
+                const nodePath = (n as any).filePath || (n as any).file_path || '';
+                const cleanNodePath = nodePath.replace(/^\//, '');
+                if (cleanNodePath.endsWith(cleanPath) || cleanPath.endsWith(cleanNodePath)) {
+                    const name = (n as any).name || n.id.split(':').pop() || '';
+                    if (name === symName) {
+                        onNavigateToSymbol?.(n.id);
+                        return;
+                    }
+                }
+            }
+
+            for (const n of codeNodes) {
+                const name = (n as any).name || n.id.split(':').pop() || '';
+                if (name === symName) {
+                    onNavigateToSymbol?.(n.id);
+                    return;
+                }
+            }
+        }
+
+        const cleanHref = href.replace(/^\//, '').replace(/\.md$/, '');
+
+        for (const n of okfNodes) {
+            const nodeId = (n.id || '');
+            const lastSeg = nodeId.split('/').filter(Boolean).pop()?.toLowerCase() || '';
+            const hrefLastSeg = cleanHref.split('/').filter(Boolean).pop()?.toLowerCase() || '';
+            if (lastSeg && hrefLastSeg && lastSeg === hrefLastSeg) {
+                onNavigateToSymbol?.(n.id);
+                return;
+            }
+            if (nodeId.toLowerCase().includes(cleanHref.toLowerCase())) {
+                onNavigateToSymbol?.(n.id);
+                return;
+            }
+        }
+
+        for (const n of codeNodes) {
+            const nodePath = (n as any).filePath || (n as any).file_path || '';
+            const cleanNodePath = nodePath.replace(/^\//, '');
+            if (cleanNodePath.endsWith(cleanHref) || cleanHref.endsWith(cleanNodePath)) {
+                onNavigateToSymbol?.(n.id);
+                return;
+            }
+        }
+
+        onNavigateToSymbol?.(href);
+    }, [fileScopedNodes, astData, onNavigateToSymbol]);
 
     const renderCode = () => {
         if (!selectedNode) return (
@@ -37,6 +126,49 @@ const CodePanel: React.FC<CodePanelProps> = ({
                 <p className="text-[10px] uppercase font-black tracking-[0.2em]">Select a Symbol to View Source</p>
             </div>
         );
+
+        // OKF concept: show body as markdown
+        if (isOKFConcept) {
+            if (okfLoading) {
+                return (
+                    <div className="h-full flex items-center justify-center flex-col gap-4">
+                        <div className="flex items-center gap-3">
+                            <i className="fas fa-circle-notch fa-spin text-[var(--accent-teal)] text-2xl"></i>
+                            <p className="text-[10px] text-[var(--accent-teal)] font-medium">Loading concept...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (!okfDetail) {
+                return (
+                    <div className="h-full flex items-center justify-center flex-col gap-3 opacity-30 italic">
+                        <i className="fas fa-book-open text-3xl"></i>
+                        <p className="text-[10px] uppercase font-bold tracking-widest">Concept Not Found</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="p-4 space-y-4 overflow-auto h-full">
+                    <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-sm" style={{ background: OKF_COLORS.NODE }}></span>
+                        <span className="text-sm font-bold text-white">{okfDetail.title || selectedNode.name}</span>
+                    </div>
+                    {okfDetail.description && (
+                        <p className="text-xs text-slate-400">{okfDetail.description}</p>
+                    )}
+                    {okfDetail.body && (
+                        <div className="text-sm text-slate-300 leading-relaxed">
+                            <MarkdownRenderer content={okfDetail.body} onLinkClick={handleOKFLinkClick} />
+                        </div>
+                    )}
+                    {!okfDetail.body && (
+                        <div className="text-xs text-slate-600 italic">No body content</div>
+                    )}
+                </div>
+            );
+        }
 
         // Show loading skeleton only when actively hydrating
         if (hydratingNodeId === selectedNode.id) {

@@ -1,0 +1,64 @@
+{
+  "explorePatterns": [
+    {"source": "show\\s+(me\\s+)?(callers|callees|dependencies)", "flags": "i"},
+    {"source": "(who|caller|calling)\\s+calls", "flags": "i"},
+    {"source": "(what|callee|called)\\s+calls", "flags": "i"},
+    {"source": "trace\\s+(the\\s+)?(call|code|execution)", "flags": "i"},
+    {"source": "call\\s+graph", "flags": "i"},
+    {"source": "dependencies", "flags": "i"},
+    {"source": "upstream|downstream", "flags": "i"},
+    {"source": "impact.*analysis", "flags": "i"},
+    {"source": "blast.*radius", "flags": "i"}
+  ],
+  "navigatePatterns": [
+    {"source": "\\.(go|ts|tsx|js|jsx|py)$", "flags": ""},
+    {"source": "\\/[a-zA-Z0-9_.-]+$", "flags": ""},
+    {"source": "^src\\/", "flags": "m"},
+    {"source": "^pkg\\/", "flags": "m"},
+    {"source": "^cmd\\/", "flags": "m"}
+  ],
+  "testPatterns": [
+    {"source": "write.*test", "flags": "i"},
+    {"source": "unit test", "flags": "i"},
+    {"source": "integration test", "flags": "i"},
+    {"source": "test.*coverage", "flags": "i"},
+    {"source": "generate.*test", "flags": "i"},
+    {"source": "test.*generation", "flags": "i"},
+    {"source": "create.*test", "flags": "i"}
+  ],
+  "securityPatterns": [
+    {"source": "security", "flags": "i"},
+    {"source": "vulnerabilit", "flags": "i"},
+    {"source": "audit", "flags": "i"},
+    {"source": "injection", "flags": "i"},
+    {"source": "sql.*inject", "flags": "i"},
+    {"source": "xss", "flags": "i"},
+    {"source": "csrf", "flags": "i"},
+    {"source": "authent", "flags": "i"},
+    {"source": "authoriz", "flags": "i"},
+    {"source": "sanitiz", "flags": "i"},
+    {"source": "crypto", "flags": "i"},
+    {"source": "secret", "flags": "i"},
+    {"source": "password", "flags": "i"},
+    {"source": "api.*key", "flags": "i"}
+  ],
+  "refactorPatterns": [
+    {"source": "refactor", "flags": "i"},
+    {"source": "technical debt", "flags": "i"},
+    {"source": "improve.*code", "flags": "i"},
+    {"source": "simplif", "flags": "i"},
+    {"source": "reorganiz", "flags": "i"},
+    {"source": "restructure", "flags": "i"},
+    {"source": "code smell", "flags": "i"},
+    {"source": "cyclic.*complexit", "flags": "i"}
+  ],
+  "performancePatterns": [
+    {"source": "performance", "flags": "i"},
+    {"source": "bottleneck", "flags": "i"},
+    {"source": "optimi", "flags": "i"},
+    {"source": "slow", "flags": "i"},
+    {"source": "memory leak", "flags": "i"},
+    {"source": "cpu", "flags": "i"},
+    {"source": "latency", "flags": "i"}
+  ]
+}

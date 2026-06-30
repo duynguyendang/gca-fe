@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { Suspense, useState, useCallback, useRef, useEffect } from 'react';
 import { FlatGraph } from './types';
 import { useToast } from './context/ToastContext';
 import { useGraphContext } from './context/GraphContext';
@@ -7,20 +7,10 @@ import { useNarrativeContext, NarrativeMessage } from './context/NarrativeContex
 import { useSettingsContext } from './context/SettingsContext';
 import { useUIContext } from './context/UIContext';
 import { useApiSync, useResizePanels, useSmartSearch, useInsights, useManifest, useNodeHydration, useContextualSuggestions, useIntentRouter, useExploreGraph } from './hooks';
-import { CodePanel } from './components/Layout';
-import TestScreen from './components/TestScreen/TestScreen';
-import { NarrativeScreen } from './components/NarrativeScreen';
-import { LandingScreen } from './components/LandingScreen/LandingScreen';
-import { Dashboard } from './components/Dashboard';
 import AppHeader from './components/AppHeader';
 import AppSidebar from './components/AppSidebar';
 import AppFooter from './components/AppFooter';
-import SettingsModal from './components/SettingsModal';
-import ShortcutsModal from './components/ShortcutsModal';
-import GraphContainer from './components/GraphContainer';
 import UnifiedSearchBar from './components/UnifiedSearchBar';
-import OKFIngestModal from './components/OKFIngestModal';
-import ReviewSessionModal from './components/ReviewSession/ReviewSessionModal';
 import { useSessionStorage } from './hooks/useSessionStorage';
 import { useQueryContext } from './hooks/useQueryContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -30,7 +20,70 @@ import { logger } from './logger';
 import { requestManager } from './utils/requestManager';
 import { CUSTOM_EVENTS, EXPLAIN_CODE_QUERY } from './constants';
 import { classifyIntentRoute } from './utils/queryClassifier';
-import './prismSetup';
+import SuspenseFallback from './components/common/SuspenseFallback';
+
+// ---------------------------------------------------------------------------
+// Lazy-loaded views & modals
+// ---------------------------------------------------------------------------
+// Each `React.lazy` boundary produces its own JS chunk so the user only pays
+// the parse / download cost when they actually navigate to it. This is the
+// main reason the previous 738 KB main bundle existed: every view, every
+// modal, and every heavy 3rd-party dep was loaded up-front.
+//
+// Why each one is lazy:
+//  - LandingScreen       : only shown when no project is connected (first run).
+//  - Dashboard           : viewMode === 'dashboard'; pulls in recharts.
+//  - NarrativeScreen     : viewMode === 'narrative'; pulls in react-markdown,
+//                          dompurify, and geminiService.
+//  - TestScreen          : viewMode === 'test'; rarely used.
+//  - GraphContainer      : main graph view (default). Lazy-loaded so its d3
+//                          subgraph + TreeVisualizer/ClassDiagramCanvas is
+//                          fetched in parallel with initial paint.
+//  - SettingsModal       : opened on demand.
+//  - ShortcutsModal      : opened on demand.
+//  - OKFIngestModal      : opened on demand.
+//  - ReviewSessionModal  : opened on demand.
+//
+// Prism syntax highlighting (prismSetup) is *not* imported here — it must be
+// loaded by the components that actually render source code (HighlightedCode)
+// so the Prism language packs don't bloat the main bundle.
+// ---------------------------------------------------------------------------
+
+const LandingScreen = React.lazy(() =>
+  import('./components/LandingScreen/LandingScreen').then(m => ({ default: m.LandingScreen })),
+);
+const Dashboard = React.lazy(() =>
+  import('./components/Dashboard').then(m => ({ default: m.Dashboard })),
+);
+const NarrativeScreen = React.lazy(() =>
+  import('./components/NarrativeScreen').then(m => ({ default: m.NarrativeScreen })),
+);
+const TestScreen = React.lazy(() =>
+  import('./components/TestScreen/TestScreen').then(m => ({ default: m.default })),
+);
+const GraphContainer = React.lazy(() =>
+  import('./components/GraphContainer').then(m => ({ default: m.default })),
+);
+// CodePanel pulls in Prism via HighlightedCode → prismSetup → prismjs.
+// Lazy-loading it keeps the syntax-highlighter + ~250KB language packs out
+// of the main chunk. It is only rendered alongside GraphContainer, so they
+// share a single Suspense boundary below.
+const CodePanel = React.lazy(() =>
+  import('./components/Layout/CodePanel').then(m => ({ default: m.default })),
+);
+
+const SettingsModal = React.lazy(() =>
+  import('./components/SettingsModal').then(m => ({ default: m.default })),
+);
+const ShortcutsModal = React.lazy(() =>
+  import('./components/ShortcutsModal').then(m => ({ default: m.default })),
+);
+const OKFIngestModal = React.lazy(() =>
+  import('./components/OKFIngestModal').then(m => ({ default: m.default })),
+);
+const ReviewSessionModal = React.lazy(() =>
+  import('./components/ReviewSession/ReviewSessionModal').then(m => ({ default: m.default })),
+);
 
 const App: React.FC = () => {
   const toast = useToast();
@@ -459,7 +512,9 @@ const App: React.FC = () => {
   return (
     <ErrorBoundary>
       {isLandingView ? (
-        <LandingScreen />
+        <Suspense fallback={<SuspenseFallback label="Loading…" />}>
+          <LandingScreen />
+        </Suspense>
       ) : (
       <div className="flex h-screen w-screen bg-[var(--bg-main)] text-slate-400 overflow-hidden font-sans">
         <AppSidebar
@@ -517,39 +572,56 @@ const App: React.FC = () => {
 
             <div className="flex-1 flex flex-col min-h-0 view-crossfade-enter" key={viewMode}>
               {viewMode === 'narrative' ? (
-                <NarrativeScreen
-                  onNodeSelect={handleNodeSelect}
-                  onLinkClick={(href: string) => logger.log('Link clicked:', href)}
-                  onSymbolClick={(symbol: string) => logger.log('Symbol clicked:', symbol)}
-                />
+                <Suspense fallback={<SuspenseFallback label="Loading Narrative…" />}>
+                  <NarrativeScreen
+                    onNodeSelect={handleNodeSelect}
+                    onLinkClick={(href: string) => logger.log('Link clicked:', href)}
+                    onSymbolClick={(symbol: string) => logger.log('Symbol clicked:', symbol)}
+                  />
+                </Suspense>
               ) : viewMode === 'dashboard' ? (
-                <Dashboard refreshKey={'dashboard-' + selectedProjectId} />
+                <Suspense fallback={<SuspenseFallback label="Loading Dashboard…" />}>
+                  <Dashboard refreshKey={'dashboard-' + selectedProjectId} />
+                </Suspense>
               ) : viewMode === 'test' ? (
-                <TestScreen preSelectedNodeId={selectedNode?.id} />
+                <Suspense fallback={<SuspenseFallback label="Loading Tests…" />}>
+                  <TestScreen preSelectedNodeId={selectedNode?.id} />
+                </Suspense>
               ) : (
                 <div className={`flex-1 flex min-h-0 ${isSubModeSwitching ? 'animate-pulse opacity-80' : 'transition-opacity duration-500'}`}>
-                  <GraphContainer
-                    viewMode={viewMode}
-                    astData={astData}
-                    expandedGraphData={expandedGraphData}
-                    fileScopedNodes={fileScopedNodes}
-                    fileScopedLinks={fileScopedLinks}
-                    sidebarWidth={sidebarWidth}
-                    codePanelWidth={codePanelWidth}
-                    selectedNode={selectedNode}
-                    onNodeSelect={handleNodeSelect}
-                    expandedFileIds={expandedFileIds}
-                    onToggleFileExpansion={toggleFileExpansion}
-                    expandingFileId={expandingFileId}
-                    activeSubMode={activeSubMode}
-                    highlightedNodeId={highlightedNodeId}
-                  />
-                  <CodePanel
-                    width={codePanelWidth}
-                    isCollapsed={isCodeCollapsed}
-                    onToggleCollapse={() => setIsCodeCollapsed(!isCodeCollapsed)}
-                    onStartResize={startResizeCode}
-                  />
+                  <Suspense fallback={<SuspenseFallback label="Loading Graph…" />}>
+                    <GraphContainer
+                      viewMode={viewMode}
+                      astData={astData}
+                      expandedGraphData={expandedGraphData}
+                      fileScopedNodes={fileScopedNodes}
+                      fileScopedLinks={fileScopedLinks}
+                      sidebarWidth={sidebarWidth}
+                      codePanelWidth={codePanelWidth}
+                      selectedNode={selectedNode}
+                      onNodeSelect={handleNodeSelect}
+                      expandedFileIds={expandedFileIds}
+                      onToggleFileExpansion={toggleFileExpansion}
+                      expandingFileId={expandingFileId}
+                      activeSubMode={activeSubMode}
+                      highlightedNodeId={highlightedNodeId}
+                    />
+                    <CodePanel
+                      width={codePanelWidth}
+                      isCollapsed={isCodeCollapsed}
+                      onToggleCollapse={() => setIsCodeCollapsed(!isCodeCollapsed)}
+                      onStartResize={startResizeCode}
+                      onNavigateToSymbol={(symbolId: string) => {
+                        const targetNode = (fileScopedNodes || []).find((n: any) => n.id === symbolId)
+                          || (astData && 'nodes' in astData ? (astData as any).nodes.find((n: any) => n.id === symbolId) : null);
+                        if (targetNode) {
+                          handleNodeSelect(targetNode, true);
+                        } else {
+                          handleNodeSelect({ id: symbolId, name: symbolId.split('#').pop() || symbolId, _isMissingCode: true }, true);
+                        }
+                      }}
+                    />
+                  </Suspense>
                 </div>
               )}
             </div>
@@ -561,38 +633,58 @@ const App: React.FC = () => {
         />
       </div>
 
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={closeSettings}
-        dataApiBase={dataApiBase}
-        onDataApiBaseChange={handleDataApiBaseChange}
-        enableAutoClustering={enableAutoClustering}
-        onAutoClusteringToggle={() => setEnableAutoClustering(!enableAutoClustering)}
-        syncError={syncError}
-        isDataSyncing={isDataSyncing}
-        availableProjects={availableProjects}
-        onConnect={handleConnect}
-      />
-      <ShortcutsModal
-        isOpen={isShortcutsOpen}
-        onClose={() => setIsShortcutsOpen(false)}
-      />
-      <OKFIngestModal
-        isOpen={isIngestModalOpen}
-        onClose={() => setIsIngestModalOpen(false)}
-        dataApiBase={dataApiBase}
-        selectedProjectId={selectedProjectId}
-        availableProjects={availableProjects}
-        onSuccess={() => {
-          window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.REFRESH_DASHBOARD));
-        }}
-      />
-      <ReviewSessionModal
-        isOpen={isReviewSessionOpen}
-        onClose={() => setIsReviewSessionOpen(false)}
-        dataApiBase={dataApiBase}
-        selectedProjectId={selectedProjectId}
-      />
+      {/* Modals — gated by `isOpen` so the lazy chunk is only fetched when
+          the user actually opens the modal. Each modal is wrapped in its own
+          <Suspense> boundary because we want a tight fallback (overlay) rather
+          than collapsing the whole view. */}
+      {isSettingsOpen && (
+        <Suspense fallback={<SuspenseFallback variant="inline" label="Opening Settings…" />}>
+          <SettingsModal
+            isOpen={isSettingsOpen}
+            onClose={closeSettings}
+            dataApiBase={dataApiBase}
+            onDataApiBaseChange={handleDataApiBaseChange}
+            enableAutoClustering={enableAutoClustering}
+            onAutoClusteringToggle={() => setEnableAutoClustering(!enableAutoClustering)}
+            syncError={syncError}
+            isDataSyncing={isDataSyncing}
+            availableProjects={availableProjects}
+            onConnect={handleConnect}
+          />
+        </Suspense>
+      )}
+      {isShortcutsOpen && (
+        <Suspense fallback={<SuspenseFallback variant="inline" label="Opening Shortcuts…" />}>
+          <ShortcutsModal
+            isOpen={isShortcutsOpen}
+            onClose={() => setIsShortcutsOpen(false)}
+          />
+        </Suspense>
+      )}
+      {isIngestModalOpen && (
+        <Suspense fallback={<SuspenseFallback variant="inline" label="Opening Ingest…" />}>
+          <OKFIngestModal
+            isOpen={isIngestModalOpen}
+            onClose={() => setIsIngestModalOpen(false)}
+            dataApiBase={dataApiBase}
+            selectedProjectId={selectedProjectId}
+            availableProjects={availableProjects}
+            onSuccess={() => {
+              window.dispatchEvent(new CustomEvent(CUSTOM_EVENTS.REFRESH_DASHBOARD));
+            }}
+          />
+        </Suspense>
+      )}
+      {isReviewSessionOpen && (
+        <Suspense fallback={<SuspenseFallback variant="inline" label="Opening Review Session…" />}>
+          <ReviewSessionModal
+            isOpen={isReviewSessionOpen}
+            onClose={() => setIsReviewSessionOpen(false)}
+            dataApiBase={dataApiBase}
+            selectedProjectId={selectedProjectId}
+          />
+        </Suspense>
+      )}
       </div>
       )}
     </ErrorBoundary>

@@ -69,12 +69,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const isValidUrl = (url: string) => {
     try {
-      new URL(url, window.location.origin);
-      return true;
+      const parsed = new URL(url, window.location.origin);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
     } catch {
       return false;
     }
   };
+
+  const urlError = dataApiBase && !isValidUrl(dataApiBase)
+    ? (() => {
+        try {
+          const parsed = new URL(dataApiBase, window.location.origin);
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return `Invalid protocol: ${parsed.protocol}. Only http: and https: are allowed.`;
+          }
+        } catch {}
+        return 'Invalid URL format.';
+      })()
+    : null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#000]/80 backdrop-blur-sm p-4" onClick={onClose}>
@@ -109,10 +121,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               placeholder={API_CONFIG.DEFAULT_BASE_URL}
               className={`w-full bg-[var(--bg-main)] border rounded px-4 py-2.5 text-xs text-white focus:outline-none font-mono ${dataApiBase && isValidUrl(dataApiBase) ? 'border-white/10 focus:border-[var(--accent-teal)]/50' : 'border-red-500/50 focus:border-red-500'}`}
             />
-            {dataApiBase && !isValidUrl(dataApiBase) && (
+            {urlError && (
               <p className="mt-2 text-[9px] text-red-400">
                 <i className="fas fa-exclamation-circle mr-1"></i>
-                Invalid URL format.
+                {urlError}
               </p>
             )}
             <p className="mt-2 text-[9px] text-slate-600 leading-normal">
